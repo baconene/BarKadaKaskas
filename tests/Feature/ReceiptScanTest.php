@@ -91,10 +91,11 @@ class ReceiptScanTest extends TestCase
 
     public function test_not_a_receipt_unconfigured_and_upstream_errors_are_friendly(): void
     {
-        $this->fakeGemini(['is_receipt' => false, 'category' => 'other', 'items' => [], 'total' => null]);
+        // Fakes stack, so give both replies in order: first "not a receipt", then Google refusing.
+        Http::fake(['aiplatform.googleapis.com/*' => Http::sequence()
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode(['is_receipt' => false, 'category' => 'other', 'items' => [], 'total' => null])]]]]]])
+            ->push(['error' => ['status' => 'PERMISSION_DENIED', 'message' => 'nope']], 403)]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertUnprocessable()->assertJsonPath('message', 'That doesn’t look like a receipt. Try a photo of the whole receipt.');
-
-        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['error' => ['status' => 'PERMISSION_DENIED', 'message' => 'nope']], 403)]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertStatus(502);
 
         config(['services.gemini.api_key' => null]);

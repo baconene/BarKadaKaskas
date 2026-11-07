@@ -6,6 +6,13 @@ return [
         'map_id' => env('GOOGLE_MAPS_MAP_ID', 'DEMO_MAP_ID'),
     ],
 
+    // The landing page's "Download for Android" button. GitHub serves the newest release's APK at this
+    // permanent URL (published by .github/workflows/mobile.yml).
+    'android' => [
+        'download_url' => env('ANDROID_DOWNLOAD_URL', 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk'),
+        'releases_url' => env('ANDROID_RELEASES_URL', 'https://github.com/baconene/BarKadaKaskas/releases'),
+    ],
+
     // Password for the organizer account created by SiquijorTripSeeder (only used when the account does not exist yet).
     'seed' => [
         'organizer_password' => env('SEED_ORGANIZER_PASSWORD') ?: 'password',

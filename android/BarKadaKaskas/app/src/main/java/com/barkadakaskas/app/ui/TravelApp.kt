@@ -130,7 +130,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     MaterialTheme(colorScheme = colors, shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp))) {
         val context = LocalContext.current
         LaunchedEffect(vm.invitationUrl) { vm.invitationUrl?.let { url ->
-            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join our trip on BarKadaKaskas: $url") }, "Invite your barkada")); vm.consumeInvitation()
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join our trip on BarkadaKasKas: $url") }, "Invite your barkada")); vm.consumeInvitation()
         } }
         Surface(Modifier.fillMaxSize(), color = Cream) {
             val screen = when { vm.user == null -> 0; vm.detail == null -> 1; else -> 2 }
@@ -225,7 +225,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     Scaffold(containerColor = Cream) { padding -> Column(Modifier.padding(padding).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(Forest), contentAlignment = Alignment.Center) { Icon(Icons.Default.Explore, null, tint = Color.White, modifier = Modifier.size(36.dp)) }
-        Text("BarKadaKaskas", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold)
+        Text("BarkadaKasKas", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold)
         Text("Good trips. Great company. Fair shares.", color = Moss, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(6.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

@@ -188,7 +188,7 @@ struct GroupView: View {
             if detail.canPlan {
                 Section {
                     if let invitation {
-                        ShareLink(item: invitation, message: Text("Join our trip on BarKadaKaskas")) { Label("Share invitation link", systemImage: "square.and.arrow.up") }
+                        ShareLink(item: invitation, message: Text("Join our trip on BarkadaKasKas")) { Label("Share invitation link", systemImage: "square.and.arrow.up") }
                         Text(invitation.absoluteString).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     } else {
                         Button("Invite friends", systemImage: "person.badge.plus") {

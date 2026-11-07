@@ -24,7 +24,8 @@ class TokenStore(context: Context) : SessionStore {
     private val prefs = context.applicationContext.getSharedPreferences("barkada_session", Context.MODE_PRIVATE)
 
     override var serverUrl: String
-        get() = prefs.getString(KEY_SERVER, "") ?: ""
+        // Pre-filled with the production server so most people never have to type it.
+        get() = prefs.getString(KEY_SERVER, null)?.takeIf { it.isNotBlank() } ?: com.barkadakaskas.app.BuildConfig.DEFAULT_SERVER_URL
         set(value) { prefs.edit().putString(KEY_SERVER, value).apply() }
 
     override var token: String?

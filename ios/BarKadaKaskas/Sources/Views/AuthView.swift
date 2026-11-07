@@ -14,7 +14,7 @@ struct AuthView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: "leaf.fill").font(.largeTitle).foregroundStyle(Theme.forest)
-                        Text("BarKadaKaskas").font(.largeTitle.bold())
+                        Text("BarkadaKasKas").font(.largeTitle.bold())
                         Text("Good trips. Great company. Fair shares.").foregroundStyle(.secondary)
                     }.padding(.vertical, 16)
                 }.listRowBackground(Color.clear)

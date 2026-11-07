@@ -132,3 +132,38 @@ Each itinerary day has an in-app map with numbered pins joined in visiting order
 
 This is a different key from the web's `GOOGLE_MAPS_BROWSER_KEY`
 (`docs/google-maps-setup.md`), which is restricted to your website.
+
+## Android downloads (outside Google Play)
+
+Every successful Android build on a push publishes a GitHub Release
+(`android-v0.1.<run>`) with `BarkadaKasKas.apk` attached. The landing page's
+**Download for Android** button points at
+`https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk`,
+which always serves the newest release. Override it with `ANDROID_DOWNLOAD_URL`
+in `.env` if you host the APK elsewhere.
+
+The app's version code is the workflow run number, so each release installs as
+an update, **provided every release is signed with the same key**. Create one
+key once and keep a backup (losing it means users must uninstall to update):
+
+```bash
+keytool -genkeypair -v -keystore barkadakaskas-release.jks -alias barkadakaskas \
+  -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 barkadakaskas-release.jks   # macOS: base64 -i barkadakaskas-release.jks
+```
+
+Add these repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | the base64 output above |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
+| `ANDROID_KEY_ALIAS` | `barkadakaskas` |
+| `ANDROID_KEY_PASSWORD` | the key password |
+
+With the secrets the workflow builds a signed **release** APK; without them it
+falls back to a debug build signed with a throwaway key (and warns), which
+cannot update an earlier install.
+
+The app pre-fills `https://barkadakaskas.on-forge.com` as its server. Set the
+repository variable `DEFAULT_SERVER_URL` to change it for CI builds.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { Eye, EyeOff, X } from 'lucide-vue-next';
-import { dayKey, directionsUrl, loadGoogleMaps, orderedStops, transport, type ItineraryStop } from '@/lib/itinerary';
+import { dayKey, directionsUrl, loadGoogleMaps, orderedStops, samePlace, transport, type ItineraryStop } from '@/lib/itinerary';
 
 const props = defineProps<{ items: ItineraryStop[]; browserKey: string; mapId: string; timezone: string; day: string | null }>();
 const canvas = ref<HTMLElement>();
@@ -10,12 +10,17 @@ const legs = computed(() => stops.value.slice(1).map((to, i) => ({ from: stops.v
 type Leg = (typeof legs.value)[number];
 // A journey belongs to the day it arrives.
 const dayLegs = computed(() => (props.day ? legs.value.filter(leg => dayKey(leg.to.starts_at, props.timezone) === props.day) : legs.value));
-const selectedId = ref<number | null>(null);
+// Id of the arrival stop of the focused journey; shared with the timeline.
+const selectedId = defineModel<number | null>('selected', { default: null });
 const selected = computed(() => dayLegs.value.find(leg => leg.to.id === selectedId.value) ?? null);
 const visibleLegs = computed(() => (selected.value ? [selected.value] : dayLegs.value));
 
-type LegResult = { summary: string; warnings: string[]; direct?: boolean };
+export type LegResult = { summary: string; warnings: string[]; direct?: boolean };
 const results = ref<Record<number, LegResult>>({});
+const emit = defineEmits<{ results: [Record<number, LegResult>] }>();
+watch(results, value => emit('results', { ...value }), { deep: true });
+// Drop a focus that the day filter has hidden.
+watch(dayLegs, list => { if (selectedId.value != null && !list.some(leg => leg.to.id === selectedId.value)) selectedId.value = null; });
 const busy = ref(false);
 const error = ref('');
 const notice = ref('');
@@ -127,7 +132,16 @@ async function draw() {
 
         for (const leg of legs.value) {
             if (version !== generation) return;
-            if (!leg.from.location || !leg.to.location || !leg.mode) continue;
+            if (!leg.from.location || !leg.to.location) continue;
+            if (samePlace(leg.from, leg.to)) {
+                // Nothing to route; pin the spot so focusing the journey still frames it.
+                const spot = saved(leg.from) ?? saved(leg.to);
+                if (spot) { marker(leg.from, spot, leg.number); marker(leg.to, spot, leg.number + 1); overlays.set(leg.to.id, { lines: [], points: [spot] }); mapped.value[leg.to.id] = true; }
+                results.value[leg.to.id] = { summary: 'Same spot — no travel needed', warnings: [] };
+                applyVisibility();
+                continue;
+            }
+            if (!leg.mode) continue;
             if (!leg.mode.route) {
                 const direct = await directLine(leg, leg.mode.value === 'flight' ? 'flight' : 'ferry');
                 if (version !== generation || !direct) return;
@@ -163,11 +177,12 @@ async function draw() {
     } finally { if (version === generation) busy.value = false; }
 }
 
-function toggle(leg: Leg) {
-    selectedId.value = selectedId.value === leg.to.id ? null : leg.to.id;
-    if (selectedId.value && mapHidden.value) mapHidden.value = false;
-    if (selectedId.value) nextTick(() => canvas.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
-}
+// Focusing a journey (from the map or the timeline) reveals the map and brings it into view.
+watch(selectedId, id => {
+    if (id == null) return;
+    if (mapHidden.value) mapHidden.value = false;
+    nextTick(() => canvas.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+});
 const time = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: props.timezone }).format(new Date(value));
 
 watch([() => props.items, () => props.browserKey, canvas], draw, { deep: true, flush: 'post' });
@@ -176,21 +191,21 @@ onBeforeUnmount(() => { generation++; clear(); });
 </script>
 
 <template>
-    <section class="card section-gap">
+    <section class="card route-card">
         <div class="row spread">
-            <h3>Your route</h3>
+            <h3>Route map</h3>
             <button v-if="browserKey && stops.length >= 2" type="button" class="btn secondary map-toggle" :aria-pressed="mapHidden" @click="mapHidden = !mapHidden">
                 <component :is="mapHidden ? Eye : EyeOff" :size="16" aria-hidden="true" /> {{ mapHidden ? 'Show map' : 'Hide map' }}
             </button>
         </div>
-        <p class="muted route-note">Tap a journey to see only that route. Travel times are estimates; flights and ferries are shown as direct lines.</p>
-        <p v-if="stops.length < 2" class="muted section-gap">Add at least two stops with locations to plan your route.</p>
-        <p v-else-if="!browserKey" class="muted section-gap">The interactive map is not enabled yet. Your route and transport choices are saved below; use the Google Maps links for directions.</p>
+        <p v-if="stops.length < 2" class="muted route-note">Add at least two stops with locations to see your route.</p>
+        <p v-else-if="!browserKey" class="muted route-note">The interactive map is not enabled yet. Use the Google Maps links on each journey for directions.</p>
+        <p v-else-if="!selected" class="muted route-note">Tap a journey in the plan to focus it here. Flights and ferries show as direct lines.</p>
 
         <div v-if="selected" class="leg-detail" aria-live="polite">
             <div class="row spread">
                 <p class="eyebrow">Journey {{ selected.number }} · {{ selected.mode?.label ?? 'Transport to be decided' }}</p>
-                <button type="button" class="btn secondary show-all" @click="selectedId = null"><X :size="15" aria-hidden="true" /> Show all routes</button>
+                <button type="button" class="btn secondary show-all" @click="selectedId = null"><X :size="15" aria-hidden="true" /> Show all</button>
             </div>
             <h4>{{ selected.from.title }} → {{ selected.to.title }}</h4>
             <dl>
@@ -198,6 +213,7 @@ onBeforeUnmount(() => { generation++; clear(); });
                 <div><dt>Arrives</dt><dd>{{ time(selected.to.starts_at) }}</dd></div>
                 <div v-if="results[selected.to.id]"><dt>Distance</dt><dd>{{ results[selected.to.id].summary }}</dd></div>
             </dl>
+            <a v-if="selected.from.location && selected.to.location && selected.mode?.route" class="leg-link" :href="directionsUrl(selected.from.location, selected.to.location, selected.mode.route)" target="_blank" rel="noopener noreferrer">Open directions in Google Maps ↗</a>
             <p v-if="!mapped[selected.to.id] && !busy" class="muted">This journey isn’t on the map yet. Add pinned locations to both stops.</p>
         </div>
 
@@ -205,40 +221,23 @@ onBeforeUnmount(() => { generation++; clear(); });
         <p v-if="busy" role="status" class="route-status">Drawing your route…</p>
         <p v-if="notice" role="status" class="route-notice">{{ notice }}</p>
         <p v-if="error" role="alert">{{ error }} <button class="btn secondary" @click="draw">Retry map</button></p>
-        <p v-if="day && !dayLegs.length && legs.length" class="muted section-gap">No journeys arrive on this day.</p>
-        <ol class="route-legs">
-            <li v-for="leg in dayLegs" :key="leg.to.id" :class="{ selected: selectedId === leg.to.id }">
-                <button type="button" class="leg-button" :aria-pressed="selectedId === leg.to.id" @click="toggle(leg)">
-                    <strong>{{ leg.number }}. {{ leg.from.title }} → {{ leg.number + 1 }}. {{ leg.to.title }}</strong>
-                    <span>{{ leg.mode?.label ?? 'Choose transport' }}</span>
-                    <small v-if="!leg.from.location || !leg.to.location">Add a location to both stops to map this journey.</small>
-                    <span v-else-if="leg.mode && results[leg.to.id]">{{ results[leg.to.id].summary }}</span>
-                    <small v-for="warning in results[leg.to.id]?.warnings" :key="warning">{{ warning }}</small>
-                </button>
-                <a v-if="leg.from.location && leg.to.location && leg.mode?.route" :href="directionsUrl(leg.from.location, leg.to.location, leg.mode.route)" target="_blank" rel="noopener noreferrer">Open journey in Google Maps ↗</a>
-            </li>
-        </ol>
     </section>
 </template>
 
 <style scoped>
-.route-map{height:400px;border-radius:12px;margin-top:18px;background:#edf2e8}
-.route-note{margin-top:8px;font-size:13px;line-height:1.7}
-.map-toggle,.show-all{padding:8px 12px;font-size:12px}
+.route-card{padding:20px}
+.route-map{height:360px;border-radius:12px;margin-top:14px;background:#edf2e8}
+.route-note{margin-top:6px;font-size:13px;line-height:1.6}
+.map-toggle,.show-all{padding:7px 11px;font-size:12px}
 .route-status{margin-top:10px;font-size:13px;color:#5f6f66}
 .route-notice{margin-top:10px;font-size:13px;background:#fff6e0;border:1px solid #ecd9a6;color:#7a5a12;border-radius:10px;padding:10px 12px}
-.leg-detail{margin-top:18px;border:1px solid #cfdcc4;background:#f4f8ee;border-radius:12px;padding:16px 18px}
+.leg-detail{margin-top:14px;border:1px solid #cfdcc4;background:#f4f8ee;border-radius:12px;padding:14px 16px}
 .leg-detail .eyebrow{margin-bottom:0}
-.leg-detail h4{font-size:17px;font-weight:700;margin:8px 0 12px;letter-spacing:-.3px}
-.leg-detail dl{display:flex;flex-wrap:wrap;gap:10px 28px;font-size:13px}
+.leg-detail h4{font-size:16px;font-weight:700;margin:6px 0 10px;letter-spacing:-.3px}
+.leg-detail dl{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:13px}
 .leg-detail dt{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#76846e;font-weight:700}
 .leg-detail dd{margin-top:3px;color:#172f2a}
-.route-legs{list-style:none;padding:0;margin-top:18px;display:grid;gap:6px}
-.route-legs li{display:flex;flex-direction:column;gap:6px;border-top:1px solid #e1e8db;padding:8px 0 4px;font-size:13px}
-.leg-button{display:flex;flex-direction:column;gap:6px;text-align:left;padding:10px 12px;margin:0 -12px;width:calc(100% + 24px);border-radius:10px;background:transparent;border:1px solid transparent;cursor:pointer;color:inherit;font:inherit;transition:background .15s,border-color .15s}
-.leg-button:hover{background:#f4f7ef}
-.route-legs li.selected .leg-button{background:#eef4e4;border-color:#bfd1a8}
-.route-legs a{color:#376245;text-decoration:underline;text-underline-offset:3px}
-.route-legs small{color:#76846e}
-@media(max-width:640px){.route-map{height:300px}}
+.leg-link{display:inline-block;margin-top:10px;font-size:13px;color:#376245;text-decoration:underline;text-underline-offset:3px}
+@media(min-width:1024px){.route-map{height:min(520px,calc(100vh - 260px))}}
+@media(max-width:640px){.route-map{height:280px}.route-card{padding:16px}}
 </style>

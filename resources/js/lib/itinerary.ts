@@ -2,6 +2,7 @@ export type ItineraryStop = {
     id: number; title: string; location: string | null; description: string | null;
     starts_at: string; ends_at: string; transport_mode: string | null;
     latitude?: number | null; longitude?: number | null;
+    cost_min_minor?: number | null; cost_max_minor?: number | null; cost_note?: string | null;
 };
 
 export const transportOptions = [
@@ -55,4 +56,28 @@ export function dayKey(value: string, timeZone: string): string {
 /** Short label for a day key, e.g. "Wed, Nov 11". */
 export function dayLabel(key: string): string {
     return new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${key}T00:00:00Z`));
+}
+
+/** True when two consecutive stops are effectively the same place (no travel needed). */
+export function samePlace(a: ItineraryStop, b: ItineraryStop): boolean {
+    if (a.latitude != null && a.longitude != null && b.latitude != null && b.longitude != null) {
+        // ~50 m: close enough to walk without a route.
+        return Math.abs(a.latitude - b.latitude) < 0.00045 && Math.abs(a.longitude - b.longitude) < 0.00045;
+    }
+    return !!a.location && a.location.trim().toLowerCase() === b.location?.trim().toLowerCase();
+}
+
+const peso = (minor: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: minor % 100 ? 2 : 0 }).format(minor / 100);
+
+/** "₱280–440", "₱300", or '' when there is no estimate. */
+export function costRange(min?: number | null, max?: number | null): string {
+    if (min == null || max == null) return '';
+    return min === max ? peso(min) : `${peso(min)}–${peso(max).replace('₱', '')}`;
+}
+
+/** Sum of per-person estimates over stops, or null when none have one. */
+export function totalCost(stops: ItineraryStop[]): { min: number; max: number } | null {
+    const priced = stops.filter(stop => stop.cost_min_minor != null && stop.cost_max_minor != null);
+    if (!priced.length) return null;
+    return priced.reduce((sum, stop) => ({ min: sum.min + stop.cost_min_minor!, max: sum.max + stop.cost_max_minor! }), { min: 0, max: 0 });
 }

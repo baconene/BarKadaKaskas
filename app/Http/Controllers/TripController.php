@@ -30,10 +30,11 @@ class TripController extends Controller
         $trip->load(['expenses.payments', 'expenses.allocations', 'expenses.settlements']);
         $shareRows = $trip->expenses->mapWithKeys(fn ($expense) => [$expense->id => app(\App\Services\ExpenseShares::class)->rows($expense)]);
         return Inertia::render('Trips/Show', [
-            'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
+            'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
             'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
             'balances' => $balances->calculate($trip), 'isOrganizer' => $trip->organizer_user_id === $request->user()->id,
             'expenseShares' => $shareRows,
+            'googleMaps' => ['browserKey' => config('services.google_maps.browser_key'), 'mapId' => config('services.google_maps.map_id')],
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
         ]);
     }
@@ -75,9 +76,23 @@ class TripController extends Controller
     public function itinerary(Request $request, Trip $trip)
     {
         Gate::authorize('update', $trip);
-        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
-        foreach (['starts_at', 'ends_at'] as $field) { $data[$field] = \Carbon\CarbonImmutable::parse($data[$field], $trip->timezone)->utc(); }
+        $data = $this->itineraryData($request, $trip);
         $trip->itineraryItems()->create([...$data, 'timezone' => $trip->timezone, 'created_by_user_id' => $request->user()->id]);
         return back();
+    }
+
+    public function updateItinerary(Request $request, Trip $trip, \App\Models\ItineraryItem $item)
+    {
+        Gate::authorize('update', $trip);
+        abort_unless($item->trip_id === $trip->id, 404);
+        $item->update($this->itineraryData($request, $trip));
+        return back();
+    }
+
+    private function itineraryData(Request $request, Trip $trip): array
+    {
+        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
+        foreach (['starts_at', 'ends_at'] as $field) { $data[$field] = \Carbon\CarbonImmutable::parse($data[$field], $trip->timezone)->utc(); }
+        return $data;
     }
 }

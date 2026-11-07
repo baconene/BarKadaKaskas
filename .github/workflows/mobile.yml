@@ -1,0 +1,50 @@
+name: Native mobile builds
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android/BarKadaKaskas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build and test debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BarKadaKaskas-debug-APK
+          path: android/BarKadaKaskas/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  ios-simulator:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios/BarKadaKaskas
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build for simulator without signing
+        run: xcodebuild -project BarKadaKaskas.xcodeproj -scheme BarKadaKaskas -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator app
+        run: ditto -c -k --sequesterRsrc --keepParent DerivedData/Build/Products/Debug-iphonesimulator/BarKadaKaskas.app BarKadaKaskas-simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BarKadaKaskas-iOS-simulator
+          path: ios/BarKadaKaskas/BarKadaKaskas-simulator.zip
+          if-no-files-found: error

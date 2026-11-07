@@ -160,4 +160,15 @@ class MobileApiTest extends TestCase
         TripInvitation::query()->update(['revoked_at' => now()]);
         $this->getJson('/api/v1/invitations/'.$token)->assertGone();
     }
+
+    public function test_android_patch_override_header_reaches_patch_routes(): void
+    {
+        // Android's HttpURLConnection cannot send PATCH, so the app POSTs with X-HTTP-Method-Override.
+        $headers = $this->headers($this->owner);
+        $path = '/api/v1/trips/'.$this->trip->id.'/itinerary';
+        $payload = ['title' => 'Lunch', 'location' => 'San Juan', 'starts_at' => '2026-11-12T12:00', 'ends_at' => '2026-11-12T13:00'];
+        $id = $this->postJson($path, $payload, $headers)->assertCreated()->json('data.id');
+        $this->postJson($path.'/'.$id, ['title' => 'Late lunch'] + $payload, $headers + ['X-HTTP-Method-Override' => 'PATCH'])
+            ->assertOk()->assertJsonPath('data.title', 'Late lunch');
+    }
 }

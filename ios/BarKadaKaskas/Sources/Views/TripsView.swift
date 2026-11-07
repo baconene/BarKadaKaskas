@@ -115,7 +115,13 @@ private struct HeroTripCard: View {
         .background(alignment: .bottomTrailing) {
             ZStack(alignment: .bottomTrailing) {
                 LinearGradient(colors: [Theme.forest, Color(red: 0.18, green: 0.42, blue: 0.32)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "mountain.2.fill").font(.system(size: 150)).foregroundStyle(.white.opacity(0.07)).offset(x: 30, y: 30)
+                if let url = trip.cover_url.flatMap(URL.init(string:)) {
+                    AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
+                    // Darkens the photo so the white text stays readable.
+                    LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                } else {
+                    Image(systemName: "mountain.2.fill").font(.system(size: 150)).foregroundStyle(.white.opacity(0.07)).offset(x: 30, y: 30)
+                }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -132,8 +138,7 @@ private struct TripCard: View {
     var body: some View {
         let banner = Self.banners[index % Self.banners.count]
         HStack(spacing: 14) {
-            Image(systemName: "mappin.and.ellipse").font(.title2).foregroundStyle(banner.1)
-                .frame(width: 60, height: 60).background(banner.0, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            CoverThumbnail(url: trip.cover_url, tint: banner.1, background: banner.0)
             VStack(alignment: .leading, spacing: 4) {
                 Text(trip.destination.uppercased()).font(.caption2.weight(.bold)).tracking(1).foregroundStyle(Theme.moss)
                 Text(trip.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
@@ -192,5 +197,23 @@ struct TripForm: View {
                 }.disabled(name.isEmpty || destination.isEmpty || store.busy) }
             }
         }
+    }
+}
+
+/// Square trip thumbnail: the cover photo when there is one, otherwise a tinted pin.
+struct CoverThumbnail: View {
+    let url: String?; let tint: Color; let background: Color
+    var size: CGFloat = 60
+    var body: some View {
+        ZStack {
+            background
+            if let link = url.flatMap(URL.init(string:)) {
+                AsyncImage(url: link) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
+            } else {
+                Image(systemName: "mappin.and.ellipse").font(.title2).foregroundStyle(tint)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }

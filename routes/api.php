@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, TripController};
+use App\Http\Controllers\{ExpenseController, SettlementController, TripController, TripCoverController};
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,6 +15,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('trips', [TripController::class, 'index']);
         Route::post('trips', [TripController::class, 'store']);
         Route::get('trips/{trip}', [TripController::class, 'show']);
+        Route::patch('trips/{trip}', [TripController::class, 'update']);
+        Route::post('trips/{trip}/cover', [TripCoverController::class, 'store'])->middleware('throttle:20,1');
+        Route::delete('trips/{trip}/cover', [TripCoverController::class, 'destroy']);
         Route::post('trips/{trip}/cancel', [TripController::class, 'cancel']);
         Route::post('trips/{trip}/reopen', [TripController::class, 'reopen']);
         Route::patch('trips/{trip}/visibility', [TripController::class, 'visibility']);

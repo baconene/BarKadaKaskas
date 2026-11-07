@@ -56,6 +56,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import com.barkadakaskas.app.data.Photos
 import com.barkadakaskas.app.data.Places
 import com.barkadakaskas.app.domain.*
 import java.math.BigDecimal
@@ -69,6 +75,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Currency
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 private val Forest = Color(0xFF214E3E)
 private val ForestDark = Color(0xFF173A2E)
@@ -286,7 +293,11 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val phase = Itinerary.phase(trip, today)
     Card(onClick = open, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Forest)) {
         Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Forest, Color(0xFF2F6B52))))) {
-            Icon(Icons.Default.Landscape, null, tint = Color.White.copy(alpha = 0.08f), modifier = Modifier.size(170.dp).align(Alignment.BottomEnd).offset(x = 30.dp, y = 40.dp))
+            if (trip.coverUrl != null) {
+                AsyncImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+                // Darkens the photo so the white text stays readable.
+                Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.7f)))))
+            } else Icon(Icons.Default.Landscape, null, tint = Color.White.copy(alpha = 0.08f), modifier = Modifier.size(170.dp).align(Alignment.BottomEnd).offset(x = 30.dp, y = 40.dp))
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Pill(Itinerary.phaseLabel(phase), Icons.Default.Schedule, Color.White.copy(alpha = 0.16f), Color.White)
@@ -315,7 +326,10 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val phase = Itinerary.phase(trip, today)
     Card(onClick = open, modifier = modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(banner), contentAlignment = Alignment.Center) { Icon(Icons.Default.Place, null, tint = accent, modifier = Modifier.size(30.dp)) }
+            Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(banner), contentAlignment = Alignment.Center) {
+                if (trip.coverUrl != null) AsyncImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                else Icon(Icons.Default.Place, null, tint = accent, modifier = Modifier.size(30.dp))
+            }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Eyebrow(trip.destination)
@@ -338,6 +352,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val icons = listOf(Icons.Default.Map, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.AccountBalanceWallet, Icons.Default.Groups)
     var menu by remember { mutableStateOf(false) }
     var cancelling by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     var confirmHide by remember { mutableStateOf(false) }
     // A cancelled trip locks the plan for everyone, organizer included; settling up stays available.
     val planning = if (detail.trip.cancelled) detail.copy(isOrganizer = false) else detail
@@ -350,6 +365,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             actions = { if (detail.isOrganizer) Box {
                 IconButton(onClick = { menu = true }, enabled = !vm.busy) { Icon(Icons.Default.MoreVert, "Trip options") }
                 DropdownMenu(menu, { menu = false }) {
+                    if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Edit trip & cover photo") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; editing = true })
                     if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Cancel trip…", color = Danger) }, leadingIcon = { Icon(Icons.Default.Block, null, tint = Danger) }, onClick = { menu = false; cancelling = true })
                     else {
                         DropdownMenuItem(text = { Text("Reopen trip") }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { menu = false; vm.reopenTrip() })
@@ -373,6 +389,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     if (cancelling) CancelTripSheet(vm, detail) { cancelling = false }
+    if (editing) EditTripSheet(vm, detail) { editing = false }
     if (confirmHide) AlertDialog(onDismissRequest = { confirmHide = false }, icon = { Icon(Icons.Default.VisibilityOff, null) },
         title = { Text("Hide this trip?") }, text = { Text("It won't show in anyone's trip list. You can show it again from this menu.") },
         confirmButton = { TextButton(onClick = { confirmHide = false; vm.setTripHidden(true) }) { Text("Hide trip") } },
@@ -766,5 +783,60 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             if (vm.busy) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp) else Text(if (hide) "Cancel & hide trip" else "Cancel trip", fontWeight = FontWeight.SemiBold)
         }
         TextButton(onClick = dismiss, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Keep trip") }
+    }
+}
+
+/** Organizer editor for the trip details and cover photo. The photo uploads as soon as it is picked. */
+@Composable private fun EditTripSheet(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val trip = detail.trip
+    var name by rememberSaveable { mutableStateOf(trip.name) }; var destination by rememberSaveable { mutableStateOf(trip.destination) }; var about by rememberSaveable { mutableStateOf(trip.description) }
+    var start by rememberSaveable { mutableStateOf(trip.startsOn) }; var end by rememberSaveable { mutableStateOf(trip.endsOn) }
+    var currency by rememberSaveable { mutableStateOf(trip.currency) }; var zone by rememberSaveable { mutableStateOf(trip.timezone) }
+    var preparing by remember { mutableStateOf(false) }
+    val currencyLocked = detail.expenses.isNotEmpty()
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            preparing = true
+            val jpeg = Photos.jpeg(context, uri)
+            preparing = false
+            if (jpeg == null) Toast.makeText(context, "That photo couldn't be opened. Try another one.", Toast.LENGTH_LONG).show() else vm.uploadCover(jpeg)
+        }
+    }
+    val changed = name != trip.name || destination != trip.destination || about != trip.description || start != trip.startsOn || end != trip.endsOn || currency != trip.currency || zone != trip.timezone
+    FormSheet("Edit trip", vm, dismiss) {
+        Box(Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(18.dp)).background(Sage).clickable(enabled = !vm.busy && !preparing) { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+            if (trip.coverUrl != null) AsyncImage(model = trip.coverUrl, contentDescription = "Trip cover photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.AddPhotoAlternate, null, tint = Forest, modifier = Modifier.size(32.dp))
+                Text("Add a cover photo", color = Forest, fontWeight = FontWeight.SemiBold)
+                Text("Shown on everyone's trip card", color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            if (preparing || vm.busy) Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White) }
+            Row(Modifier.align(Alignment.BottomEnd).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (trip.coverUrl != null) SmallFloatingActionButton(onClick = { if (!vm.busy) vm.removeCover() }, containerColor = Color.White, contentColor = Danger) { Icon(Icons.Default.Delete, "Remove cover photo") }
+                ExtendedFloatingActionButton(onClick = { if (!vm.busy && !preparing) pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    containerColor = Color.White, contentColor = Forest, modifier = Modifier.height(40.dp),
+                    icon = { Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp)) }, text = { Text(if (trip.coverUrl != null) "Change" else "Upload") })
+            }
+        }
+        Field("Trip name", name, { name = it }, leading = Icons.Default.Luggage)
+        Field("Destination", destination, { destination = it }, leading = Icons.Default.Place)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DateField("Starts", start, { start = it; if (end < it) end = it }, Modifier.weight(1f))
+            DateField("Ends", end, { end = it }, Modifier.weight(1f), min = start)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) {
+                if (currencyLocked) OutlinedTextField(currency, {}, label = { Text("Currency") }, readOnly = true, enabled = false, shape = RoundedCornerShape(12.dp), supportingText = { Text("Locked: has expenses") }, modifier = Modifier.fillMaxWidth())
+                else Choice("Currency", currency, listOf("PHP", "USD", "EUR", "GBP", "SGD", "AUD", "CAD").map { it to it }, { currency = it })
+            }
+            Box(Modifier.weight(1.4f)) { Choice("Time zone", zone, (timezones + listOf(zone)).distinct().map { it to it.replace('_', ' ') }, { zone = it }) }
+        }
+        Field("About this trip", about, { about = it }, singleLine = false)
+        Submit("Save changes", vm.busy, changed && name.isNotBlank() && destination.isNotBlank() && end >= start, Icons.Default.Check) {
+            vm.updateTrip(TripDraft(name, destination, start, end, currency, zone, about), dismiss)
+        }
     }
 }

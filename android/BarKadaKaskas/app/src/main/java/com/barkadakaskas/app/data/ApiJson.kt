@@ -30,6 +30,8 @@ internal object ApiJson {
         status = json.text("status").ifBlank { "planning" },
         cancellationReason = json.textOrNull("cancellation_reason"),
         hidden = json.textOrNull("hidden_at") != null,
+        description = json.text("description"),
+        coverUrl = json.textOrNull("cover_url"),
     )
 
     fun trips(data: JSONArray?): List<Trip> = data.mapObjects(::trip)
@@ -119,6 +121,7 @@ internal object ApiJson {
         .put("name", draft.name.trim()).put("destination", draft.destination.trim())
         .put("starts_on", draft.startsOn.trim()).put("ends_on", draft.endsOn.trim())
         .put("timezone", draft.timezone.trim()).put("currency_code", draft.currency)
+        .put("description", draft.description.trim().ifBlank { null } ?: JSONObject.NULL)
 
     fun stopBody(draft: StopDraft) = JSONObject()
         .put("title", draft.title.trim()).put("location", draft.location.trim()).put("description", draft.description.trim())

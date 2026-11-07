@@ -92,4 +92,13 @@ class ApiJsonTest {
         val body = ApiJson.cancelBody("  ", true)
         assertTrue(body.isNull("reason")); assertTrue(body.getBoolean("hide"))
     }
+
+    @Test fun tripReadsCoverAndSendsDescription() {
+        val trip = ApiJson.trip(JSONObject("""{"id":1,"name":"A","destination":"B","starts_on":"2026-11-08","ends_on":"2026-11-08","description":null,"cover_url":"https://example.test/trip-covers/abc.jpg"}"""))
+        assertEquals("https://example.test/trip-covers/abc.jpg", trip.coverUrl); assertEquals("", trip.description)
+        assertNull(ApiJson.trip(JSONObject("""{"id":2,"name":"A","destination":"B","starts_on":"2026-11-08","ends_on":"2026-11-08","cover_url":null}""")).coverUrl)
+        val body = ApiJson.tripBody(com.barkadakaskas.app.domain.TripDraft("A", "B", "2026-11-08", "2026-11-09", description = "  Carpool  "))
+        assertEquals("Carpool", body.getString("description"))
+        assertTrue(ApiJson.tripBody(com.barkadakaskas.app.domain.TripDraft("A", "B", "2026-11-08", "2026-11-09")).isNull("description"))
+    }
 }

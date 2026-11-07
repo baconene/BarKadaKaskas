@@ -54,6 +54,20 @@ class TripController extends Controller
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
         ]);
     }
+    /** Organizer edits the trip details. Currency is fixed once expenses exist, so amounts keep their meaning. */
+    public function update(Request $request, Trip $trip)
+    {
+        Gate::authorize('plan', $trip);
+        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => 'required|in:PHP,USD,EUR,GBP,SGD,AUD,CAD']);
+        if ($data['currency_code'] !== $trip->currency_code && $trip->expenses()->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['currency_code' => 'The currency cannot change after expenses have been recorded.']);
+        }
+        $before = $trip->only(array_keys($data));
+        $trip->update($data);
+        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'updated', 'before' => $before, 'after' => $trip->only(array_keys($data))]);
+        return $request->is('api/*') ? response()->json(['data' => $trip->fresh()]) : back();
+    }
+
     /** Organizer cancels the trip, optionally hiding it from everyone's trip list. */
     public function cancel(Request $request, Trip $trip)
     {

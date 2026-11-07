@@ -19,6 +19,8 @@ struct Trip: Codable, Identifiable {
     /// Set when the organizer hid this cancelled trip from trip lists.
     let hidden_at: String?
     var isCancelled: Bool { status == "cancelled" }
+    /// Organizer's cover photo; a plain public image URL.
+    let cover_url: String?
     let members_count: Int?
     let members: [TripMember]?
     let itinerary_items: [ItineraryStop]?

@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 import CoreLocation
 import UniformTypeIdentifiers
 
@@ -8,6 +10,7 @@ struct TripDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tab = 0
     @State private var cancelling = false
+    @State private var editingTrip = false
     @State private var confirmHide = false
 
     /// Hiding removes the trip from the list, so go back to it afterwards.
@@ -36,6 +39,7 @@ struct TripDetailView: View {
                         ToolbarItem(placement: .topBarTrailing) {
                             Menu {
                                 if !detail.trip.isCancelled {
+                                    Button("Edit trip & cover photo", systemImage: "pencil") { editingTrip = true }
                                     Button("Cancel trip…", systemImage: "xmark.circle", role: .destructive) { cancelling = true }
                                 } else {
                                     Button("Reopen trip", systemImage: "arrow.uturn.backward.circle") { lifecycle(hideAfter: false) { try await store.repository.reopenTrip(tripID: tripID) } }
@@ -47,6 +51,7 @@ struct TripDetailView: View {
                         }
                     }
                 }
+                .sheet(isPresented: $editingTrip) { EditTripView(detail: detail) }
                 .sheet(isPresented: $cancelling) {
                     CancelTripSheet(tripName: detail.trip.name) { reason, hide in
                         lifecycle(hideAfter: hide) { try await store.repository.cancelTrip(tripID: tripID, reason: reason, hide: hide) }
@@ -60,6 +65,113 @@ struct TripDetailView: View {
                 VStack { EmptyMessage(title: "Couldn’t load this trip", subtitle: "Check your connection and try again.", icon: "wifi.exclamationmark"); Button("Try again") { Task { await store.loadTrip(tripID) } } }
             }
         }.task { await store.loadTrip(tripID) }
+    }
+}
+
+/// Organizer editor for the trip details and cover photo. A picked photo uploads straight away.
+private struct EditTripView: View {
+    let detail: TripDetail
+    @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""; @State private var destination = ""; @State private var about = ""
+    @State private var start = Date(); @State private var end = Date()
+    @State private var currency = "PHP"; @State private var timezone = "Asia/Manila"
+    @State private var photo: PhotosPickerItem?
+    @State private var uploading = false
+    private var trip: Trip { store.detail?.trip ?? detail.trip }
+    private var currencyLocked: Bool { !(detail.trip.expenses ?? []).isEmpty }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    ZStack(alignment: .bottomTrailing) {
+                        Group {
+                            if let url = trip.cover_url.flatMap(URL.init(string:)) {
+                                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
+                            } else {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "photo.badge.plus").font(.title).foregroundStyle(Theme.forest)
+                                    Text("Add a cover photo").font(.subheadline.bold()).foregroundStyle(Theme.forest)
+                                    Text("Shown on everyone’s trip card").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 170).background(Theme.sage).clipped()
+                        .overlay { if uploading { ZStack { Color.black.opacity(0.35); ProgressView().tint(.white) } } }
+                        HStack(spacing: 8) {
+                            if trip.cover_url != nil {
+                                Button(role: .destructive) { Task { await store.mutate { try await store.repository.removeCover(tripID: trip.id); store.trips = try await store.repository.trips() } } } label: { Image(systemName: "trash") }
+                                    .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.red)
+                                    .accessibilityLabel("Remove cover photo")
+                            }
+                            PhotosPicker(selection: $photo, matching: .images) { Label(trip.cover_url == nil ? "Upload" : "Change", systemImage: "camera.fill") }
+                                .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(Theme.forest)
+                        }.padding(10).font(.subheadline.bold())
+                    }
+                    .listRowInsets(EdgeInsets())
+                }
+                Section("The adventure") {
+                    TextField("Trip name", text: $name)
+                    TextField("Destination", text: $destination)
+                    TextField("About this trip", text: $about, axis: .vertical)
+                }
+                Section {
+                    DatePicker("Starts", selection: $start, displayedComponents: .date)
+                    DatePicker("Ends", selection: $end, in: start..., displayedComponents: .date)
+                    Picker("Currency", selection: $currency) { ForEach(["PHP", "USD", "EUR", "GBP", "SGD", "AUD", "CAD"], id: \.self) { Text($0) } }.disabled(currencyLocked)
+                    TextField("Time zone", text: $timezone).textInputAutocapitalization(.never).autocorrectionDisabled()
+                } header: { Text("Dates & currency") } footer: { if currencyLocked { Text("The currency is locked because expenses have been recorded.") } }
+            }
+            .navigationTitle("Edit trip").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            let input = TripInput(name: name, destination: destination, description: about, starts_on: TravelFormat.date(start), ends_on: TravelFormat.date(max(start, end)), timezone: timezone, currency_code: currency)
+                            let saved = await store.mutate {
+                                guard TimeZone(identifier: timezone) != nil else { throw MobileError.validation("Enter a valid time zone, such as Asia/Manila.") }
+                                try await store.repository.updateTrip(tripID: trip.id, input: input)
+                                store.trips = try await store.repository.trips()
+                            }
+                            if saved { dismiss() }
+                        }
+                    }.disabled(name.isEmpty || destination.isEmpty || store.busy || uploading)
+                }
+            }
+            .onAppear {
+                name = trip.name; destination = trip.destination; about = trip.description ?? ""
+                start = TravelFormat.parse(trip.starts_on); end = TravelFormat.parse(trip.ends_on)
+                currency = trip.currency_code; timezone = trip.timezone
+            }
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                Task {
+                    uploading = true
+                    defer { uploading = false; photo = nil }
+                    guard let data = try? await item.loadTransferable(type: Data.self), let jpeg = CoverPhoto.jpeg(from: data) else {
+                        store.error = "That photo couldn’t be opened. Try another one."; return
+                    }
+                    _ = await store.mutate { try await store.repository.uploadCover(tripID: trip.id, jpeg: jpeg); store.trips = try await store.repository.trips() }
+                }
+            }
+        }
+    }
+}
+
+/// Downscales a picked photo (longest side 1600 pt) and re-encodes it as JPEG before upload.
+enum CoverPhoto {
+    static func jpeg(from data: Data, maxSide: CGFloat = 1600) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maxSide else { return image.jpegData(compressionQuality: 0.85) }
+        let scale = maxSide / longest
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat.default(); format.scale = 1
+        // Drawing also bakes in the photo's orientation.
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        return resized.jpegData(compressionQuality: 0.85)
     }
 }
 

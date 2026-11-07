@@ -86,19 +86,28 @@ struct APIError: LocalizedError {
     }
 
     func uploadReceipt(tripID: Int, expenseID: Int, data: Data, fileName: String, mimeType: String) async throws {
+        try await upload("/trips/\(tripID)/expenses/\(expenseID)/receipts", field: "receipt", data: data, fileName: fileName, mimeType: mimeType)
+    }
+
+    /// Sends one file as multipart/form-data.
+    private func upload(_ path: String, field: String, data: Data, fileName: String, mimeType: String) async throws {
         let boundary = "BarKadaKaskas-\(UUID().uuidString)"
         let safeName = fileName.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
         var body = Data()
-        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"receipt\"; filename=\"\(safeName)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"\(safeName)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
         body.append(data)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        _ = try await request("POST", "/trips/\(tripID)/expenses/\(expenseID)/receipts", body: body, contentType: "multipart/form-data; boundary=\(boundary)")
+        _ = try await request("POST", path, body: body, contentType: "multipart/form-data; boundary=\(boundary)")
     }
 
     func createSettlement(tripID: Int, input: SettlementInput) async throws { try await call("POST", "/trips/\(tripID)/settlements", json: input) }
     func confirmSettlement(tripID: Int, settlementID: Int) async throws { try await call("POST", "/trips/\(tripID)/settlements/\(settlementID)/confirm") }
 
     // MARK: Trip lifecycle
+
+    func updateTrip(tripID: Int, input: TripInput) async throws { try await call("PATCH", "/trips/\(tripID)", json: input) }
+    func uploadCover(tripID: Int, jpeg: Data) async throws { try await upload("/trips/\(tripID)/cover", field: "cover", data: jpeg, fileName: "cover.jpg", mimeType: "image/jpeg") }
+    func removeCover(tripID: Int) async throws { try await call("DELETE", "/trips/\(tripID)/cover") }
 
     func cancelTrip(tripID: Int, reason: String?, hide: Bool) async throws {
         let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -53,6 +53,18 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = repository.trip(current.trip.id)
         done()
     }
+    /** Edits that change the trip card (name, dates, cover) also reload the trips list. */
+    private fun editTrip(done: () -> Unit = {}, action: suspend (Long) -> Unit) = launch {
+        val id = detail?.trip?.id ?: return@launch
+        action(id)
+        detail = repository.trip(id)
+        trips = repository.trips()
+        done()
+    }
+    fun updateTrip(draft: TripDraft, done: () -> Unit) = editTrip(done) { repository.updateTrip(it, draft) }
+    fun uploadCover(jpeg: ByteArray) = editTrip { repository.uploadCover(it, jpeg) }
+    fun removeCover() = editTrip { repository.removeCover(it) }
+
     /** Hiding leaves the trip screen, since the trip no longer appears in the list. */
     fun cancelTrip(reason: String, hide: Boolean, done: () -> Unit) = launch {
         val current = detail ?: return@launch

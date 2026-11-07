@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, TripController};
+use App\Http\Controllers\{ExpenseController, SettlementController, TripController, TripCoverController};
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -8,12 +8,18 @@ Route::get('/', function () {
     return Inertia::render('Landing');
 })->name('home');
 
+// Cover photos are served by an unguessable name so the mobile apps can load them without a session.
+Route::get('trip-covers/{file}', [TripCoverController::class, 'show'])->middleware('throttle:240,1')->name('trip-covers.show');
+
 Route::get('join/{token}', [TripController::class, 'invitation'])->middleware('throttle:60,1')->name('invitations.show');
 
 Route::middleware('auth')->group(function () {
     Route::get('dashboard', [TripController::class, 'index'])->name('dashboard');
     Route::post('trips', [TripController::class, 'store'])->name('trips.store');
     Route::get('trips/{trip}', [TripController::class, 'show'])->name('trips.show');
+    Route::patch('trips/{trip}', [TripController::class, 'update'])->name('trips.update');
+    Route::post('trips/{trip}/cover', [TripCoverController::class, 'store'])->middleware('throttle:20,1')->name('trips.cover.store');
+    Route::delete('trips/{trip}/cover', [TripCoverController::class, 'destroy'])->name('trips.cover.destroy');
     Route::post('trips/{trip}/cancel', [TripController::class, 'cancel'])->name('trips.cancel');
     Route::post('trips/{trip}/reopen', [TripController::class, 'reopen'])->name('trips.reopen');
     Route::patch('trips/{trip}/visibility', [TripController::class, 'visibility'])->name('trips.visibility');

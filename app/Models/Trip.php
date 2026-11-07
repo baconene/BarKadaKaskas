@@ -8,8 +8,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Trip extends Model
 {
-    protected $fillable = ['organizer_user_id', 'name', 'description', 'destination', 'starts_on', 'ends_on', 'timezone', 'currency_code', 'status', 'cancelled_at', 'cancellation_reason', 'hidden_at'];
+    protected $fillable = ['organizer_user_id', 'name', 'description', 'destination', 'starts_on', 'ends_on', 'timezone', 'currency_code', 'status', 'cancelled_at', 'cancellation_reason', 'hidden_at', 'cover_path'];
+    protected $hidden = ['cover_path'];
+    protected $appends = ['cover_url'];
     protected function casts(): array { return ['starts_on' => 'date:Y-m-d', 'ends_on' => 'date:Y-m-d', 'cancelled_at' => 'datetime', 'hidden_at' => 'datetime']; }
+    /** Public URL of the organizer's cover photo, or null. */
+    public function getCoverUrlAttribute(): ?string { return $this->cover_path ? route('trip-covers.show', basename($this->cover_path)) : null; }
     public function isCancelled(): bool { return $this->status === 'cancelled'; }
     public function organizer(): BelongsTo { return $this->belongsTo(User::class, 'organizer_user_id'); }
     public function members(): HasMany { return $this->hasMany(TripMember::class); }

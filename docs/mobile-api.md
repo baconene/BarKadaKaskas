@@ -36,6 +36,9 @@ message; expense status changes, merchant payments, share confirmations and sett
 | POST | `/trips` | `{name,destination,description?,starts_on,ends_on,timezone,currency_code}` → 201 `{data:TripSummary}` |
 | GET | `/trips/{trip}` | `{data:{trip,categories,balances,expense_shares,current_member_id,is_organizer}}` |
 | POST | `/trips/{trip}/invitations` | Organizer only → 201 `{data:{token,url,expires_at}}` |
+| PATCH | `/trips/{trip}` | Organizer only, not cancelled. Same body as create; `currency_code` cannot change once expenses exist (422) |
+| POST | `/trips/{trip}/cover` | Organizer only. Multipart `cover` (jpg/png/webp, ≤ 8 MB, ≥ 200×120) → `{data:Trip}` with `cover_url` |
+| DELETE | `/trips/{trip}/cover` | Organizer only. Removes the cover photo |
 | POST | `/trips/{trip}/cancel` | Organizer only. Body `{reason?, hide?}`. Sets `status: "cancelled"`; `hide: true` also sets `hidden_at`. 422 if already cancelled |
 | POST | `/trips/{trip}/reopen` | Organizer only. Back to `planning`, clears `cancelled_at`, `cancellation_reason`, `hidden_at` |
 | PATCH | `/trips/{trip}/visibility` | Organizer only. Body `{hidden}`. Only a cancelled trip can be hidden (422 otherwise) |
@@ -43,7 +46,8 @@ message; expense status changes, merchant payments, share confirmations and sett
 | POST | `/invitations/{token}/join` | Authenticated → `{data:{trip_id}}` |
 
 TripSummary: `id,name,destination,description,starts_on,ends_on,timezone,
-currency_code,organizer_user_id,members_count` (count supplied by list).
+currency_code,organizer_user_id,members_count,status,cancellation_reason,hidden_at,cover_url`.
+`cover_url` is a plain image URL (no auth header needed; the file name is unguessable) (count supplied by list).
 Trip detail `trip` additionally includes `members`, `itinerary_items`,
 `expenses`, `settlements`. Members: `id,user_id,status,user:{id,name}`. No
 member email or Google API keys are exposed. Category: `id,name` (other model

@@ -79,6 +79,9 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
 
     override suspend fun createInvitation(tripId: Long): String = data(request("POST", "/trips/$tripId/invitations")).getString("url")
 
+    override suspend fun updateTrip(tripId: Long, draft: TripDraft) { request("PATCH", "/trips/$tripId", ApiJson.tripBody(draft)) }
+    override suspend fun uploadCover(tripId: Long, jpeg: ByteArray) { request("POST", "/trips/$tripId/cover", raw = multipart("cover", "cover.jpg", "image/jpeg", jpeg)) }
+    override suspend fun removeCover(tripId: Long) { request("DELETE", "/trips/$tripId/cover") }
     override suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean) { request("POST", "/trips/$tripId/cancel", ApiJson.cancelBody(reason, hide)) }
     override suspend fun reopenTrip(tripId: Long) { request("POST", "/trips/$tripId/reopen") }
     override suspend fun setTripHidden(tripId: Long, hidden: Boolean) { request("PATCH", "/trips/$tripId/visibility", org.json.JSONObject().put("hidden", hidden)) }
@@ -88,7 +91,18 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     private fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(120).ifBlank { "Android" }
 
     /** Sends one JSON request. Returns the parsed body, or null for 204 No Content. */
-    private suspend fun request(method: String, path: String, body: JSONObject? = null, auth: Boolean = true): JSONObject? = withContext(Dispatchers.IO) {
+    /** A non-JSON request body, e.g. a multipart photo upload. */
+    private class Payload(val contentType: String, val bytes: ByteArray)
+
+    /** multipart/form-data with a single file field. */
+    private fun multipart(field: String, fileName: String, mimeType: String, bytes: ByteArray): Payload {
+        val boundary = "BarKada" + java.util.UUID.randomUUID().toString().replace("-", "")
+        val head = "--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$fileName\"\r\nContent-Type: $mimeType\r\n\r\n".toByteArray(Charsets.UTF_8)
+        val tail = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        return Payload("multipart/form-data; boundary=$boundary", head + bytes + tail)
+    }
+
+    private suspend fun request(method: String, path: String, body: JSONObject? = null, auth: Boolean = true, raw: Payload? = null): JSONObject? = withContext(Dispatchers.IO) {
         val base = store.serverUrl.ifBlank { throw ApiException("Enter your server address first.") }
         val token = store.token
         if (auth && token == null) throw ApiException("Please log in again.", 401)
@@ -101,7 +115,13 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
             connection.readTimeout = 30_000
             connection.setRequestProperty("Accept", "application/json")
             if (auth) connection.setRequestProperty("Authorization", "Bearer $token")
-            if (body != null || method != "GET") {
+            if (raw != null) {
+                connection.doOutput = true
+                connection.readTimeout = 60_000
+                connection.setRequestProperty("Content-Type", raw.contentType)
+                connection.setFixedLengthStreamingMode(raw.bytes.size)
+                connection.outputStream.use { it.write(raw.bytes) }
+            } else if (body != null || method != "GET") {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.outputStream.use { it.write((body ?: JSONObject()).toString().toByteArray(Charsets.UTF_8)) }

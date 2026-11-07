@@ -44,6 +44,8 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     // Google Maps in Compose (used when MAPS_API_KEY is set).
     implementation("com.google.maps.android:maps-compose:6.4.1")
+    // Trip cover photos.
+    implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     // Android's org.json is a stub on the JVM; use the real library for unit tests.

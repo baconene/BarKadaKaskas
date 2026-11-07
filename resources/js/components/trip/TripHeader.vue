@@ -4,8 +4,8 @@ import { ArrowLeft, CalendarDays, Ellipsis, MapPin, UserPlus, Users } from 'luci
 import { googleMapsUrl } from '@/lib/maps';
 
 /** Compact trip header with the money summary strip. Metrics open the related screen. */
-const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean; cancelled?: boolean; hidden?: boolean }>();
-const emit = defineEmits<{ open: [screen: 'expenses' | 'group']; manage: [action: 'cancel' | 'reopen' | 'hide' | 'show'] }>();
+const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean; cancelled?: boolean; hidden?: boolean; coverUrl?: string | null }>();
+const emit = defineEmits<{ open: [screen: 'expenses' | 'group']; manage: [action: 'cancel' | 'reopen' | 'hide' | 'show' | 'edit'] }>();
 const range = (() => {
     const fmt = (value: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-PH', { ...options, timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
     const sameYear = props.startsOn.slice(0, 4) === props.endsOn.slice(0, 4);
@@ -15,6 +15,7 @@ const range = (() => {
 
 <template>
     <header class="trip-header">
+        <div v-if="coverUrl" class="trip-cover-banner"><img :src="coverUrl" alt="" /></div>
         <div class="trip-header-top">
             <Link href="/dashboard" class="back" aria-label="All trips"><ArrowLeft :size="18" /></Link>
             <div class="trip-id">
@@ -32,6 +33,7 @@ const range = (() => {
                         <Link role="menuitem" href="/dashboard">All trips</Link>
                         <template v-if="isOrganizer">
                             <hr />
+                            <button v-if="!cancelled" role="menuitem" type="button" @click="emit('manage', 'edit')">Edit trip &amp; cover photo</button>
                             <button v-if="!cancelled" role="menuitem" type="button" class="danger" @click="emit('manage', 'cancel')">Cancel trip…</button>
                             <template v-else>
                                 <button role="menuitem" type="button" @click="emit('manage', 'reopen')">Reopen trip</button>
@@ -53,6 +55,8 @@ const range = (() => {
 
 <style scoped>
 .trip-header{display:grid;gap:14px;margin-bottom:16px}
+.trip-cover-banner{height:clamp(110px,22vw,190px);border-radius:18px;overflow:hidden;background:#dce7cb}
+.trip-cover-banner img{width:100%;height:100%;object-fit:cover}
 .trip-header-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:10px}
 .back,.round{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer;list-style:none}
 .round::-webkit-details-marker{display:none}

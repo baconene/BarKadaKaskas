@@ -8,11 +8,12 @@ import TripItinerary from '@/components/TripItinerary.vue';
 import TripGroup from '@/components/trip/TripGroup.vue';
 import TripHeader from '@/components/trip/TripHeader.vue';
 import TripCancelDialog from '@/components/trip/TripCancelDialog.vue';
+import TripEditDialog from '@/components/trip/TripEditDialog.vue';
 import TripNavigation, { type TripScreen } from '@/components/trip/TripNavigation.vue';
 import type { ItineraryStop } from '@/lib/itinerary';
 type Member={id:number;user_id?:number;status?:string;user:{id?:number;name:string}};
 type Expense={id:number;title:string;merchant:string;status:string;version:number;total_minor:number;incurred_at:string;category_id:number;split_method:string;category:{name:string};cancellation_reason:string|null;payments:{trip_member_id:number;amount_minor:number}[];allocations:{trip_member_id:number;amount_minor:number;basis_value:string|null;expense_item_id:number|null}[];items:{id:number;description:string;line_total_minor:number}[];receipts:{id:number;processing_status:string}[]};
-const props=defineProps<{trip:{id:number;organizer_user_id?:number;status?:string;cancellation_reason?:string|null;cancelled_at?:string|null;hidden_at?:string|null;name:string;destination:string;description:string;starts_on:string;ends_on:string;timezone:string;currency_code:string;members:Member[];expenses:Expense[];itinerary_items:ItineraryStop[];settlements:{id:number;expense_id:number|null;from_member_id:number;to_member_id:number;amount_minor:number;status:string;payment_method:string;paid_at:string|null;confirmed_at:string|null}[]};googleMaps:{browserKey:string;mapId:string};categories:{id:number;name:string}[];balances:{member_id:number;name:string;net_minor:number}[];isOrganizer:boolean;currentMemberId:number;invitationUrl:string|null;expenseShares:Record<number,{member_id:number;share_minor:number;covered_minor:number;remaining_minor:number}[]>}>();
+const props=defineProps<{trip:{id:number;organizer_user_id?:number;status?:string;cancellation_reason?:string|null;cancelled_at?:string|null;hidden_at?:string|null;cover_url?:string|null;name:string;destination:string;description:string;starts_on:string;ends_on:string;timezone:string;currency_code:string;members:Member[];expenses:Expense[];itinerary_items:ItineraryStop[];settlements:{id:number;expense_id:number|null;from_member_id:number;to_member_id:number;amount_minor:number;status:string;payment_method:string;paid_at:string|null;confirmed_at:string|null}[]};googleMaps:{browserKey:string;mapId:string};categories:{id:number;name:string}[];balances:{member_id:number;name:string;net_minor:number}[];isOrganizer:boolean;currentMemberId:number;invitationUrl:string|null;expenseShares:Record<number,{member_id:number;share_minor:number;covered_minor:number;remaining_minor:number}[]>}>();
 // Which trip screen is shown. Kept in the URL hash (so Back works) and per browser tab (so it survives saves).
 type PlanScreen='today'|'itinerary'|'map';
 const screens:TripScreen[]=['today','itinerary','map','expenses','group'];
@@ -25,7 +26,9 @@ const isPlan=computed(()=>['today','itinerary','map'].includes(screen.value));
 // A cancelled trip locks the plan and new expenses; settling up stays available.
 const cancelled=computed(()=>props.trip.status==='cancelled');
 const cancelling=ref(false);
-function manageTrip(action:'cancel'|'reopen'|'hide'|'show'){
+const editingTrip=ref(false);
+function manageTrip(action:'cancel'|'reopen'|'hide'|'show'|'edit'){
+    if(action==='edit'){editingTrip.value=true;return;}
     if(action==='cancel'){cancelling.value=true;return;}
     if(action==='reopen'){router.post(`/trips/${props.trip.id}/reopen`,{},{preserveScroll:true});return;}
     router.patch(`/trips/${props.trip.id}/visibility`,{hidden:action==='hide'},{preserveScroll:true});
@@ -119,13 +122,14 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 </script>
 <template>
 <Head :title="trip.name"/><TravelLayout app-nav>
- <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" :cancelled="cancelled" :hidden="!!trip.hidden_at" @open="screen=$event" @manage="manageTrip"/>
+ <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" :cancelled="cancelled" :hidden="!!trip.hidden_at" :cover-url="trip.cover_url" @open="screen=$event" @manage="manageTrip"/>
  <div v-if="cancelled" class="cancelled-banner" role="status">
   <strong>This trip was cancelled<span v-if="trip.hidden_at"> and is hidden from trip lists</span>.</strong>
   <span v-if="trip.cancellation_reason">“{{ trip.cancellation_reason }}”</span>
   <span>The plan and new expenses are locked. You can still record repayments and settle up.</span>
   <button v-if="isOrganizer" type="button" class="btn secondary" @click="manageTrip('reopen')">Reopen trip</button>
  </div>
+ <TripEditDialog v-if="editingTrip" :trip="trip" :has-expenses="trip.expenses.length>0" @close="editingTrip=false"/>
  <TripCancelDialog v-if="cancelling" :trip-id="trip.id" :trip-name="trip.name" @close="cancelling=false"/>
  <TripNavigation v-model="screen" :badges="{group:pendingForMe}"/>
 

@@ -92,8 +92,8 @@ class ExpenseController extends Controller
     public function sharePaid(Request $request, Trip $trip, Expense $expense, \App\Services\ExpenseShares $shares)
     {
         abort_unless($expense->trip_id === $trip->id, 404);
-        $data = $request->validate(['member_id' => 'required|integer', 'version' => 'required|integer']);
-        $shares->markPaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version']);
+        $data = $request->validate(['member_id' => 'required|integer', 'version' => 'required|integer', 'settlement_id' => 'nullable|integer', 'new_payment' => 'sometimes|boolean']);
+        $shares->markPaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version'], isset($data['settlement_id']) ? (int) $data['settlement_id'] : null, (bool) ($data['new_payment'] ?? false));
         return back();
     }
     public function payment(Request $request, Trip $trip, Expense $expense)

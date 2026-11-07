@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ExpenseStatus;
-use App\Models\{ActivityLog, Expense, User};
+use App\Models\{ActivityLog, Expense, Settlement, Trip, User};
 use Illuminate\Support\Facades\{DB, Gate};
 use Illuminate\Validation\ValidationException;
 
@@ -33,35 +33,59 @@ class ExpenseShares
         return array_values($rows);
     }
 
-    public function markPaid(Expense $expense, int $memberId, User $actor, int $version): void
+    public function markPaid(Expense $expense, int $memberId, User $actor, int $version, ?int $settlementId = null, bool $newPayment = false): void
     {
-        Gate::forUser($actor)->authorize('update', $expense->trip);
-        DB::transaction(function () use ($expense, $memberId, $actor, $version) {
+        Gate::forUser($actor)->authorize('view', $expense->trip);
+        DB::transaction(function () use ($expense, $memberId, $actor, $version, $settlementId, $newPayment) {
+            // Serialize application of a trip-wide reimbursement across different bills.
+            $trip = Trip::whereKey($expense->trip_id)->lockForUpdate()->firstOrFail();
             $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $actorMemberId = (int) $trip->members()->where('user_id', $actor->id)->value('id');
+            $organizer = $trip->organizer_user_id === $actor->id;
+            abort_unless($organizer || $expense->payments()->where('trip_member_id', $actorMemberId)->whereNotNull('paid_at')->exists(), 403);
             $fail = fn ($message) => throw ValidationException::withMessages(['share' => $message]);
             if ($expense->version !== $version) $fail('This expense changed. Refresh before marking a share paid.');
             if (! in_array($expense->status, [ExpenseStatus::Open, ExpenseStatus::Completed, ExpenseStatus::Closed], true)) $fail('Shares cannot be paid on a draft or cancelled expense.');
             if ((int) $expense->payments()->whereNotNull('paid_at')->sum('amount_minor') !== $expense->total_minor || (int) $expense->allocations()->sum('amount_minor') !== $expense->total_minor) $fail('Record the full merchant payment and allocate the total before recording reimbursements.');
-            // Trip-wide reimbursements cannot reliably be attributed to one expense.
-            if ($expense->trip->settlements()->whereNull('expense_id')->whereIn('status', ['pending', 'confirmed'])->exists()) $fail('This trip has general reimbursements. Reconcile those first; they cannot automatically be attributed to this expense.');
             $rows = collect($this->rows($expense));
             $row = $rows->firstWhere('member_id', $memberId);
             if (! $row) $fail('This traveler has no assigned share.');
             $remaining = $row['remaining_minor'];
             if ($remaining === 0) return;
+            $creditors = $rows->filter(fn ($creditor) => $creditor['covered_minor'] > $creditor['share_minor'] && ($organizer || $creditor['member_id'] === $actorMemberId));
+            if ($creditors->isEmpty()) $fail('You can only confirm repayments for money owed to you.');
+            $matching = $trip->settlements()->whereNull('expense_id')->where('from_member_id', $memberId)->whereIn('to_member_id', $creditors->pluck('member_id'))->whereIn('status', ['pending', 'confirmed']);
+            if (! $settlementId && ! $newPayment && (clone $matching)->exists()) $fail('Choose the existing reimbursement to apply, or select a separate new payment.');
+            $existing = $settlementId ? (clone $matching)->whereKey($settlementId)->lockForUpdate()->first() : null;
+            if ($settlementId && ! $existing) $fail('That reimbursement is no longer available for this share. Refresh and select again.');
+            $before = ['status' => $expense->status->value, 'source_settlement' => $existing?->toArray()];
             if ($expense->status === ExpenseStatus::Open) {
-                app(ExpenseLifecycle::class)->transition($expense, $actor, ExpenseStatus::Completed, $version);
-                $expense->refresh();
+                $expense->update(['status' => ExpenseStatus::Completed, 'completed_at' => now()]);
             }
-            foreach ($rows as $creditor) {
+            $recorded = 0;
+            foreach ($creditors as $creditor) {
                 $amount = min($remaining, max(0, $creditor['covered_minor'] - $creditor['share_minor']));
+                if ($existing) {
+                    if ($existing->to_member_id !== $creditor['member_id']) continue;
+                    $amount = min($amount, $existing->amount_minor);
+                }
                 if ($amount === 0) continue;
-                $expense->settlements()->create(['trip_id' => $expense->trip_id, 'from_member_id' => $memberId, 'to_member_id' => $creditor['member_id'], 'amount_minor' => $amount, 'currency_code' => $expense->currency_code, 'payment_method' => 'other', 'status' => 'confirmed', 'paid_at' => now(), 'confirmed_at' => now()]);
+                $values = ['trip_id' => $expense->trip_id, 'expense_id' => $expense->id, 'from_member_id' => $memberId, 'to_member_id' => $creditor['member_id'], 'amount_minor' => $amount, 'currency_code' => $expense->currency_code, 'payment_method' => $existing?->payment_method ?? 'other', 'status' => 'confirmed', 'paid_at' => $existing?->paid_at ?? now(), 'confirmed_at' => $existing?->confirmed_at ?? now()];
+                if ($existing && $existing->amount_minor === $amount) {
+                    $existing->update($values);
+                } else {
+                    if ($existing) {
+                        // Preserve the unallocated remainder; total recorded money is unchanged.
+                        $existing->decrement('amount_minor', $amount);
+                    }
+                    $expense->settlements()->create($values);
+                }
                 $remaining -= $amount;
+                $recorded += $amount;
             }
-            if ($remaining !== 0) $fail('The recorded payments do not cover this reimbursement.');
+            if ($recorded === 0) $fail('No outstanding repayment can be confirmed.');
             $expense->increment('version');
-            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $actor->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'share_paid', 'after' => ['member_id' => $memberId, 'amount_minor' => $row['remaining_minor']]]);
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $actor->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'share_paid', 'before' => $before, 'after' => ['member_id' => $memberId, 'amount_minor' => $recorded, 'source_settlement_id' => $settlementId, 'remaining_minor' => $remaining, 'status' => $expense->status->value]]);
         });
     }
 }

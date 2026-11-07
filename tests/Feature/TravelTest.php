@@ -282,4 +282,49 @@ class TravelTest extends TestCase
         $this->assertSame(ExpenseStatus::Closed, $expense->fresh()->status);
         $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
     }
+
+    public function test_payer_can_confirm_existing_reimbursement_without_being_organizer(): void
+    {
+        $expense = $this->createExpense();
+        $this->trip->update(['organizer_user_id' => $this->friend->id]);
+        $settlement = $this->trip->settlements()->create(['from_member_id' => $this->friendMember, 'to_member_id' => $this->ownerMember, 'amount_minor' => 5000, 'currency_code' => 'PHP', 'payment_method' => 'gcash', 'status' => 'pending', 'paid_at' => now()]);
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => 1, 'settlement_id' => $settlement->id])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('settlements', 1);
+        $this->assertSame($expense->id, $settlement->fresh()->expense_id);
+        $this->assertSame('confirmed', $settlement->fresh()->status);
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
+
+    public function test_applying_confirmed_reimbursement_keeps_total_money_unchanged(): void
+    {
+        $expense = $this->createExpense(); $this->changeStatus($expense, 'completed');
+        $settlement = $this->trip->settlements()->create(['from_member_id' => $this->friendMember, 'to_member_id' => $this->ownerMember, 'amount_minor' => 8000, 'currency_code' => 'PHP', 'payment_method' => 'cash', 'status' => 'confirmed', 'paid_at' => now(), 'confirmed_at' => now()]);
+        $before = (new TripBalances)->calculate($this->trip);
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version, 'settlement_id' => $settlement->id])->assertSessionHasNoErrors();
+        $this->assertSame(3000, $settlement->fresh()->amount_minor);
+        $this->assertNull($settlement->fresh()->expense_id);
+        $this->assertSame(8000, (int) $this->trip->settlements()->sum('amount_minor'));
+        $this->assertSame($before, (new TripBalances)->calculate($this->trip));
+        $this->assertSame(5000, (int) $expense->settlements()->sum('amount_minor'));
+    }
+
+    public function test_unrelated_general_reimbursement_does_not_block_share_confirmation(): void
+    {
+        $expense = $this->createExpense();
+        $this->trip->settlements()->create(['from_member_id' => $this->ownerMember, 'to_member_id' => $this->friendMember, 'amount_minor' => 100, 'currency_code' => 'PHP', 'payment_method' => 'cash', 'status' => 'pending', 'paid_at' => now()]);
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasNoErrors();
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
+
+    public function test_existing_payment_requires_selection_and_cannot_be_reused_on_another_expense(): void
+    {
+        $expense = $this->createExpense();
+        $settlement = $this->trip->settlements()->create(['from_member_id' => $this->friendMember, 'to_member_id' => $this->ownerMember, 'amount_minor' => 5000, 'currency_code' => 'PHP', 'payment_method' => 'cash', 'status' => 'confirmed', 'paid_at' => now()]);
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid";
+        $this->post($url, ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasErrors('share');
+        $this->post($url, ['member_id' => $this->friendMember, 'version' => 1, 'settlement_id' => $settlement->id])->assertSessionHasNoErrors();
+        $other = $this->createExpense();
+        $this->post("/trips/{$this->trip->id}/expenses/{$other->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => 1, 'settlement_id' => $settlement->id])->assertSessionHasErrors('share');
+        $this->assertDatabaseCount('settlements', 1);
+    }
 }

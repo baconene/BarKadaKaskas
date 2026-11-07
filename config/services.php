@@ -7,10 +7,10 @@ return [
     ],
 
     // The landing page's "Download for Android" button. GitHub serves the newest release's APK at this
-    // permanent URL (published by .github/workflows/mobile.yml).
+    // permanent URL (published by .github/workflows/mobile.yml). An empty env value keeps the default.
     'android' => [
-        'download_url' => env('ANDROID_DOWNLOAD_URL', 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk'),
-        'releases_url' => env('ANDROID_RELEASES_URL', 'https://github.com/baconene/BarKadaKaskas/releases'),
+        'download_url' => env('ANDROID_DOWNLOAD_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk',
+        'releases_url' => env('ANDROID_RELEASES_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases',
     ],
 
     // Password for the organizer account created by SiquijorTripSeeder (only used when the account does not exist yet).

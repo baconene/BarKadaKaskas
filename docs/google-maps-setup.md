@@ -46,7 +46,9 @@ for routing; no live GPS tracking is performed.
 - Ferry, flight, and other transport have no Google route. Their stops are
   geocoded and joined by a direct line (dashed for flights, dotted for ferries
   and other transport) labelled with the straight-line distance. This needs the
-  Geocoding API; without it the map shows a notice and those legs stay unmapped.
+  Geocoding API (which requires billing on the Google Cloud project) for typed
+  addresses; stops picked from place search carry their own coordinates. Without
+  it the map shows a notice and typed-only legs stay unmapped.
 - If a road, walking, or transit route cannot be found (for example across
   water), the leg falls back to a direct line and says so.
 - Missing locations or transport choices leave a gap in the mapped path.

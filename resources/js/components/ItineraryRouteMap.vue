@@ -117,7 +117,7 @@ async function draw() {
         if (!bounds.isEmpty()) {
             if (marked.size === 1) { map.setCenter(bounds.getCenter()); map.setZoom(12); } else map.fitBounds(bounds, 45);
         }
-        if (geocodeDenied) notice.value = 'Flight and ferry journeys need the Geocoding API. Enable it in Google Cloud and allow it on this API key.';
+        if (geocodeDenied) notice.value = 'Some stops were typed without picking a Google suggestion, so they can’t be pinned. Edit those stops and choose the place from the search suggestions. (Typed addresses also work once the Geocoding API is enabled with billing on your Google Cloud project.)';
     } catch {
         if (version === generation) error.value = 'The map could not load. You can still open each journey in Google Maps.';
     } finally { if (version === generation) busy.value = false; }

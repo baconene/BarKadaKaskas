@@ -81,3 +81,34 @@ export function totalCost(stops: ItineraryStop[]): { min: number; max: number } 
     if (!priced.length) return null;
     return priced.reduce((sum, stop) => ({ min: sum.min + stop.cost_min_minor!, max: sum.max + stop.cost_max_minor! }), { min: 0, max: 0 });
 }
+
+export type ActivityKind = 'food' | 'flight' | 'ferry' | 'stay' | 'water' | 'sight' | 'shop' | 'place';
+const kindRules: [ActivityKind, RegExp][] = [
+    ['flight', /\b(flight|airport|depart manila|arrive in manila)\b/i],
+    ['ferry', /\b(ferry|port|boat|pier)\b/i],
+    ['food', /\b(breakfast|lunch|dinner|brunch|cafe|café|coffee|restaurant|food|eat|snack)\b/i],
+    ['stay', /\b(check in|check-in|check out|hotel|resort|night|rest|relax|cove|inn|hostel)\b/i],
+    ['water', /\b(beach|snorkel|swim|dive|falls|spring|sunset|island)\b/i],
+    ['shop', /\b(shop|souvenir|market|mall)\b/i],
+    ['sight', /\b(church|cave|tour|museum|viewpoint|tree|park|sightseeing|hike|boulevard)\b/i],
+];
+/** Best-guess activity type from its title, for an icon only. */
+export function activityKind(title: string): ActivityKind {
+    return kindRules.find(([, rule]) => rule.test(title))?.[0] ?? 'place';
+}
+
+/** Google Maps directions through a day's stops in order (consecutive duplicates removed). */
+export function dayDirectionsUrl(stops: ItineraryStop[]): string | null {
+    const points: string[] = [];
+    for (const stop of stops) {
+        if (!stop.location) continue;
+        const point = stop.latitude != null && stop.longitude != null ? `${stop.latitude},${stop.longitude}` : stop.location;
+        if (points[points.length - 1] !== point) points.push(point);
+    }
+    if (points.length < 2) return null;
+    // The Maps URL API accepts at most 9 waypoints between origin and destination.
+    const waypoints = points.slice(1, -1).slice(0, 9);
+    const params = new URLSearchParams({ api: '1', origin: points[0], destination: points[points.length - 1], travelmode: 'driving' });
+    if (waypoints.length) params.set('waypoints', waypoints.join('|'));
+    return `https://www.google.com/maps/dir/?${params}`;
+}

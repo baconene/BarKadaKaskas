@@ -1,257 +1,297 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
-import { useForm } from '@inertiajs/vue3';
-import { Bike, Bus, Car, CarTaxiFront, ChevronDown, Footprints, MapPin, Pencil, Plane, Plus, Route, Ship, TramFront, Wallet, X } from 'lucide-vue-next';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ChevronRight, ChevronUp, Navigation, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
 import ItineraryRouteMap, { type LegResult } from '@/components/ItineraryRouteMap.vue';
-import LocationSearch, { type PickedPlace } from '@/components/LocationSearch.vue';
-import { costRange, dayKey, dayLabel, orderedStops, samePlace, totalCost, transport, transportOptions, type ItineraryStop } from '@/lib/itinerary';
-import { googleMapsUrl } from '@/lib/maps';
+import ActivitySheet from '@/components/trip/ActivitySheet.vue';
+import DailyRouteSummary from '@/components/trip/DailyRouteSummary.vue';
+import DaySelector from '@/components/trip/DaySelector.vue';
+import DayTimeline from '@/components/trip/DayTimeline.vue';
+import StopFormSheet from '@/components/trip/StopFormSheet.vue';
+import { costRange, dayKey, directionsUrl, orderedStops, totalCost, transport, type ItineraryStop } from '@/lib/itinerary';
 
-const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string } }>();
+export type PlanView = 'today' | 'itinerary' | 'map';
+const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
+const emit = defineEmits<{ navigate: [view: PlanView] }>();
+
+// ---- Days -----------------------------------------------------------------------------
 const stops = computed(() => orderedStops(props.items));
-
-// ---- Days and filtering -------------------------------------------------------------
 const dayOf = (item: ItineraryStop) => dayKey(item.starts_at, props.timezone);
+const part = (key: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-PH', { ...options, timeZone: 'UTC' }).format(new Date(`${key}T00:00:00Z`));
 const days = computed(() => {
     const groups = new Map<string, { item: ItineraryStop; index: number }[]>();
     stops.value.forEach((item, index) => { const key = dayOf(item); groups.set(key, [...(groups.get(key) ?? []), { item, index }]); });
-    return [...groups].map(([key, entries], i) => ({ key, number: i + 1, label: dayLabel(key), entries, budget: totalCost(entries.map(e => e.item)) }));
+    return [...groups].map(([key, entries], i) => ({
+        key, number: i + 1, entries, count: entries.length,
+        weekday: part(key, { weekday: 'short' }), date: part(key, { month: 'short', day: 'numeric' }), long: part(key, { weekday: 'long', month: 'long', day: 'numeric' }),
+        budget: totalCost(entries.map(e => e.item)),
+        from: entries[0].item.location?.split(',')[0] ?? entries[0].item.title, to: entries[entries.length - 1].item.location?.split(',')[0] ?? '',
+    }));
 });
-const selectedDay = ref<string | null>(null);
-// Drop a day filter whose stops were all moved or deleted.
-const activeDay = computed(() => (days.value.some(day => day.key === selectedDay.value) ? selectedDay.value : null));
-const visibleDays = computed(() => (activeDay.value ? days.value.filter(day => day.key === activeDay.value) : days.value));
-const budget = computed(() => totalCost(visibleDays.value.flatMap(day => day.entries.map(e => e.item))));
+type Day = (typeof days.value)[number];
+const dayByKey = (key: string | null) => days.value.find(day => day.key === key) ?? null;
 
-// ---- Journeys (shared with the map) ---------------------------------------------------
-const selectedLeg = ref<number | null>(null);
-const legResults = ref<Record<number, LegResult>>({});
-const modeIcons: Record<string, unknown> = { flight: Plane, ferry: Ship, car: Car, van: Bus, taxi: CarTaxiFront, tricycle: CarTaxiFront, motorcycle: Bike, bicycle: Bike, walking: Footprints, transit: TramFront };
-const legInfo = (index: number) => {
-    const from = stops.value[index - 1]; const to = stops.value[index];
-    const mode = transport(to.transport_mode);
-    const same = samePlace(from, to);
-    return { from, to, mode, same, icon: same ? MapPin : (modeIcons[mode?.value ?? ''] ?? Route), summary: legResults.value[to.id]?.summary };
-};
-const toggleLeg = (id: number) => { selectedLeg.value = selectedLeg.value === id ? null : id; };
-
-// ---- Formatting ---------------------------------------------------------------------
-const clock = (value: string) => new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: props.timezone }).format(new Date(value));
-function until(item: ItineraryStop) {
-    if (item.ends_at === item.starts_at) return '';
-    const nextDay = dayKey(item.ends_at, props.timezone) !== dayOf(item);
-    return `until ${clock(item.ends_at)}${nextDay ? ' next day' : ''}`;
-}
-const expanded = ref<Record<number, boolean>>({});
-const hasDetails = (item: ItineraryStop) => !!(item.description || item.cost_note);
-
-// ---- Add / edit form ------------------------------------------------------------------
-const formOpen = ref(false);
-const editingId = ref<number | null>(null);
-const formElement = ref<HTMLElement>();
-const form = useForm({ title: '', location: '', latitude: null as number | null, longitude: null as number | null, description: '', starts_at: '', ends_at: '', transport_mode: '', cost_min: '', cost_max: '', cost_note: '' });
-const pinned = computed<PickedPlace | null>({
-    get: () => (form.latitude != null && form.longitude != null ? { latitude: form.latitude, longitude: form.longitude } : null),
-    set: (place) => { form.latitude = place?.latitude ?? null; form.longitude = place?.longitude ?? null; },
-});
-function localDate(value: string) {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: props.timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
-    const part = (type: string) => parts.find(p => p.type === type)?.value;
-    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
-}
-const pesos = (minor?: number | null) => (minor == null ? '' : String(minor / 100));
-const toMinor = (value: string | number) => (value === '' || value == null ? null : Math.round(Number(value) * 100));
-function closeForm() { form.reset(); form.clearErrors(); editingId.value = null; formOpen.value = false; }
-function openForm(item?: ItineraryStop) {
-    form.reset(); form.clearErrors(); editingId.value = item?.id ?? null; formOpen.value = true;
-    if (item) {
-        Object.assign(form, {
-            title: item.title, location: item.location ?? '', latitude: item.latitude ?? null, longitude: item.longitude ?? null, description: item.description ?? '',
-            starts_at: localDate(item.starts_at), ends_at: localDate(item.ends_at), transport_mode: item.transport_mode ?? '',
-            cost_min: pesos(item.cost_min_minor), cost_max: pesos(item.cost_max_minor), cost_note: item.cost_note ?? '',
-        });
+// "Today": the current trip day, or the next one before the trip, or the last one after it.
+const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: props.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const today = computed(() => {
+    const list = days.value;
+    if (!list.length) return null;
+    const exact = list.find(day => day.key === todayKey);
+    if (exact) return { day: exact, label: 'Today', note: `Day ${exact.number} of ${list.length}` };
+    if (todayKey < list[0].key) {
+        const daysAway = Math.round((Date.parse(list[0].key) - Date.parse(todayKey)) / 86400000);
+        return { day: list[0], label: 'Up next', note: `Trip starts in ${daysAway} ${daysAway === 1 ? 'day' : 'days'}` };
     }
-    nextTick(() => formElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    const upcoming = list.find(day => day.key > todayKey);
+    if (upcoming) return { day: upcoming, label: 'Up next', note: `Day ${upcoming.number} of ${list.length}` };
+    return { day: list[list.length - 1], label: 'Last day', note: 'This trip has ended' };
+});
+
+// The day shown in Itinerary and Map; remembered per trip for this browser tab.
+const DAY_KEY = `barkada.trip.${props.tripId}.day`;
+const readDay = () => { try { return sessionStorage.getItem(DAY_KEY); } catch { return null; } };
+const storedDay = readDay();
+const selectedDay = ref<string | null>(storedDay === 'all' ? null : storedDay ?? today.value?.day.key ?? null);
+watch(selectedDay, key => { try { sessionStorage.setItem(DAY_KEY, key ?? 'all'); } catch { /* storage unavailable */ } });
+// Fall back if the remembered day no longer exists after edits.
+watch(days, list => { if (selectedDay.value && !list.some(day => day.key === selectedDay.value)) selectedDay.value = list[0]?.key ?? null; }, { immediate: true });
+const shownDay = computed<Day | null>(() => (props.view === 'today' ? today.value?.day ?? null : dayByKey(selectedDay.value)));
+function stepDay(direction: 1 | -1) {
+    const index = days.value.findIndex(day => day.key === selectedDay.value);
+    const next = days.value[index + direction];
+    if (next) selectedDay.value = next.key;
 }
-function save() {
-    const payload = form.transform(({ cost_min, cost_max, ...data }) => {
-        const min = toMinor(cost_min); const max = toMinor(cost_max);
-        // A single amount means an exact estimate.
-        return { ...data, cost_min_minor: min ?? max, cost_max_minor: max ?? min };
-    });
-    const options = { preserveScroll: true, onSuccess: closeForm };
-    if (editingId.value) payload.patch(`/trips/${props.tripId}/itinerary/${editingId.value}`, options);
-    else payload.post(`/trips/${props.tripId}/itinerary`, options);
+
+// ---- Journeys and the shared map ---------------------------------------------------------
+const legs = computed(() => stops.value.slice(1).map((to, i) => ({ from: stops.value[i], to, number: i + 1, mode: transport(to.transport_mode) })));
+const legsOn = (day: Day | null) => (day ? legs.value.filter(leg => dayOf(leg.to) === day.key) : legs.value);
+const mapDay = computed(() => (props.view === 'today' ? today.value?.day.key ?? null : selectedDay.value));
+const mapLegs = computed(() => legsOn(dayByKey(mapDay.value)));
+const selectedLeg = ref<number | null>(null);
+const focusedLeg = computed(() => legs.value.find(leg => leg.to.id === selectedLeg.value) ?? null);
+const legResults = ref<Record<number, LegResult>>({});
+const mapBusy = ref(false);
+const isDesktop = ref(false);
+let media: MediaQueryList | undefined;
+const syncMedia = () => { isDesktop.value = !!media?.matches; };
+onMounted(() => { media = window.matchMedia('(min-width: 1024px)'); syncMedia(); media.addEventListener('change', syncMedia); });
+onBeforeUnmount(() => media?.removeEventListener('change', syncMedia));
+const mapVisible = computed(() => props.visible && (props.view === 'map' || isDesktop.value));
+const hasMap = computed(() => !!props.googleMaps.browserKey && stops.value.length >= 2);
+watch(mapDay, () => { selectedLeg.value = null; });
+function focusLeg(id: number) {
+    selectedLeg.value = selectedLeg.value === id ? null : id;
+    // On phones the map has its own screen.
+    if (selectedLeg.value && !isDesktop.value) emit('navigate', 'map');
 }
+
+// Map screen bottom sheet: peek (summary) or expanded (journey list); drag or tap the handle.
+const sheetOpen = ref(false);
+let dragStart = 0;
+function dragBegin(event: PointerEvent) { dragStart = event.clientY; }
+function dragEnd(event: PointerEvent) {
+    const dy = event.clientY - dragStart;
+    if (Math.abs(dy) < 8) sheetOpen.value = !sheetOpen.value; else sheetOpen.value = dy < 0;
+}
+watch(selectedLeg, id => { if (id && props.view === 'map') sheetOpen.value = false; });
+
+// ---- Activity details, done state and the form -----------------------------------------------
+const openItem = ref<ItineraryStop | null>(null);
+const openIndex = computed(() => stops.value.findIndex(stop => stop.id === openItem.value?.id));
+const DONE_KEY = `barkada.trip.${props.tripId}.done`;
+const readDone = () => { try { return new Set<number>(JSON.parse(localStorage.getItem(DONE_KEY) ?? '[]')); } catch { return new Set<number>(); } };
+const done = ref(readDone());
+function toggleDone(id: number) {
+    const next = new Set(done.value);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    done.value = next;
+    try { localStorage.setItem(DONE_KEY, JSON.stringify([...next])); } catch { /* storage unavailable */ }
+}
+const formOpen = ref<ItineraryStop | 'new' | null>(null);
+function editFromSheet(item: ItineraryStop) { openItem.value = null; formOpen.value = item; }
+function showOnMap(id: number) { openItem.value = null; selectedLeg.value = id; if (!isDesktop.value) emit('navigate', 'map'); }
+// Keep an open sheet in sync after the itinerary reloads.
+watch(stops, list => { if (openItem.value) openItem.value = list.find(stop => stop.id === openItem.value!.id) ?? null; });
+
+const tripBudget = computed(() => totalCost(stops.value));
+const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.value ? tripBudget.value : shownDay.value?.budget ?? null));
 </script>
 
 <template>
-    <section class="itinerary">
-        <header class="plan-head">
-            <div>
-                <h2>The plan</h2>
-                <p class="muted">{{ days.length }} {{ days.length === 1 ? 'day' : 'days' }} · {{ stops.length }} stops · times in {{ timezone }}</p>
+    <div class="plan" :class="[`view-${view}`, { 'map-on': mapVisible }]">
+        <div class="plan-main">
+            <!-- Empty trip -->
+            <div v-if="!stops.length" class="card empty">
+                <RouteIcon :size="34" class="empty-icon" aria-hidden="true" />
+                <h2>Plan your first day</h2>
+                <p class="muted">Add your arrival point, then the places you want to visit. Activities show on the map with their budget.</p>
+                <button v-if="isOrganizer" type="button" class="btn" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> Add the first activity</button>
             </div>
-            <div class="plan-actions">
-                <div v-if="budget" class="budget-pill">
-                    <Wallet :size="18" aria-hidden="true" />
-                    <div><span>Est. per person{{ activeDay ? ' · this day' : '' }}</span><strong>{{ costRange(budget.min, budget.max) }}</strong></div>
+
+            <!-- Today -->
+            <template v-else-if="view === 'today' && today">
+                <header class="screen-head">
+                    <div><p class="eyebrow">{{ today.label }} · {{ today.note }}</p><h2>{{ today.day.long }}</h2></div>
+                    <span v-if="today.day.budget" class="budget-pill"><Wallet :size="15" aria-hidden="true" /> {{ costRange(today.day.budget.min, today.day.budget.max) }}<small>/person</small></span>
+                </header>
+                <DailyRouteSummary :title="today.label === 'Today' ? 'Today’s route' : `Day ${today.day.number} route`" :stops="today.day.entries.map(e => e.item)" :leg-ids="legsOn(today.day).map(l => l.to.id)" :results="legResults" :loading="mapBusy" :has-map="hasMap && !isDesktop" @view-route="emit('navigate', 'map')" />
+                <div class="card timeline-card">
+                    <DayTimeline :entries="today.day.entries" :stops="stops" :results="legResults" :timezone="timezone" :selected-leg="selectedLeg" :done="done" @open="openItem = $event" @focus-leg="focusLeg" />
                 </div>
-                <button v-if="isOrganizer && !formOpen" type="button" class="btn" @click="openForm()"><Plus :size="16" aria-hidden="true" /> Add a stop</button>
-            </div>
-        </header>
+                <button type="button" class="see-all" @click="emit('navigate', 'itinerary')">See the full itinerary <ChevronRight :size="16" aria-hidden="true" /></button>
+            </template>
 
-        <div v-if="days.length > 1" class="day-filter" role="group" aria-label="Filter the plan by day">
-            <button type="button" :class="{ active: !activeDay }" :aria-pressed="!activeDay" @click="selectedDay = null">All days <span>{{ stops.length }}</span></button>
-            <button v-for="day in days" :key="day.key" type="button" :class="{ active: activeDay === day.key }" :aria-pressed="activeDay === day.key" @click="selectedDay = day.key">Day {{ day.number }} · {{ day.label }} <span>{{ day.entries.length }}</span></button>
-        </div>
+            <!-- Itinerary -->
+            <template v-else-if="view === 'itinerary'">
+                <header class="screen-head">
+                    <div><h2>Itinerary</h2><p class="muted">{{ days.length }} days · {{ stops.length }} activities</p></div>
+                    <div class="head-actions">
+                        <span v-if="shownBudget" class="budget-pill"><Wallet :size="15" aria-hidden="true" /> {{ costRange(shownBudget.min, shownBudget.max) }}<small>/person</small></span>
+                        <button v-if="isOrganizer" type="button" class="btn add-btn" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> <span>Add</span></button>
+                    </div>
+                </header>
+                <DaySelector v-model="selectedDay" :days="days" allow-all :all-count="stops.length" label="Choose a day of the itinerary" />
 
-        <form v-if="isOrganizer && formOpen" ref="formElement" class="card form-grid stop-form" @submit.prevent="save">
-            <div class="row spread full"><h3>{{ editingId ? 'Edit stop' : 'Add a stop' }}</h3><button type="button" class="icon-close" aria-label="Close the form" @click="closeForm"><X :size="18" /></button></div>
-            <label class="field">What's happening<input v-model="form.title" maxlength="200" required placeholder="e.g. Lunch at Tagbalayon" /></label>
-            <div class="field"><label for="stop-location">Where</label><LocationSearch id="stop-location" v-model="form.location" v-model:pinned="pinned" :browser-key="googleMaps.browserKey" :maxlength="200" placeholder="Search a place, e.g. Siquijor Port" /></div>
-            <label class="field">Starts ({{ timezone }})<input v-model="form.starts_at" type="datetime-local" required /></label>
-            <label class="field">Ends ({{ timezone }})<input v-model="form.ends_at" type="datetime-local" required /></label>
-            <label class="field">Getting there from the previous stop<select v-model="form.transport_mode"><option value="">Starting point / decide later</option><option v-for="option in transportOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
-            <fieldset class="field cost-fields">
-                <legend>Estimated cost per person (₱)</legend>
-                <div class="cost-inputs"><input v-model="form.cost_min" type="number" min="0" step="1" inputmode="numeric" placeholder="From" aria-label="Minimum cost per person" /><span aria-hidden="true">–</span><input v-model="form.cost_max" type="number" min="0" step="1" inputmode="numeric" placeholder="To" aria-label="Maximum cost per person" /></div>
-                <input v-model="form.cost_note" maxlength="255" placeholder="What it covers, e.g. Lunch, entrance fee" aria-label="What the cost covers" />
-            </fieldset>
-            <label class="field full">Notes<textarea v-model="form.description" maxlength="4000" rows="3" placeholder="Booking details, meeting point, or reminders" /></label>
-            <ul v-if="Object.keys(form.errors).length" class="full form-errors" role="alert"><li v-for="(message, field) in form.errors" :key="field">{{ message }}</li></ul>
-            <div class="row full"><button class="btn" :disabled="form.processing">{{ editingId ? 'Save stop' : 'Add stop' }}</button><button class="btn secondary" type="button" :disabled="form.processing" @click="closeForm">Cancel</button></div>
-        </form>
-
-        <div class="plan-layout">
-            <aside class="plan-map">
-                <ItineraryRouteMap v-model:selected="selectedLeg" :items="items" :browser-key="googleMaps.browserKey" :map-id="googleMaps.mapId" :timezone="timezone" :day="activeDay" @results="legResults = $event" />
-            </aside>
-
-            <div class="plan-timeline">
-                <div v-if="!stops.length" class="card empty">
-                    <h3>Start your plan</h3>
-                    <p class="muted">Add your arrival point first, then the places you want to visit. Each stop shows on the map with its budget.</p>
-                    <button v-if="isOrganizer" type="button" class="btn" @click="openForm()"><Plus :size="16" aria-hidden="true" /> Add the first stop</button>
+                <div v-if="shownDay" class="day-view">
+                    <div class="day-title"><h3>Day {{ shownDay.number }} · {{ shownDay.weekday }}, {{ shownDay.date }}</h3><span class="muted">{{ shownDay.count }} activities</span></div>
+                    <DailyRouteSummary title="Route for the day" :stops="shownDay.entries.map(e => e.item)" :leg-ids="legsOn(shownDay).map(l => l.to.id)" :results="legResults" :loading="mapBusy" :has-map="hasMap && !isDesktop" @view-route="emit('navigate', 'map')" />
+                    <div class="card timeline-card">
+                        <DayTimeline :entries="shownDay.entries" :stops="stops" :results="legResults" :timezone="timezone" :selected-leg="selectedLeg" :done="done" @open="openItem = $event" @focus-leg="focusLeg" @swipe="stepDay" />
+                    </div>
+                    <div class="day-steps">
+                        <button type="button" class="btn secondary" :disabled="shownDay.number === 1" @click="stepDay(-1)">Previous day</button>
+                        <button type="button" class="btn secondary" :disabled="shownDay.number === days.length" @click="stepDay(1)">Next day</button>
+                    </div>
                 </div>
 
-                <section v-for="day in visibleDays" :key="day.key" class="day" :aria-labelledby="`day-${day.key}`">
-                    <header class="day-head">
-                        <div><p class="eyebrow">Day {{ day.number }}</p><h3 :id="`day-${day.key}`">{{ day.label }}</h3></div>
-                        <p class="day-meta">{{ day.entries.length }} stops<template v-if="day.budget"> · <strong>{{ costRange(day.budget.min, day.budget.max) }}</strong> per person</template></p>
-                    </header>
-                    <ol class="timeline">
-                        <li v-for="{ item, index } in day.entries" :key="item.id">
-                            <template v-if="index > 0">
-                                <button
-                                    v-for="leg in [legInfo(index)]"
-                                    :key="leg.to.id"
-                                    type="button"
-                                    class="connector"
-                                    :class="{ active: selectedLeg === item.id }"
-                                    :aria-pressed="selectedLeg === item.id"
-                                    :aria-label="`Show the journey from ${leg.from.title} to ${leg.to.title} on the map`"
-                                    @click="toggleLeg(item.id)"
-                                >
-                                    <component :is="leg.icon" :size="15" aria-hidden="true" />
-                                    <span>{{ leg.same ? 'Same spot' : (leg.mode?.label ?? 'Transport to be decided') }}</span>
-                                    <span v-if="leg.summary && !leg.same" class="connector-summary">· {{ leg.summary }}</span>
-                                </button>
-                            </template>
-                            <article class="stop" :class="{ focused: selectedLeg === item.id }">
-                                <span class="stop-dot" aria-hidden="true">{{ index + 1 }}</span>
-                                <div class="stop-body">
-                                    <div class="stop-top">
-                                        <p class="stop-time">{{ clock(item.starts_at) }} <span>{{ until(item) }}</span></p>
-                                        <span v-if="costRange(item.cost_min_minor, item.cost_max_minor)" class="cost-chip">{{ costRange(item.cost_min_minor, item.cost_max_minor) }}<small>/person</small></span>
-                                    </div>
-                                    <h4>{{ item.title }}</h4>
-                                    <a v-if="item.location" class="stop-place" :href="googleMapsUrl(item.location)" target="_blank" rel="noopener noreferrer"><MapPin :size="13" aria-hidden="true" /> {{ item.location }}<span class="sr-only"> (opens Google Maps)</span></a>
-                                    <p v-else class="stop-place muted">Location to follow</p>
-                                    <div v-if="hasDetails(item) || isOrganizer" class="stop-actions">
-                                        <button v-if="hasDetails(item)" type="button" class="link-button" :aria-expanded="!!expanded[item.id]" @click="expanded[item.id] = !expanded[item.id]">
-                                            Details <ChevronDown :size="14" :class="{ flipped: expanded[item.id] }" aria-hidden="true" />
-                                        </button>
-                                        <button v-if="isOrganizer" type="button" class="link-button" @click="openForm(item)"><Pencil :size="13" aria-hidden="true" /> Edit</button>
-                                    </div>
-                                    <div v-if="expanded[item.id]" class="stop-details">
-                                        <p v-if="item.cost_note" class="cost-note"><Wallet :size="14" aria-hidden="true" /> {{ item.cost_note }}</p>
-                                        <p v-if="item.description" class="stop-notes">{{ item.description }}</p>
-                                    </div>
-                                </div>
-                            </article>
-                        </li>
-                    </ol>
-                </section>
-            </div>
+                <ul v-else class="day-summaries">
+                    <li v-for="day in days" :key="day.key">
+                        <button type="button" class="day-summary" @click="selectedDay = day.key">
+                            <span class="day-badge"><small>Day</small>{{ day.number }}</span>
+                            <span class="day-summary-body">
+                                <strong>{{ day.weekday }}, {{ day.date }}</strong>
+                                <span>{{ day.count }} activities<template v-if="day.from && day.to && day.from !== day.to"> · {{ day.from }} → {{ day.to }}</template></span>
+                            </span>
+                            <span v-if="day.budget" class="day-summary-cost">{{ costRange(day.budget.min, day.budget.max) }}</span>
+                            <ChevronRight :size="18" aria-hidden="true" />
+                        </button>
+                    </li>
+                </ul>
+            </template>
         </div>
-    </section>
+
+        <!-- The one shared map: its own screen on phones, beside the plan on desktop. -->
+        <section v-if="stops.length" class="map-dock" :aria-hidden="!mapVisible" aria-label="Trip map">
+            <div v-if="view === 'map'" class="map-top">
+                <DaySelector v-model="selectedDay" :days="days" allow-all :all-count="stops.length" label="Choose which day to show on the map" />
+            </div>
+            <div class="map-frame">
+                <ItineraryRouteMap v-model:selected="selectedLeg" :items="items" :browser-key="googleMaps.browserKey" :map-id="googleMaps.mapId" :timezone="timezone" :day="mapDay" :active="mapVisible" @results="legResults = $event" @busy="mapBusy = $event" />
+            </div>
+
+            <!-- Focused journey (all layouts) -->
+            <div v-if="focusedLeg" class="leg-card" aria-live="polite">
+                <div class="row spread"><p class="eyebrow">Journey {{ focusedLeg.number }} · {{ focusedLeg.mode?.label ?? 'Transport to be decided' }}</p><button type="button" class="icon-btn" aria-label="Show all journeys" @click="selectedLeg = null"><X :size="16" /></button></div>
+                <h4>{{ focusedLeg.from.title }} → {{ focusedLeg.to.title }}</h4>
+                <p class="muted">{{ legResults[focusedLeg.to.id]?.summary ?? 'Calculating…' }}</p>
+                <div class="leg-card-actions">
+                    <button type="button" class="btn secondary" @click="openItem = focusedLeg.to">Activity details</button>
+                    <a v-if="focusedLeg.from.location && focusedLeg.to.location && focusedLeg.mode?.route && !legResults[focusedLeg.to.id]?.same" class="btn" :href="directionsUrl(focusedLeg.from.location, focusedLeg.to.location, focusedLeg.mode.route)" target="_blank" rel="noopener noreferrer"><Navigation :size="15" aria-hidden="true" /> Directions</a>
+                </div>
+            </div>
+
+            <!-- Map screen: journey list in a draggable sheet -->
+            <div v-else-if="view === 'map'" class="journey-sheet" :class="{ open: sheetOpen }">
+                <button type="button" class="sheet-handle" :aria-expanded="sheetOpen" aria-controls="journey-list" @pointerdown="dragBegin" @pointerup="dragEnd" @keydown.enter.prevent="sheetOpen = !sheetOpen" @keydown.space.prevent="sheetOpen = !sheetOpen">
+                    <span class="grabber" aria-hidden="true" />
+                    <span class="sheet-summary"><strong>{{ mapDay ? `Day ${dayByKey(mapDay)?.number} journeys` : 'All journeys' }}</strong> · {{ mapLegs.length }}</span>
+                    <ChevronUp :size="18" class="sheet-chevron" aria-hidden="true" />
+                </button>
+                <ol v-show="sheetOpen" id="journey-list" class="journey-list">
+                    <li v-for="leg in mapLegs" :key="leg.to.id">
+                        <button type="button" class="journey" @click="selectedLeg = leg.to.id">
+                            <span class="journey-number">{{ leg.number + 1 }}</span>
+                            <span class="journey-body"><strong>{{ leg.to.title }}</strong><span>{{ leg.mode?.label ?? 'Transport to be decided' }}<template v-if="legResults[leg.to.id]"> · {{ legResults[leg.to.id].summary }}</template></span></span>
+                            <ChevronRight :size="16" aria-hidden="true" />
+                        </button>
+                    </li>
+                    <li v-if="!mapLegs.length" class="muted journey-empty">No journeys on this day.</li>
+                </ol>
+            </div>
+        </section>
+
+        <ActivitySheet :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer" :done="!!openItem && done.has(openItem.id)" @close="openItem = null" @edit="editFromSheet" @toggle-done="toggleDone" @show-on-map="showOnMap" />
+        <StopFormSheet v-if="isOrganizer" :open="formOpen" :trip-id="tripId" :timezone="timezone" :browser-key="googleMaps.browserKey" :default-day="view === 'itinerary' ? selectedDay : today?.day.key ?? null" @close="formOpen = null" />
+    </div>
 </template>
 
 <style scoped>
-.plan-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.plan-head .muted{margin-top:4px}
-.plan-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.budget-pill{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #dfe7da;border-radius:14px;padding:9px 14px;color:#214e3e}
-.budget-pill span{display:block;font-size:11px;color:#738178;font-weight:600}
-.budget-pill strong{display:block;font-size:16px;letter-spacing:-.3px}
-.day-filter{display:flex;gap:8px;overflow-x:auto;padding:4px 0 6px;margin-top:20px;scrollbar-width:thin}
-.day-filter button{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;border:1px solid #d5dfd5;background:#fff;color:#214e3e;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer;min-height:38px;transition:background .15s,border-color .15s}
-.day-filter button:hover{border-color:#a9bd8e}
-.day-filter button span{font-size:11px;background:#edf2e6;color:#526936;border-radius:999px;padding:1px 7px}
-.day-filter button.active{background:#214e3e;border-color:#214e3e;color:#fff}
-.day-filter button.active span{background:#ffffff26;color:#fff}
-.stop-form{margin-top:18px}
-.icon-close{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;border:1px solid #d5dfd5;background:#fff;color:#214e3e;cursor:pointer}
-.cost-fields{border:0;padding:0;margin:0;min-width:0}
-.cost-fields legend{font-size:12px;font-weight:650;margin-bottom:7px}
-.cost-inputs{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.form-errors{color:#ae4e36;font-size:13px}
-.plan-layout{display:grid;gap:20px;margin-top:18px}
-.plan-timeline{display:grid;gap:18px;min-width:0}
-.day{background:#fff;border:1px solid #e0e7dc;border-radius:18px;padding:20px 20px 8px;box-shadow:0 3px 12px #233d2610}
-.day-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid #edf1ea}
-.day-head .eyebrow{margin-bottom:4px}
-.travel-app .day-head h3{font-size:19px;letter-spacing:-.4px}
-.day-meta{font-size:13px;color:#5f6f66}
-.day-meta strong{color:#214e3e}
-.timeline{list-style:none;margin:0;padding:6px 0 0;position:relative}
-.timeline::before{content:"";position:absolute;left:15px;top:16px;bottom:24px;width:2px;background:#e4ebdf}
-.connector{position:relative;display:flex;align-items:center;gap:7px;margin:2px 0 2px 34px;padding:6px 10px;border-radius:999px;border:1px dashed transparent;background:transparent;color:#5d7051;font-size:12px;font-weight:600;cursor:pointer;text-align:left;min-height:32px;max-width:calc(100% - 34px)}
-.connector:hover{background:#f2f6ec;border-color:#cddab9}
-.connector.active{background:#e8f0dc;border-color:#9fb87e;color:#214e3e}
-.connector svg{flex-shrink:0}
-.connector-summary{font-weight:500;color:#76846e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stop{position:relative;display:grid;grid-template-columns:32px 1fr;gap:12px;padding:10px 0 14px}
-.stop-dot{position:relative;z-index:1;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#214e3e;color:#fff;font-size:12px;font-weight:800;border:3px solid #fff;box-shadow:0 0 0 1px #d5dfd5}
-.stop.focused .stop-dot{background:#72883a}
-.stop-body{min-width:0}
-.stop-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.stop-time{font-size:12px;font-weight:700;color:#214e3e;letter-spacing:.2px}
-.stop-time span{font-weight:500;color:#7a877f;margin-left:4px}
-.cost-chip{display:inline-flex;align-items:baseline;gap:3px;background:#f3f7ec;border:1px solid #dbe6cc;color:#3f5a2a;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
-.cost-chip small{font-weight:500;color:#738178;font-size:11px}
-.travel-app .stop h4{font-size:15px;font-weight:700;margin:4px 0;line-height:1.35;letter-spacing:-.2px;overflow-wrap:anywhere}
-.stop-place{display:inline-flex;align-items:flex-start;gap:5px;font-size:12px;color:#5f6f66;line-height:1.5;overflow-wrap:anywhere}
-a.stop-place:hover{color:#214e3e;text-decoration:underline;text-underline-offset:3px}
-.stop-place svg{flex-shrink:0;margin-top:2px}
-.stop-actions{display:flex;gap:6px;margin-top:6px;margin-left:-8px}
-.link-button{display:inline-flex;align-items:center;gap:5px;padding:6px 8px;min-height:32px;border-radius:8px;border:0;background:transparent;color:#4f6f2c;font-size:12px;font-weight:650;cursor:pointer}
-.link-button:hover{background:#f2f6ec}
-.link-button .flipped{transform:rotate(180deg)}
-.stop-details{margin-top:6px;background:#f8faf5;border:1px solid #e7ece3;border-radius:10px;padding:10px 12px;display:grid;gap:8px}
-.cost-note{display:flex;gap:7px;font-size:12px;color:#3f5a2a;line-height:1.6}
-.cost-note svg{flex-shrink:0;margin-top:3px}
-.stop-notes{white-space:pre-wrap;font-size:13px;line-height:1.7;color:#3e4f47}
+.plan{display:grid;gap:16px}
+.plan-main{display:grid;gap:14px;align-content:start;min-width:0}
+.screen-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.screen-head .eyebrow{margin-bottom:4px}
+.travel-app .screen-head h2{font-size:22px;letter-spacing:-.6px}
+.head-actions{display:flex;align-items:center;gap:8px}
+.add-btn{min-height:44px}
+.budget-pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:750;color:#214e3e;background:#fff;border:1px solid #dfe7da;border-radius:999px;padding:7px 12px;white-space:nowrap}
+.budget-pill small{font-weight:500;color:#738178;font-size:11px}
+.timeline-card{padding:8px}
+.empty-icon{margin:0 auto 12px;color:#839362}
+.see-all{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;background:transparent;color:#4f6f2c;font-weight:700;font-size:13px;cursor:pointer}
+.day-view{display:grid;gap:12px}
+.day-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.travel-app .day-title h3{font-size:17px;letter-spacing:-.3px}
+.day-steps{display:flex;justify-content:space-between;gap:10px}
+.day-steps .btn{min-height:44px;flex:1}
+.day-summaries{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.day-summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 12px;border:1px solid #e0e7dc;border-radius:14px;background:#fff;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.day-summary:hover{border-color:#bcd0a4}
+.day-badge{display:grid;justify-items:center;width:46px;height:46px;align-content:center;border-radius:12px;background:#214e3e;color:#fff;font-size:17px;font-weight:800;line-height:1}
+.day-badge small{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#cfe0a5;font-weight:700}
+.day-summary-body{display:grid;min-width:0}
+.day-summary-body strong{font-size:14px}
+.day-summary-body span{font-size:12px;color:#6c7c72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day-summary-cost{font-size:12px;font-weight:700;color:#3f5a2a;white-space:nowrap}
+/* Map dock */
+.map-dock{position:relative;display:none;border-radius:18px;overflow:hidden;background:#e8eee2}
+.map-on .map-dock{display:flex;flex-direction:column}
+.map-frame{flex:1;min-height:0;border-radius:inherit}
+.map-top{position:absolute;z-index:2;top:10px;left:10px;right:10px}
+.map-top :deep(.day-option){box-shadow:0 2px 10px #0000001a;min-height:54px;min-width:56px;padding:6px 8px}
+.leg-card,.journey-sheet{position:absolute;z-index:2;left:10px;right:10px;bottom:10px;background:#fffefb;border-radius:16px;box-shadow:0 8px 30px #1d332833}
+.leg-card{padding:12px 14px;display:grid;gap:4px}
+.leg-card .eyebrow{margin:0}
+.leg-card h4{font-size:15px;font-weight:750;line-height:1.3}
+.leg-card-actions{display:flex;gap:8px;margin-top:6px}
+.leg-card-actions .btn{flex:1;min-height:44px;padding:10px 12px}
+.icon-btn{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}
+.sheet-handle{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;width:100%;padding:8px 16px 12px;border:0;background:transparent;color:inherit;font:inherit;cursor:grab;touch-action:none;text-align:left;min-height:56px}
+.grabber{grid-column:1/-1;justify-self:center;width:40px;height:4px;border-radius:999px;background:#d3dccd;margin-bottom:4px}
+.sheet-summary{font-size:13px;color:#5f6f66}
+.sheet-summary strong{color:#172f2a}
+.sheet-chevron{transition:transform .2s}
+.journey-sheet.open .sheet-chevron{transform:rotate(180deg)}
+.journey-list{list-style:none;margin:0;padding:0 8px 10px;max-height:min(46vh,420px);overflow-y:auto;overscroll-behavior:contain}
+.journey{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px;border:0;border-radius:12px;background:transparent;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.journey:hover{background:#f2f6ec}
+.journey-number{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#214e3e;color:#fff;font-size:11px;font-weight:800}
+.journey-body{display:grid;min-width:0}
+.journey-body strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.journey-body span{font-size:12px;color:#6c7c72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.journey-empty{padding:10px;font-size:13px}
+/* Phones and tablets: the map screen fills the space between the top bar and the bottom navigation. */
+@media(max-width:1023px){
+    .view-map .plan-main{display:none}
+    .view-map .map-dock{position:fixed;z-index:30;top:56px;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));border-radius:0}
+}
+/* Desktop: plan and map side by side (Today/Itinerary); the Map screen uses the full width. */
 @media(min-width:1024px){
-    .plan-layout{grid-template-columns:minmax(0,1fr) minmax(380px,44%);align-items:start}
-    .plan-map{order:2;position:sticky;top:16px}
-    .plan-timeline{order:1}
+    .plan:not(.view-map){grid-template-columns:minmax(0,1fr) minmax(380px,44%);align-items:start}
+    .plan:not(.view-map) .map-dock{position:sticky;top:76px;height:calc(100vh - 100px);min-height:460px}
+    .view-map .plan-main{display:none}
+    .view-map .map-dock{height:calc(100vh - 150px);min-height:520px}
+    .journey-sheet,.leg-card{right:auto;width:380px}
+    /* The side map can extend below the fold, so keep the focused journey at its top. */
+    .plan:not(.view-map) .leg-card{top:10px;bottom:auto}
 }
-@media(max-width:640px){
-    .plan-head{align-items:flex-start}
-    .plan-actions{width:100%;justify-content:space-between}
-    .day{padding:16px 14px 4px;border-radius:16px}
-    .cost-inputs input{min-width:0}
-}
+@media(prefers-reduced-motion:reduce){.sheet-chevron{transition:none}}
 </style>

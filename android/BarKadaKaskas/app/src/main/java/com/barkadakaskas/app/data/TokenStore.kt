@@ -23,10 +23,13 @@ interface SessionStore {
 class TokenStore(context: Context) : SessionStore {
     private val prefs = context.applicationContext.getSharedPreferences("barkada_session", Context.MODE_PRIVATE)
 
+    /**
+     * Fixed at build time (BuildConfig.DEFAULT_SERVER_URL); people never type it. Any address saved by
+     * older versions is ignored, so a mistyped one cannot strand the app.
+     */
     override var serverUrl: String
-        // Pre-filled with the production server so most people never have to type it.
-        get() = prefs.getString(KEY_SERVER, null)?.takeIf { it.isNotBlank() } ?: com.barkadakaskas.app.BuildConfig.DEFAULT_SERVER_URL
-        set(value) { prefs.edit().putString(KEY_SERVER, value).apply() }
+        get() = com.barkadakaskas.app.BuildConfig.DEFAULT_SERVER_URL
+        set(_) { prefs.edit().remove(KEY_SERVER).apply() }
 
     override var token: String?
         // An unreadable token (e.g. the key was reset) simply means "signed out".

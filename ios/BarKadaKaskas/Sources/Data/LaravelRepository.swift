@@ -11,6 +11,8 @@ struct APIError: LocalizedError {
 /// Talks to the Laravel API (/api/v1) with a bearer token kept in the Keychain. See docs/mobile-api.md.
 @MainActor final class LaravelRepository: MobileRepository {
     private static let serverKey = "barkada.serverURL"
+    /// The BarkadaKasKas server every install talks to.
+    static let defaultServerURL = "https://barkadkaskas.on-forge.com"
     private let session: URLSession
     private let defaults: UserDefaults
     private(set) var serverURL: String
@@ -18,7 +20,9 @@ struct APIError: LocalizedError {
     init(session: URLSession = .shared, defaults: UserDefaults = .standard) {
         self.session = session
         self.defaults = defaults
-        self.serverURL = defaults.string(forKey: Self.serverKey) ?? ""
+        // Fixed server; people never type it. Older versions saved one in defaults, which is ignored now.
+        self.serverURL = Self.defaultServerURL
+        defaults.removeObject(forKey: Self.serverKey)
     }
 
     // MARK: Session

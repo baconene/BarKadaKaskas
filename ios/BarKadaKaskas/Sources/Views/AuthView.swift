@@ -7,7 +7,6 @@ struct AuthView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmation = ""
-    @State private var server = ""
     var body: some View {
         NavigationStack {
             Form {
@@ -27,7 +26,6 @@ struct AuthView: View {
                         Task {
                             if registering && password != confirmation { store.error = "Passwords do not match."; return }
                             await store.perform {
-                                try store.repository.configure(serverURL: server)
                                 // `try` cannot sit inside a ternary, so branch explicitly.
                                 if registering {
                                     store.user = try await store.repository.register(name: name, email: email, password: password)
@@ -42,13 +40,8 @@ struct AuthView: View {
                 Section {
                     Button(registering ? "Already have an account? Log in" : "New here? Create an account") { registering.toggle() }
                 }
-                Section("Connect to your server") {
-                    TextField("https://your-server.com", text: $server).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("Use the same BarKadaKaskas server as your friends. For development, the server must be reachable from this device.").font(.footnote).foregroundStyle(.secondary)
-                }
             }
             .scrollContentBackground(.hidden).background(Theme.canvas)
-            .onAppear { server = store.repository.serverURL }
         }
     }
 }

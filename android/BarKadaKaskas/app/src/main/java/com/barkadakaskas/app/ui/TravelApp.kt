@@ -220,8 +220,6 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var server by rememberSaveable { mutableStateOf(vm.serverUrl) }
-    var advanced by rememberSaveable { mutableStateOf(vm.serverUrl.isBlank()) }
     Scaffold(containerColor = Cream) { padding -> Column(Modifier.padding(padding).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(12.dp))
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(Forest), contentAlignment = Alignment.Center) { Icon(Icons.Default.Explore, null, tint = Color.White, modifier = Modifier.size(36.dp)) }
@@ -236,9 +234,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         AnimatedVisibility(register) { Field("Your name", name, { name = it }, leading = Icons.Default.Person) }
         Field("Email", email, { email = it }, email = true, leading = Icons.Default.Email)
         Field("Password", password, { password = it }, password = true, leading = Icons.Default.Lock)
-        TextButton(onClick = { advanced = !advanced }) { Icon(Icons.Default.Dns, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (advanced) "Hide server settings" else "Server settings") }
-        AnimatedVisibility(advanced) { Field("Server URL", server, { server = it }, capitalize = false, leading = Icons.Default.Link, supporting = "Your deployed HTTPS server, e.g. https://barkadakaskas.on-forge.com") }
-        Submit(if (register) "Create account" else "Log in", vm.busy, email.isNotBlank() && password.isNotBlank() && server.isNotBlank() && (!register || name.isNotBlank())) { vm.authenticate(server, name, email, password, register) }
+        Submit(if (register) "Create account" else "Log in", vm.busy, email.isNotBlank() && password.isNotBlank() && (!register || name.isNotBlank())) { vm.authenticate(vm.serverUrl, name, email, password, register) }
     } }
 }
 

@@ -11,8 +11,8 @@ plugins {
 val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
-// Server the app signs in to unless the user changes it (DEFAULT_SERVER_URL overrides, e.g. a CI variable).
-val defaultServerUrl: String = (findProperty("DEFAULT_SERVER_URL") as String?) ?: System.getenv("DEFAULT_SERVER_URL")?.takeIf { it.isNotBlank() } ?: "https://barkadakaskas.on-forge.com"
+// The server the app always talks to; it is not shown or editable in the app (DEFAULT_SERVER_URL overrides at build time).
+val defaultServerUrl: String = (findProperty("DEFAULT_SERVER_URL") as String?) ?: System.getenv("DEFAULT_SERVER_URL")?.takeIf { it.isNotBlank() } ?: "https://barkadkaskas.on-forge.com"
 // CI build number, so each published APK installs as an update over the previous one.
 val buildNumber: Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 // Stable signing key for sideloaded releases (CI secrets). Android only updates an app signed with the same key.

@@ -165,8 +165,10 @@ With the secrets the workflow builds a signed **release** APK; without them it
 falls back to a debug build signed with a throwaway key (and warns), which
 cannot update an earlier install.
 
-The app pre-fills `https://barkadakaskas.on-forge.com` as its server. Set the
-repository variable `DEFAULT_SERVER_URL` to change it for CI builds.
+Both apps always use `https://barkadkaskas.on-forge.com`; the login screen has
+no server field. For Android CI builds, the repository variable
+`DEFAULT_SERVER_URL` overrides it; on iOS change
+`LaravelRepository.defaultServerURL`.
 
 ### iPhone
 

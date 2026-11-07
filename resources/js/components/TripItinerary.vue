@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import ItineraryRouteMap from '@/components/ItineraryRouteMap.vue';
+import LocationSearch, { type PickedPlace } from '@/components/LocationSearch.vue';
 import { orderedStops, transport, transportOptions, type ItineraryStop } from '@/lib/itinerary';
 import { googleMapsUrl } from '@/lib/maps';
 
@@ -9,7 +10,11 @@ const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: st
 const stops = computed(() => orderedStops(props.items));
 const editingId = ref<number | null>(null);
 const formElement = ref<HTMLElement>();
-const form = useForm({ title: '', location: '', description: '', starts_at: '', ends_at: '', transport_mode: '' });
+const form = useForm({ title: '', location: '', latitude: null as number | null, longitude: null as number | null, description: '', starts_at: '', ends_at: '', transport_mode: '' });
+const pinned = computed<PickedPlace | null>({
+    get: () => (form.latitude != null && form.longitude != null ? { latitude: form.latitude, longitude: form.longitude } : null),
+    set: (place) => { form.latitude = place?.latitude ?? null; form.longitude = place?.longitude ?? null; },
+});
 const displayDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: props.timezone }).format(new Date(value));
 function localDate(value: string) {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: props.timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
@@ -19,7 +24,7 @@ function localDate(value: string) {
 function reset() { form.reset(); form.clearErrors(); editingId.value = null; }
 function edit(item: ItineraryStop) {
     reset(); editingId.value = item.id;
-    Object.assign(form, { title: item.title, location: item.location ?? '', description: item.description ?? '', starts_at: localDate(item.starts_at), ends_at: localDate(item.ends_at), transport_mode: item.transport_mode ?? '' });
+    Object.assign(form, { title: item.title, location: item.location ?? '', latitude: item.latitude ?? null, longitude: item.longitude ?? null, description: item.description ?? '', starts_at: localDate(item.starts_at), ends_at: localDate(item.ends_at), transport_mode: item.transport_mode ?? '' });
     formElement.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 function save() {
@@ -46,7 +51,7 @@ function save() {
         <form v-if="isOrganizer" ref="formElement" class="card form-grid section-gap" @submit.prevent="save">
             <h3 class="full">{{ editingId ? 'Edit itinerary stop' : 'Add to the itinerary' }}</h3>
             <label class="field">Activity<input v-model="form.title" maxlength="200" required /></label>
-            <label class="field">Location / full address<input v-model="form.location" maxlength="200" placeholder="e.g. Siquijor Port, Siquijor, Philippines" /><small>Include the town and country so Maps finds the right place.</small></label>
+            <div class="field"><label for="stop-location">Location</label><LocationSearch id="stop-location" v-model="form.location" v-model:pinned="pinned" :browser-key="googleMaps.browserKey" :maxlength="200" placeholder="Search a place, e.g. Siquijor Port" /></div>
             <label class="field">Transport from previous stop<select v-model="form.transport_mode"><option value="">Starting point / decide later</option><option v-for="option in transportOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
             <label class="field">Notes<textarea v-model="form.description" maxlength="4000" placeholder="Booking details, meeting point, or transport notes" /></label>
             <label class="field">Starts ({{ timezone }})<input v-model="form.starts_at" type="datetime-local" required /></label>

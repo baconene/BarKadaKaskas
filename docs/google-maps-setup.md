@@ -8,11 +8,11 @@ Editing a location, time, or transport recalculates the map when saved.
 ## Enable the interactive map
 
 1. Create a Google Cloud project and attach a billing account.
-2. Enable **Maps JavaScript API**, **Routes API**, and **Geocoding API** in that
-   project.
+2. Enable **Maps JavaScript API**, **Routes API**, **Geocoding API**, and
+   **Places API (New)** in that project.
 3. Create a browser API key. Set application restrictions to **Websites (HTTP
    referrers)**, allowing `http://barkadakaskas.test/*` for Herd and your actual
-   production HTTPS domain. Restrict the key to those three APIs. This key is
+   production HTTPS domain. Restrict the key to those four APIs. This key is
    intentionally visible to the browser; do not reuse a server or OCR key.
 4. Add to your local `.env` and Forge environment (do not commit the key):
 
@@ -53,7 +53,11 @@ for routing; no live GPS tracking is performed.
 - Route failures stay visible per leg; other available legs still render.
   Google route warnings are displayed with the corresponding leg.
 - Without a key, all itinerary editing and per-leg Google Maps links still work.
-- No Places autocomplete or GPS tracking is included in this change.
+- The itinerary **Location** field searches Google Places as you type. Picking a
+  suggestion saves the place's exact coordinates with the stop, so the map pins
+  it without a geocoding lookup. Typing over a picked place clears its pin.
+  Without Places API (New) the field works as a plain address input.
+- No GPS tracking is performed.
 
 Official setup: https://developers.google.com/maps/documentation/javascript/routes/start
 Route drawing: https://developers.google.com/maps/documentation/javascript/routes/get-a-route

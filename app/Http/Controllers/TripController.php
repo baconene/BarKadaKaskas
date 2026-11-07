@@ -91,7 +91,11 @@ class TripController extends Controller
 
     private function itineraryData(Request $request, Trip $trip): array
     {
-        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
+        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
+        // Coordinates only describe a picked place; a missing pin or cleared location resets them.
+        $hasPin = ! empty($data['location']) && isset($data['latitude'], $data['longitude']);
+        $data['latitude'] = $hasPin ? $data['latitude'] : null;
+        $data['longitude'] = $hasPin ? $data['longitude'] : null;
         foreach (['starts_at', 'ends_at'] as $field) { $data[$field] = \Carbon\CarbonImmutable::parse($data[$field], $trip->timezone)->utc(); }
         return $data;
     }

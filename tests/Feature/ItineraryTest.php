@@ -50,4 +50,33 @@ class ItineraryTest extends TestCase
         $this->post("/trips/{$trip->id}/itinerary", $this->stop())->assertForbidden();
         $this->assertDatabaseCount('itinerary_items', 1);
     }
+
+    public function test_picked_place_coordinates_are_saved_and_cleared_with_the_pin(): void
+    {
+        $this->withoutVite();
+        $owner = User::factory()->create(); $trip = $this->trip($owner);
+        $pinned = array_replace($this->stop(), ['location' => 'Dumaguete Port, Dumaguete City, Negros Oriental, Philippines', 'transport_mode' => 'ferry', 'latitude' => 9.3058731, 'longitude' => 123.3083412]);
+        $this->actingAs($owner)->post("/trips/{$trip->id}/itinerary", $pinned)->assertSessionHasNoErrors();
+        $item = $trip->itineraryItems()->firstOrFail();
+        $this->assertEqualsWithDelta(9.3058731, $item->latitude, 0.0000001);
+        $this->assertEqualsWithDelta(123.3083412, $item->longitude, 0.0000001);
+        $this->get("/trips/{$trip->id}")->assertInertia(fn (Assert $page) => $page->where('trip.itinerary_items.0.latitude', 9.3058731)->where('trip.itinerary_items.0.longitude', 123.3083412));
+
+        // Editing the address by hand (no pin sent) drops the old coordinates.
+        $this->patch("/trips/{$trip->id}/itinerary/{$item->id}", array_replace($this->stop(), ['location' => 'Siquijor Port, Philippines']))->assertSessionHasNoErrors();
+        $this->assertNull($item->fresh()->latitude);
+
+        // Coordinates without a location are meaningless and are not kept.
+        $this->patch("/trips/{$trip->id}/itinerary/{$item->id}", array_replace($pinned, ['location' => '']))->assertSessionHasNoErrors();
+        $this->assertNull($item->fresh()->longitude);
+    }
+
+    public function test_coordinates_must_be_valid_and_come_in_pairs(): void
+    {
+        $owner = User::factory()->create(); $trip = $this->trip($owner);
+        $this->actingAs($owner)->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['latitude' => 95, 'longitude' => 123]))->assertSessionHasErrors('latitude');
+        $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['latitude' => 9.3, 'longitude' => 200]))->assertSessionHasErrors('longitude');
+        $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['latitude' => 9.3]))->assertSessionHasErrors('longitude');
+        $this->assertDatabaseCount('itinerary_items', 0);
+    }
 }

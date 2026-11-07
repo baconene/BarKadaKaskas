@@ -59,6 +59,9 @@ async function draw() {
                 return null;
             }
         };
+        // Prefer the exact coordinates saved from place search; otherwise look up the typed address.
+        const position = (stop: ItineraryStop) => (stop.latitude != null && stop.longitude != null ? Promise.resolve({ lat: Number(stop.latitude), lng: Number(stop.longitude) }) : locate(stop.location!));
+        const routeEnd = (stop: ItineraryStop) => (stop.latitude != null && stop.longitude != null ? { lat: Number(stop.latitude), lng: Number(stop.longitude) } : stop.location!);
         const pin = (stop: ItineraryStop, position: google.maps.LatLngLiteral | google.maps.LatLng, number: number) => {
             bounds.extend(position);
             if (marked.has(stop.id)) return;
@@ -67,29 +70,29 @@ async function draw() {
             markers.push(new markerLibrary.AdvancedMarkerElement({ map, position, title: `${number}. ${stop.title}`, content: label }));
             marked.add(stop.id);
         };
-        const directLine = async (leg: (typeof legs.value)[number], style: keyof typeof lineStyles): Promise<string | null> => {
-            const [from, to] = await Promise.all([locate(leg.from.location!), locate(leg.to.location!)]);
+        const directLine = async (leg: (typeof legs.value)[number], style: keyof typeof lineStyles): Promise<{ distance?: string; problem?: string } | null> => {
+            const [from, to] = await Promise.all([position(leg.from), position(leg.to)]);
             if (version !== generation) return null;
-            if (!from || !to) return geocodeDenied ? 'Google denied place lookup, so this journey can’t be placed on the map.' : 'One of these locations couldn’t be found on the map. Try a fuller address.';
+            if (!from || !to) return { problem: geocodeDenied ? 'Google denied place lookup, so this journey can’t be placed on the map. Pick the locations from the search suggestions to pin them.' : 'One of these locations couldn’t be found on the map. Pick it from the search suggestions or try a fuller address.' };
             const { color, symbol, repeat } = lineStyles[style];
             const line = new maps.Polyline({ map, path: [from, to], geodesic: true, strokeOpacity: 0, icons: [{ icon: { ...symbol, strokeColor: color, fillColor: color }, offset: '0', repeat }] });
             polylines.push(line);
             pin(leg.from, from, leg.number); pin(leg.to, to, leg.number + 1);
             const km = geometry.spherical.computeDistanceBetween(from, to) / 1000;
-            return `≈ ${km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString()} km direct`;
+            return { distance: `≈ ${km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString()} km direct` };
         };
 
         for (const leg of legs.value) {
             if (version !== generation) return;
             if (!leg.from.location || !leg.to.location || !leg.mode) continue;
             if (!leg.mode.route) {
-                const summary = await directLine(leg, leg.mode.value === 'flight' ? 'flight' : 'ferry');
-                if (version !== generation) return;
-                if (summary) results.value[leg.to.id] = { summary, warnings: [], direct: true };
+                const direct = await directLine(leg, leg.mode.value === 'flight' ? 'flight' : 'ferry');
+                if (version !== generation || !direct) return;
+                results.value[leg.to.id] = { summary: direct.distance ?? direct.problem!, warnings: [], direct: !!direct.distance };
                 continue;
             }
             try {
-                const response = await routes.Route.computeRoutes({ origin: leg.from.location, destination: leg.to.location, travelMode: leg.mode.route, fields: ['path', 'distanceMeters', 'durationMillis', 'warnings'] });
+                const response = await routes.Route.computeRoutes({ origin: routeEnd(leg.from), destination: routeEnd(leg.to), travelMode: leg.mode.route, fields: ['path', 'distanceMeters', 'durationMillis', 'warnings'] });
                 if (version !== generation) return;
                 const route = response.routes?.[0];
                 if (!route?.path?.length) throw new Error('No route');
@@ -106,8 +109,8 @@ async function draw() {
                 // No road/transit route (e.g. across water): show the journey as a direct line instead.
                 const direct = await directLine(leg, 'fallback');
                 if (version !== generation) return;
-                results.value[leg.to.id] = direct
-                    ? { summary: `${direct} · no ${leg.mode.label.toLowerCase()} route found, showing a straight line`, warnings: [], direct: true }
+                results.value[leg.to.id] = direct?.distance
+                    ? { summary: `${direct.distance} · no ${leg.mode.label.toLowerCase()} route found, showing a straight line`, warnings: [], direct: true }
                     : { summary: 'Route unavailable. Check the locations or try another transport type.', warnings: [] };
             }
         }

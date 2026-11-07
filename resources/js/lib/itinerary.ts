@@ -1,6 +1,7 @@
 export type ItineraryStop = {
     id: number; title: string; location: string | null; description: string | null;
     starts_at: string; ends_at: string; transport_mode: string | null;
+    latitude?: number | null; longitude?: number | null;
 };
 
 export const transportOptions = [

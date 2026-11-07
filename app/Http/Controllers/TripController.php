@@ -12,7 +12,8 @@ class TripController extends Controller
 {
     public function index(Request $request)
     {
-        return Inertia::render('Trips/Index', ['trips' => Trip::whereHas('members', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->withCount('members')->latest()->get()]);
+        $trips = Trip::whereHas('members', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->withCount('members')->latest()->get();
+        return $request->is('api/*') ? response()->json(['data' => $trips]) : Inertia::render('Trips/Index', ['trips' => $trips]);
     }
     public function store(Request $request)
     {
@@ -22,13 +23,22 @@ class TripController extends Controller
             $trip->members()->create(['user_id' => $request->user()->id, 'status' => 'active', 'joined_at' => now()]);
             return $trip;
         });
-        return to_route('trips.show', $trip);
+        return $request->is('api/*') ? response()->json(['data' => $trip], 201) : to_route('trips.show', $trip);
     }
     public function show(Request $request, Trip $trip, TripBalances $balances)
     {
         Gate::authorize('view', $trip);
         $trip->load(['expenses.payments', 'expenses.allocations', 'expenses.settlements']);
         $shareRows = $trip->expenses->mapWithKeys(fn ($expense) => [$expense->id => app(\App\Services\ExpenseShares::class)->rows($expense)]);
+        if ($request->is('api/*')) {
+            return response()->json(['data' => [
+                'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
+                'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
+                'balances' => $balances->calculate($trip), 'expense_shares' => (object) $shareRows->all(),
+                'current_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'),
+                'is_organizer' => $trip->organizer_user_id === $request->user()->id,
+            ]]);
+        }
         return Inertia::render('Trips/Show', [
             'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
             'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
@@ -42,7 +52,10 @@ class TripController extends Controller
     {
         Gate::authorize('update', $trip);
         $token = Str::random(48);
-        TripInvitation::create(['trip_id' => $trip->id, 'created_by_user_id' => $request->user()->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(7)]);
+        $invitation = TripInvitation::create(['trip_id' => $trip->id, 'created_by_user_id' => $request->user()->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(7)]);
+        if ($request->is('api/*')) {
+            return response()->json(['data' => ['token' => $token, 'url' => route('invitations.show', $token), 'expires_at' => $invitation->expires_at]], 201)->header('Cache-Control', 'no-store');
+        }
         return back()->with('invitation_url', route('invitations.show', $token));
     }
     public function invitation(Request $request, string $token)
@@ -50,7 +63,12 @@ class TripController extends Controller
         $invitation = TripInvitation::with('trip.organizer')->where('token_hash', hash('sha256', $token))->first();
         $valid = $invitation && ! $invitation->revoked_at && $invitation->expires_at->isFuture() && $invitation->uses_count < $invitation->max_uses;
         if (! $valid) {
+            if ($request->is('api/*')) { abort(410, 'This invitation has expired or is unavailable.'); }
             return Inertia::render('Trips/Join', ['invitation' => null, 'token' => null, 'memberTripId' => null])->toResponse($request)->setStatusCode(410)->header('Referrer-Policy', 'no-referrer')->header('Cache-Control', 'private, no-store');
+        }
+        if ($request->is('api/*')) {
+            $trip = $invitation->trip;
+            return response()->json(['data' => ['organizer_name' => $trip->organizer->name, 'trip_name' => $trip->name, 'destination' => $trip->destination, 'starts_on' => $trip->starts_on->format('Y-m-d'), 'ends_on' => $trip->ends_on->format('Y-m-d')]])->header('Cache-Control', 'no-store');
         }
         if (! $request->user()) {
             $request->session()->put('url.intended', route('invitations.show', $token));
@@ -68,17 +86,18 @@ class TripController extends Controller
             $invitation = TripInvitation::where('token_hash', hash('sha256', $token))->lockForUpdate()->firstOrFail();
             abort_if($invitation->revoked_at || $invitation->expires_at->isPast() || $invitation->uses_count >= $invitation->max_uses, 410);
             $member = TripMember::firstOrCreate(['trip_id' => $invitation->trip_id, 'user_id' => $request->user()->id], ['status' => 'active', 'joined_at' => now()]);
+            abort_unless($member->status === 'active', 403, 'This membership is inactive. Contact the trip organizer.');
             if ($member->wasRecentlyCreated) { $invitation->increment('uses_count'); }
             return $invitation->trip_id;
         });
-        return to_route('trips.show', $tripId);
+        return $request->is('api/*') ? response()->json(['data' => ['trip_id' => $tripId]]) : to_route('trips.show', $tripId);
     }
     public function itinerary(Request $request, Trip $trip)
     {
         Gate::authorize('update', $trip);
         $data = $this->itineraryData($request, $trip);
-        $trip->itineraryItems()->create([...$data, 'timezone' => $trip->timezone, 'created_by_user_id' => $request->user()->id]);
-        return back();
+        $item = $trip->itineraryItems()->create([...$data, 'timezone' => $trip->timezone, 'created_by_user_id' => $request->user()->id]);
+        return $request->is('api/*') ? response()->json(['data' => $item], 201) : back();
     }
 
     public function updateItinerary(Request $request, Trip $trip, \App\Models\ItineraryItem $item)
@@ -86,7 +105,7 @@ class TripController extends Controller
         Gate::authorize('update', $trip);
         abort_unless($item->trip_id === $trip->id, 404);
         $item->update($this->itineraryData($request, $trip));
-        return back();
+        return $request->is('api/*') ? response()->json(['data' => $item->fresh()]) : back();
     }
 
     private function itineraryData(Request $request, Trip $trip): array

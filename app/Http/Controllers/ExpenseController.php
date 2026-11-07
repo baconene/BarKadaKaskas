@@ -14,13 +14,14 @@ class ExpenseController extends Controller
     {
         Gate::authorize('view', $trip);
         $data = $this->validatedExpense($request, $trip);
-        DB::transaction(function () use ($data, $trip, $request, $splitter) {
+        $expense = DB::transaction(function () use ($data, $trip, $request, $splitter) {
             $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
             foreach ($data['payments'] as $payment) { $expense->payments()->create($payment + ['paid_at' => now()]); }
             $this->writeAllocations($expense, $data, $splitter);
             ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'created', 'after' => ['total_minor' => $expense->total_minor, 'status' => 'open']]);
+            return $expense;
         });
-        return back();
+        return $this->respond($request, $expense, 201);
     }
 
     public function update(Request $request, Trip $trip, Expense $expense, SplitCalculator $splitter)
@@ -47,7 +48,7 @@ class ExpenseController extends Controller
             $this->writeAllocations($expense, $data, $splitter);
             ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'updated', 'before' => $before, 'after' => $expense->fresh(['items', 'allocations'])->toArray()]);
         });
-        return back();
+        return $this->respond($request, $expense);
     }
 
     private function validatedExpense(Request $request, Trip $trip): array
@@ -87,14 +88,14 @@ class ExpenseController extends Controller
         abort_unless($expense->trip_id === $trip->id, 404);
         $data = $request->validate(['status' => ['required', Rule::enum(ExpenseStatus::class)], 'version' => 'required|integer|min:1', 'reason' => 'nullable|string|max:2000', 'void_payments' => 'sometimes|boolean']);
         $lifecycle->transition($expense, $request->user(), ExpenseStatus::from($data['status']), (int) $data['version'], $data['reason'] ?? null, (bool) ($data['void_payments'] ?? false));
-        return back();
+        return $this->respond($request, $expense);
     }
     public function sharePaid(Request $request, Trip $trip, Expense $expense, \App\Services\ExpenseShares $shares)
     {
         abort_unless($expense->trip_id === $trip->id, 404);
         $data = $request->validate(['member_id' => 'required|integer', 'version' => 'required|integer', 'settlement_id' => 'nullable|integer', 'new_payment' => 'sometimes|boolean']);
         $shares->markPaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version'], isset($data['settlement_id']) ? (int) $data['settlement_id'] : null, (bool) ($data['new_payment'] ?? false));
-        return back();
+        return $this->respond($request, $expense);
     }
     public function payment(Request $request, Trip $trip, Expense $expense)
     {
@@ -107,7 +108,7 @@ class ExpenseController extends Controller
             $expense->increment('version');
             ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'payment_recorded', 'after' => $payment->toArray()]);
         });
-        return back();
+        return $this->respond($request, $expense);
     }
     public function receipt(Request $request, Trip $trip, Expense $expense)
     {
@@ -115,12 +116,19 @@ class ExpenseController extends Controller
         $request->validate(['receipt' => 'required|file|mimes:jpg,jpeg,png,pdf|max:10240']);
         abort_if(in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled]), 409);
         $file = $request->file('receipt');
-        $expense->receipts()->create(['uploaded_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'storage_path' => $file->store('receipts', 'local'), 'mime_type' => $file->getMimeType(), 'file_hash' => hash_file('sha256', $file->getRealPath()), 'processing_status' => 'manual_review']);
-        return back();
+        $receipt = $expense->receipts()->create(['uploaded_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'storage_path' => $file->store('receipts', 'local'), 'mime_type' => $file->getMimeType(), 'file_hash' => hash_file('sha256', $file->getRealPath()), 'processing_status' => 'manual_review']);
+        return $request->is('api/*') ? response()->json(['data' => $receipt->only(['id', 'processing_status'])], 201) : back();
     }
     public function download(Receipt $receipt)
     {
         Gate::authorize('view', $receipt->expense->trip);
         return Storage::disk('local')->download($receipt->storage_path);
+    }
+
+    private function respond(Request $request, Expense $expense, int $status = 200)
+    {
+        return $request->is('api/*')
+            ? response()->json(['data' => $expense->fresh(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status'])], $status)
+            : back();
     }
 }

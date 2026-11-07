@@ -104,15 +104,31 @@ show them read-only).
 
 ## Maps in the apps
 
-Both apps show each itinerary day on an in-app map with numbered pins joined in
-visiting order, plus **Navigate** (Google Maps directions through the day) and
-per-stop **Map** / **Directions** links.
+Each itinerary day has an in-app map with numbered pins joined in visiting order.
 
-- Android uses OpenStreetMap tiles through osmdroid and iOS uses Apple MapKit,
-  so neither needs a Google Maps API key. (The web map still needs
-  `GOOGLE_MAPS_BROWSER_KEY`; see `docs/google-maps-setup.md`.)
-- Stops picked from place search on the web already carry coordinates. For
-  typed addresses the app asks the device geocoder (Android `Geocoder`, iOS
-  `CLGeocoder`) and shows those pins slightly faded as approximate.
-- Saving a stop from the app keeps its pin when the address is unchanged and
-  geocodes a new address, so editing on mobile no longer clears web pins.
+- **Tap a place (or a pin, then "Go")** to start Google Maps turn-by-turn
+  navigation **from your current location** to that stop. The travel mode
+  follows the stop's transport. This hands off to the Google Maps app (or the
+  browser when it is not installed); in-app turn-by-turn would need Google's
+  paid Navigation SDK.
+- **Day route** previews the whole day's stops in Google Maps.
+- **Android** shows Google Maps when the build has a Maps SDK key, and falls
+  back to OpenStreetMap without one. **iOS** uses Apple MapKit (no key).
+- Typed addresses are looked up with the device geocoder (Android `Geocoder`,
+  iOS `CLGeocoder`) and shown faded as approximate pins. Saving a stop from the
+  app keeps its pin when the address is unchanged.
+
+### Google Maps key for Android
+
+1. In Google Cloud Console, enable **Maps SDK for Android** and create an API
+   key. Restrict it to *Android apps* with package `com.barkadakaskas.app` and
+   your signing certificate's SHA-1 (`./gradlew signingReport` shows the debug
+   one), and to the Maps SDK for Android API.
+2. Local builds: add `MAPS_API_KEY=your_key` to
+   `android/BarKadaKaskas/local.properties` (git-ignored).
+3. CI builds: add a repository secret named `MAPS_API_KEY`
+   (Settings → Secrets and variables → Actions). The mobile workflow passes it
+   to Gradle.
+
+This is a different key from the web's `GOOGLE_MAPS_BROWSER_KEY`
+(`docs/google-maps-setup.md`), which is restricted to your website.

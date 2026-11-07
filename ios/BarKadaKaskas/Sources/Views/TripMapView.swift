@@ -13,11 +13,14 @@ struct MapStop: Identifiable {
 /// In-app Apple Maps view of a day's stops: numbered pins joined in visiting order. No API key needed.
 struct TripMapView: View {
     let stops: [MapStop]
+    /// Called with the stop's id when the traveller taps "Navigate" on a selected pin.
+    var onNavigate: (Int) -> Void = { _ in }
     @State private var position: MapCameraPosition = .automatic
     @State private var selection: Int?
 
     var body: some View {
         Map(position: $position, selection: $selection) {
+            UserAnnotation()
             if stops.count > 1 {
                 MapPolyline(coordinates: stops.map(\.coordinate))
                     .stroke(Theme.forest.opacity(0.75), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
@@ -36,8 +39,23 @@ struct TripMapView: View {
                 .tag(stop.id)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let id = selection, let stop = stops.first(where: { $0.id == id }) {
+                HStack(spacing: 10) {
+                    Text("\(stop.number). \(stop.title)").font(.subheadline.bold()).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Button { onNavigate(stop.id) } label: { Label("Go", systemImage: "location.north.line.fill").font(.subheadline.bold()) }
+                        .buttonStyle(.borderedProminent).tint(Theme.forest)
+                }
+                .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .padding(10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: selection)
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .mapControls { MapCompass(); MapScaleView() }
+        .mapControls { MapUserLocationButton(); MapCompass(); MapScaleView() }
         // Re-frame whenever the day (and so the set of pins) changes.
         .onChange(of: stops.map(\.id)) { _, _ in withAnimation { position = .automatic } }
     }

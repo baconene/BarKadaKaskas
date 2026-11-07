@@ -121,6 +121,12 @@ enum ItineraryLogic {
         return mapsURL("dir", [URLQueryItem(name: "origin", value: origin), URLQueryItem(name: "destination", value: destination), URLQueryItem(name: "travelmode", value: travelMode(to.transport_mode))])
     }
 
+    /// Turn-by-turn navigation from the traveller's current location (no origin) to the stop.
+    static func navigateURL(_ stop: ItineraryStop, guess: CLLocationCoordinate2D? = nil) -> URL? {
+        guard let destination = point(stop, guess: guess) else { return nil }
+        return mapsURL("dir", [URLQueryItem(name: "destination", value: destination), URLQueryItem(name: "travelmode", value: travelMode(stop.transport_mode)), URLQueryItem(name: "dir_action", value: "navigate")])
+    }
+
     /// Google Maps directions through a day's stops in order (repeats removed, at most 9 waypoints).
     static func dayDirectionsURL(_ stops: [ItineraryStop], guesses: [Int: CLLocationCoordinate2D] = [:]) -> URL? {
         var points: [String] = []

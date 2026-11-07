@@ -89,6 +89,15 @@ object Itinerary {
         return "https://www.google.com/maps/dir/?api=1&origin=${encode(origin)}&destination=${encode(destination)}&travelmode=${travelMode(to.transport)}"
     }
 
+    /**
+     * Turn-by-turn navigation from wherever the traveller is now to [stop]. Leaving out `origin`
+     * makes Google Maps start at the device's current location; `dir_action=navigate` starts guidance.
+     */
+    fun navigateUrl(stop: Stop): String? {
+        val destination = point(stop) ?: return null
+        return "https://www.google.com/maps/dir/?api=1&destination=${encode(destination)}&travelmode=${travelMode(stop.transport)}&dir_action=navigate"
+    }
+
     /** Google Maps directions through a day's stops in order (consecutive duplicates removed, at most 9 waypoints). */
     fun dayDirectionsUrl(stops: List<Stop>): String? {
         val points = mutableListOf<String>()

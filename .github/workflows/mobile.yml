@@ -24,6 +24,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Build and test debug APK
+        env:
+          # Optional repository secret; without it the app falls back to OpenStreetMap.
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
         run: |
           set -o pipefail
           chmod +x gradlew

@@ -127,19 +127,21 @@ struct ItineraryView: View {
                         Text(located > 0 ? "Finding places on the map…" : "Add locations to see this day on the map").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }.padding()
                 } else {
-                    TripMapView(stops: markers)
+                    TripMapView(stops: markers) { id in
+                        if let stop = day.stops.first(where: { $0.id == id }), let url = ItineraryLogic.navigateURL(stop, guess: guesses[id]) { openURL(url) }
+                    }
                 }
             }
             .frame(height: 250).frame(maxWidth: .infinity).background(Theme.sage.opacity(0.5))
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Route for \(ItineraryLogic.dayLabel(day.key))").font(.subheadline.bold())
-                    Text(located > markers.count ? "\(markers.count) on the map · \(located - markers.count) still locating" : "\(day.stops.count) stops · tap a pin for its name").font(.caption).foregroundStyle(.secondary)
+                    Text(located > markers.count ? "\(markers.count) on the map · \(located - markers.count) still locating" : "Tap a pin or a place to navigate there").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let url = ItineraryLogic.dayDirectionsURL(day.stops, guesses: guesses) {
-                    Button { openURL(url) } label: { Label("Navigate", systemImage: "location.north.line.fill").font(.subheadline.bold()) }
-                        .buttonStyle(.borderedProminent).tint(Theme.forest)
+                    Button { openURL(url) } label: { Label("Day route", systemImage: "point.topleft.down.to.point.bottomright.curvepath").font(.subheadline.bold()) }
+                        .buttonStyle(.bordered).tint(Theme.forest)
                 }
             }.padding(14)
         }
@@ -187,10 +189,20 @@ private struct TimelineRow: View {
                 Text(stop.title).font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .leading)
                 if canEdit { Button(action: edit) { Image(systemName: "pencil").font(.caption.bold()).frame(width: 30, height: 30).background(Theme.sage.opacity(0.6), in: Circle()) }.accessibilityLabel("Edit \(stop.title)") }
             }
-            if let location = stop.location, !location.isEmpty {
-                Button { if let url = ItineraryLogic.searchURL(stop, guess: guesses[stop.id]) { openURL(url) } } label: {
-                    Label(location, systemImage: "mappin").font(.caption).foregroundStyle(Theme.forest).lineLimit(expanded ? 3 : 1).multilineTextAlignment(.leading)
+            // Tapping the place starts navigation from where you are now.
+            if let location = stop.location, !location.isEmpty, let go = ItineraryLogic.navigateURL(stop, guess: guesses[stop.id]) {
+                Button { openURL(go) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin").foregroundStyle(Theme.moss)
+                        Text(location).foregroundStyle(Theme.forest).lineLimit(expanded ? 3 : 1).multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
+                        Label("Go", systemImage: "location.north.line.fill").font(.caption.bold()).foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5).background(Theme.forest, in: Capsule())
+                    }
+                    .font(.caption).padding(.leading, 8).padding(.trailing, 4).padding(.vertical, 4)
+                    .background(Theme.sage.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel("Navigate to \(location)")
             }
             HStack(spacing: 6) {
                 if let cost = ItineraryLogic.costRange(stop.cost_min_minor, stop.cost_max_minor, currency: trip.currency_code) { chip(cost, "banknote", strong: true) }
@@ -204,10 +216,10 @@ private struct TimelineRow: View {
                 if let note = stop.cost_note, !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
                 HStack(spacing: 8) {
                     if let url = ItineraryLogic.searchURL(stop, guess: guesses[stop.id]), stop.location?.isEmpty == false {
-                        Button { openURL(url) } label: { Label("Map", systemImage: "map") }.buttonStyle(.bordered)
+                        Button { openURL(url) } label: { Label("View on map", systemImage: "map") }.buttonStyle(.bordered)
                     }
                     if let previous, !ItineraryLogic.samePlace(previous, stop), let url = ItineraryLogic.directionsURL(from: previous, to: stop, guesses: guesses) {
-                        Button { openURL(url) } label: { Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond") }.buttonStyle(.bordered)
+                        Button { openURL(url) } label: { Label("From previous stop", systemImage: "arrow.triangle.turn.up.right.diamond") }.buttonStyle(.bordered)
                     }
                 }.font(.caption.bold()).tint(Theme.forest)
             } else if (stop.description ?? "").isEmpty == false || stop.location?.isEmpty == false {

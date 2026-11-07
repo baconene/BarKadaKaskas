@@ -32,6 +32,13 @@ class ItineraryTest {
         assertTrue(url.endsWith("travelmode=walking"))
     }
 
+    @Test fun navigationStartsFromCurrentLocation() {
+        val url = Itinerary.navigateUrl(stop(1, "2026-11-11T00:00:00Z", "Paliton Beach", 9.18, 123.47, transport = "motorcycle"))!!
+        assertEquals("https://www.google.com/maps/dir/?api=1&destination=9.18%2C123.47&travelmode=two-wheeler&dir_action=navigate", url)
+        assertTrue(Itinerary.navigateUrl(stop(2, "2026-11-11T00:00:00Z", "Lazi Church"))!!.contains("destination=Lazi+Church"))
+        assertNull(Itinerary.navigateUrl(stop(3, "2026-11-11T00:00:00Z")))
+    }
+
     @Test fun phaseCountsDownAndTracksTripDays() {
         val trip = Trip(1, "Siquijor", "Siquijor", "2026-11-11", "2026-11-17")
         assertEquals("In 4 days", Itinerary.phaseLabel(Itinerary.phase(trip, LocalDate.parse("2026-11-07"))))

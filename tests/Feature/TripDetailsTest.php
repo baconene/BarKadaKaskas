@@ -55,9 +55,8 @@ class TripDetailsTest extends TestCase
 
     public function test_organizer_uploads_replaces_and_removes_cover_photo(): void
     {
-        $headers = $this->headers($this->owner);
         $this->postJson("/api/v1/trips/{$this->trip->id}/cover", ['cover' => UploadedFile::fake()->image('cover.jpg', 1200, 800)], $this->headers($this->friend))->assertForbidden();
-        $first = $this->postJson("/api/v1/trips/{$this->trip->id}/cover", ['cover' => UploadedFile::fake()->image('cover.jpg', 1200, 800)], $headers)->assertOk()->json('data');
+        $first = $this->postJson("/api/v1/trips/{$this->trip->id}/cover", ['cover' => UploadedFile::fake()->image('cover.jpg', 1200, 800)], $this->headers($this->owner))->assertOk()->json('data');
         $this->assertArrayNotHasKey('cover_path', $first);
         $this->assertMatchesRegularExpression('#/trip-covers/[A-Za-z0-9]{40}\.jpg$#', $first['cover_url']);
         $oldPath = $this->trip->fresh()->cover_path;

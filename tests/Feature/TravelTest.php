@@ -3,6 +3,8 @@ namespace Tests\Feature;
 
 use App\Enums\ExpenseStatus;
 use App\Models\{Expense, ExpenseCategory, Settlement, Trip, User};
+use App\Models\TripInvitation;
+use Inertia\Testing\AssertableInertia as Assert;
 use App\Services\TripBalances;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -122,5 +124,115 @@ class TravelTest extends TestCase
         $this->assertSame(3, $this->trip->members()->count());
         $this->post('/trips', ['name' => 'Baguio', 'destination' => 'Baguio', 'starts_on' => '2027-01-01', 'ends_on' => '2027-01-03', 'currency_code' => 'PHP', 'timezone' => 'Asia/Manila'])->assertSessionHasNoErrors();
         $this->assertDatabaseCount('trips', 2);
+    }
+
+    private function publicInvitation(string $token = 'test-invitation'): TripInvitation
+    {
+        return TripInvitation::create(['trip_id' => $this->trip->id, 'created_by_user_id' => $this->owner->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(7)]);
+    }
+
+    public function test_guest_can_preview_invitation_without_private_trip_data_or_joining(): void
+    {
+        $this->publicInvitation();
+        $this->get('/join/test-invitation')->assertOk()
+            ->assertHeader('Referrer-Policy', 'no-referrer')
+            ->assertSessionHas('url.intended', route('invitations.show', 'test-invitation'))
+            ->assertInertia(fn (Assert $page) => $page->component('Trips/Join')
+                ->where('invitation.organizerName', $this->owner->name)
+                ->where('invitation.tripName', 'Palawan')->where('invitation.startsOn', 'December 1, 2026')
+                ->where('invitation.destination', 'El Nido')->where('memberTripId', null)
+                ->missing('trip')->missing('expenses')->missing('members'));
+        $this->post('/join/test-invitation')->assertRedirect('/login');
+        $this->assertSame(2, $this->trip->members()->count());
+    }
+
+    public function test_login_returns_guest_to_invitation_for_explicit_join(): void
+    {
+        $this->publicInvitation();
+        $this->get('/join/test-invitation');
+        $this->post('/login', ['email' => $this->friend->email, 'password' => 'password'])
+            ->assertRedirect(route('invitations.show', 'test-invitation'));
+        $this->assertSame(2, $this->trip->members()->count());
+    }
+
+    public function test_signup_returns_guest_to_invitation_without_automatically_joining(): void
+    {
+        $this->publicInvitation();
+        $this->get('/join/test-invitation');
+        $this->post('/register', ['name' => 'New Traveler', 'email' => 'traveler@example.com', 'password' => 'password', 'password_confirmation' => 'password'])
+            ->assertRedirect(route('invitations.show', 'test-invitation'));
+        $this->assertSame(2, $this->trip->members()->count());
+    }
+
+    public function test_invalid_expired_revoked_and_exhausted_invitations_show_no_trip_details(): void
+    {
+        $invitation = $this->publicInvitation();
+        foreach ([['expires_at' => now()->subDay()], ['expires_at' => now()->addDay(), 'revoked_at' => now()], ['revoked_at' => null, 'uses_count' => 50]] as $values) {
+            $invitation->update($values);
+            $this->get('/join/test-invitation')->assertStatus(410)->assertInertia(fn (Assert $page) => $page->component('Trips/Join')->where('invitation', null)->where('token', null));
+        }
+        $this->get('/join/not-real')->assertStatus(410);
+    }
+
+    public function test_existing_member_sees_view_trip_action(): void
+    {
+        $this->publicInvitation();
+        $this->actingAs($this->friend)->get('/join/test-invitation')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('memberTripId', $this->trip->id));
+    }
+
+    public function test_organizer_can_reassign_completed_expense_and_balances_recalculate(): void
+    {
+        $expense = $this->createExpense(); $this->changeStatus($expense, 'completed');
+        $paymentId = $expense->payments()->first()->id;
+        $data = $this->payload(); $data['version'] = $expense->fresh()->version;
+        $data['split_method'] = 'percentage';
+        $data['allocations'][0]['weight'] = 2500; $data['allocations'][1]['weight'] = 7500;
+        $this->patch("/trips/{$this->trip->id}/expenses/{$expense->id}", $data)->assertSessionHasNoErrors();
+        $this->assertSame([7501, -7501], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->assertSame($paymentId, $expense->payments()->first()->id);
+        $this->assertSame(ExpenseStatus::Completed, $expense->fresh()->status);
+        $this->assertDatabaseHas('activity_logs', ['subject_id' => $expense->id, 'action' => 'updated']);
+    }
+
+    public function test_edit_can_switch_to_itemized_and_add_members_to_receipt_lines(): void
+    {
+        $expense = $this->createExpense(); $data = $this->payload();
+        $data['version'] = 1; $data['split_method'] = 'itemized';
+        $data['items'] = [['description' => 'Shared food', 'amount_minor' => 10001, 'member_ids' => [$this->ownerMember, $this->friendMember]]];
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
+        $this->patch($url, $data)->assertSessionHasNoErrors();
+        $this->assertSame(2, $expense->allocations()->count());
+        $data['version'] = 2; $data['items'][0]['member_ids'] = [$this->friendMember];
+        $this->patch($url, $data)->assertSessionHasNoErrors();
+        $this->assertSame(1, $expense->items()->count());
+        $this->assertSame(1, $expense->allocations()->count());
+        $this->assertSame(10001, $expense->allocations()->first()->amount_minor);
+    }
+
+    public function test_edits_reject_members_stale_versions_and_locked_expenses(): void
+    {
+        $expense = $this->createExpense(); $data = $this->payload() + ['version' => 1];
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
+        $this->actingAs($this->friend)->patch($url, $data)->assertForbidden();
+        $this->actingAs($this->owner)->patch($url, $data)->assertSessionHasNoErrors();
+        $this->patch($url, $data)->assertSessionHasErrors('expense');
+        $this->changeStatus($expense, 'completed'); $this->changeStatus($expense, 'closed');
+        $data['version'] = $expense->fresh()->version;
+        $this->patch($url, $data)->assertSessionHasErrors('expense');
+        $this->assertSame(ExpenseStatus::Closed, $expense->fresh()->status);
+    }
+
+    public function test_invalid_edit_rolls_back_and_cannot_remove_recorded_payments(): void
+    {
+        $expense = $this->createExpense(); $data = $this->payload() + ['version' => 1];
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
+        $data['payments'] = [];
+        $this->patch($url, $data)->assertSessionHasErrors('expense');
+        $this->assertSame(1, $expense->payments()->count());
+        $data = $this->payload() + ['version' => 1]; $data['split_method'] = 'exact';
+        $this->patch($url, $data)->assertSessionHasErrors('allocations');
+        $this->assertSame(1, $expense->fresh()->version);
+        $this->assertSame(10001, (int) $expense->allocations()->sum('amount_minor'));
     }
 }

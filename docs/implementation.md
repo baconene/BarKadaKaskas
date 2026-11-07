@@ -9,6 +9,8 @@ Laravel 13 / Vue 3 / Inertia 2. All amounts use integer minor units. The initial
 - Equal, exact, percentage, shares and itemized splits. Itemized lines currently split equally among selected travelers; reviewed line totals must include applicable tax/discount.
 - Multiple merchant payers and subsequent payment entry.
 - Organizer-controlled expense lifecycle with optimistic version checks and row locking.
+- Organizer editing of open/completed expenses and assigned shares, with live split previews. Closed/cancelled expenses remain locked. Existing merchant payments are preserved and changes are audited.
+- Public animated invitation landing page with organizer/trip/date details, login/signup return flow, and expired-link handling. Trip destinations and itinerary locations open Google Maps.
 - Private receipt upload/download and manual entry.
 - Derived trip balances, reimbursement recording and recipient confirmation.
 - All planned domain models and migration tables, including the future extraction/proposal/adjustment entities.
@@ -32,7 +34,7 @@ TripMember is the reference for payers, recipients and allocated shares. HTTP wr
 ## Next phases (not yet delivered)
 
 - Google Cloud Document AI Expense Parser integration, queued extraction, review/correction screen and safe retry handling. Uploads currently say manual review; no fake extraction is performed.
-- Editing draft/open allocations after creation, member proposals/claims and organizer approval.
+- Member proposals/claims and organizer approval; direct organizer editing is available now.
 - Explicit receipt adjustments and custom categories in the UI; schema is ready.
 - Refund/reversal ledger, trip ownership transfer, membership changes and trip archival UI.
 - Versioned Sanctum API, mobile apps, push notifications and offline synchronization.

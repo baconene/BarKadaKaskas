@@ -13,8 +13,48 @@ class ExpenseController extends Controller
     public function store(Request $request, Trip $trip, SplitCalculator $splitter)
     {
         Gate::authorize('view', $trip);
+        $data = $this->validatedExpense($request, $trip);
+        DB::transaction(function () use ($data, $trip, $request, $splitter) {
+            $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
+            foreach ($data['payments'] as $payment) { $expense->payments()->create($payment + ['paid_at' => now()]); }
+            $this->writeAllocations($expense, $data, $splitter);
+            ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'created', 'after' => ['total_minor' => $expense->total_minor, 'status' => 'open']]);
+        });
+        return back();
+    }
+
+    public function update(Request $request, Trip $trip, Expense $expense, SplitCalculator $splitter)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        Gate::authorize('update', $trip);
+        $request->validate(['version' => 'required|integer|min:1']);
+        $data = $this->validatedExpense($request, $trip);
+        DB::transaction(function () use ($data, $expense, $request, $splitter) {
+            $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $fail = fn ($message) => throw ValidationException::withMessages(['expense' => $message]);
+            if (in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled], true)) { $fail('Closed and cancelled expenses cannot be edited.'); }
+            if ($expense->version !== (int) $data['version']) { $fail('This expense changed. Refresh and reopen the editor before saving.'); }
+            // Payments are historical facts. The editor changes shares, never payment history.
+            $existing = $expense->payments()->get()->groupBy('trip_member_id')->map(fn ($rows) => (int) $rows->sum('amount_minor'))->sortKeys()->all();
+            $submitted = collect($data['payments'])->mapWithKeys(fn ($p) => [(int) $p['trip_member_id'] => (int) $p['amount_minor']])->sortKeys()->all();
+            if ($existing !== $submitted) { $fail('Recorded payments cannot be changed here. Use Record payment to add a payment.'); }
+            if ($expense->status === ExpenseStatus::Completed && array_sum($existing) !== (int) $data['total_minor']) { $fail('A completed expense total must still equal its recorded payments. You can change its assigned shares.'); }
+            if ($expense->adjustments()->exists()) { $fail('This expense has separate adjustments and requires an adjustment-aware editor.'); }
+            $before = $expense->load(['items', 'allocations'])->toArray();
+            $expense->allocations()->delete();
+            $expense->items()->delete();
+            $expense->update(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['version' => $expense->version + 1]);
+            $this->writeAllocations($expense, $data, $splitter);
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'updated', 'before' => $before, 'after' => $expense->fresh(['items', 'allocations'])->toArray()]);
+        });
+        return back();
+    }
+
+    private function validatedExpense(Request $request, Trip $trip): array
+    {
         $memberIds = $trip->members()->where('status', 'active')->pluck('id')->all();
         $data = $request->validate([
+            'version' => 'sometimes|integer|min:1',
             'title' => 'required|string|max:200', 'merchant' => 'nullable|string|max:200', 'incurred_at' => 'required|date_format:Y-m-d',
             'category_id' => ['required', Rule::in(ExpenseCategory::where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->pluck('id')->all())],
             'total_minor' => 'required|integer|min:1|max:100000000', 'split_method' => 'required|in:equal,exact,percentage,shares,itemized',
@@ -27,9 +67,11 @@ class ExpenseController extends Controller
         ]);
         if (array_sum(array_column($data['payments'], 'amount_minor')) > $data['total_minor']) { throw ValidationException::withMessages(['payments' => 'Payments cannot exceed the total.']); }
         if ($data['split_method'] === 'itemized' && array_sum(array_column($data['items'], 'amount_minor')) !== (int) $data['total_minor']) { throw ValidationException::withMessages(['items' => 'Item totals must equal the bill total. Include taxes and discounts in reviewed line amounts.']); }
-        DB::transaction(function () use ($data, $trip, $request, $splitter) {
-            $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
-            foreach ($data['payments'] as $payment) { $expense->payments()->create($payment + ['paid_at' => now()]); }
+        return $data;
+    }
+
+    private function writeAllocations(Expense $expense, array $data, SplitCalculator $splitter): void
+    {
             if ($data['split_method'] === 'itemized') {
                 foreach ($data['items'] as $index => $line) {
                     $item = $expense->items()->create(['description' => $line['description'], 'unit_price_minor' => $line['amount_minor'], 'line_total_minor' => $line['amount_minor'], 'sort_order' => $index]);
@@ -39,9 +81,6 @@ class ExpenseController extends Controller
                 $weights = array_map('intval', array_column($data['allocations'], 'weight', 'trip_member_id'));
                 foreach ($splitter->calculate((int) $data['total_minor'], $data['split_method'], $weights) as $member => $amount) { $expense->allocations()->create(['trip_member_id' => $member, 'amount_minor' => $amount, 'basis_value' => $weights[$member]]); }
             }
-            ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'created', 'after' => ['total_minor' => $expense->total_minor, 'status' => 'open']]);
-        });
-        return back();
     }
     public function status(Request $request, Trip $trip, Expense $expense, ExpenseLifecycle $lifecycle)
     {

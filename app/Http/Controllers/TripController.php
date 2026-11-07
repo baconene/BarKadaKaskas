@@ -41,11 +41,22 @@ class TripController extends Controller
         TripInvitation::create(['trip_id' => $trip->id, 'created_by_user_id' => $request->user()->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(7)]);
         return back()->with('invitation_url', route('invitations.show', $token));
     }
-    public function invitation(string $token)
+    public function invitation(Request $request, string $token)
     {
-        $invitation = TripInvitation::where('token_hash', hash('sha256', $token))->whereNull('revoked_at')->where('expires_at', '>', now())->firstOrFail();
-        abort_if($invitation->uses_count >= $invitation->max_uses, 410);
-        return Inertia::render('Trips/Join', ['tripName' => $invitation->trip->name, 'token' => $token]);
+        $invitation = TripInvitation::with('trip.organizer')->where('token_hash', hash('sha256', $token))->first();
+        $valid = $invitation && ! $invitation->revoked_at && $invitation->expires_at->isFuture() && $invitation->uses_count < $invitation->max_uses;
+        if (! $valid) {
+            return Inertia::render('Trips/Join', ['invitation' => null, 'token' => null, 'memberTripId' => null])->toResponse($request)->setStatusCode(410)->header('Referrer-Policy', 'no-referrer')->header('Cache-Control', 'private, no-store');
+        }
+        if (! $request->user()) {
+            $request->session()->put('url.intended', route('invitations.show', $token));
+        }
+        $trip = $invitation->trip;
+        $isMember = $request->user() && $trip->members()->where('user_id', $request->user()->id)->where('status', 'active')->exists();
+        return Inertia::render('Trips/Join', [
+            'invitation' => ['organizerName' => $trip->organizer->name, 'tripName' => $trip->name, 'destination' => $trip->destination, 'startsOn' => $trip->starts_on->format('F j, Y'), 'endsOn' => $trip->ends_on->format('F j, Y')],
+            'token' => $token, 'memberTripId' => $isMember ? $trip->id : null,
+        ])->toResponse($request)->header('Referrer-Policy', 'no-referrer')->header('Cache-Control', 'private, no-store');
     }
     public function join(Request $request, string $token)
     {

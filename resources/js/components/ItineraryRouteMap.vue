@@ -50,9 +50,15 @@ async function draw() {
                 }
                 map.fitBounds(bounds, 45);
                 results.value[leg.to.id] = { summary: `${((route.distanceMeters ?? 0) / 1000).toFixed(1)} km · about ${Math.ceil((route.durationMillis ?? 0) / 60000)} min`, warnings: route.warnings ?? [] };
-            } catch {
+            } catch (error) {
                 if (version !== generation) return;
-                results.value[leg.to.id] = { summary: 'Route unavailable. Check the locations or try another transport type.', warnings: [] };
+                const message = String(error);
+                const summary = message.includes('PERMISSION_DENIED')
+                    ? 'Google denied route access. Check that Routes API is enabled and permitted for this API key.'
+                    : message.includes('RESOURCE_EXHAUSTED')
+                        ? 'Google routing quota has been reached. Try again later.'
+                        : 'Route unavailable. Check the locations or try another transport type.';
+                results.value[leg.to.id] = { summary, warnings: [] };
             }
         }
     } catch {

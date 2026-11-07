@@ -11,7 +11,7 @@ const props = defineProps<{
     paidAt: string | null;
     confirmedAt: string | null;
     timezone: string;
-    expense?: { title: string; merchant: string | null; status: string };
+    expense?: { title: string; category: { name: string }; merchant: string | null; status: string };
     canConfirm: boolean;
 }>();
 defineEmits<{ confirm: [] }>();
@@ -33,7 +33,7 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('en-PH', { dateSty
                 using {{ methodLabel }}.
             </p>
             <p class="payment-purpose" v-if="expense">
-                For <strong>{{ expense.title }}</strong><template v-if="expense.merchant"> · {{ expense.merchant }}</template>
+                For <strong>{{ expense.category.name }} [{{ expense.title }}]</strong><template v-if="expense.merchant"> on {{ expense.merchant }}</template>
                 <span v-if="excluded" class="voided">Expense cancelled — excluded from trip balances</span>
             </p>
             <p v-else class="payment-purpose">General trip reimbursement · not linked to a specific expense</p>

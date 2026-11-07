@@ -1,63 +1,107 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import { Compass, ArrowUpRight, Download, ShieldCheck, Smartphone, Apple } from 'lucide-vue-next';
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronDown, Compass, Download, Globe2, MapPin, ReceiptText, Route, Smartphone, Users, Wallet } from 'lucide-vue-next';
 import { computed } from 'vue';
 import type { SharedData } from '@/types';
-const props=defineProps<{android:{downloadUrl:string;iosDownloadUrl:string;releasesUrl:string}}>();
-const page=usePage<SharedData>();
-// Put the steps for the visitor's own phone first.
-const isIphone=computed(()=>typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.test(navigator.userAgent));
+
+const props = defineProps<{ android: { downloadUrl: string; iosDownloadUrl: string; releasesUrl: string } }>();
+const page = usePage<SharedData>();
+const startUrl = computed(() => page.props.auth?.user ? '/dashboard' : '/register');
+const features = [
+    { icon: Route, number: '01', title: 'Make a plan together.', text: 'The places, the dates, the little detours. Keep your itinerary in one place so everyone knows what’s next.', detail: 'Itineraries & travel routes' },
+    { icon: ReceiptText, number: '02', title: 'Split it your way.', text: 'One person booked the stay? Someone skipped dinner? Split the whole bill or assign each item to the right friends.', detail: 'Shared bills & individual shares' },
+    { icon: Wallet, number: '03', title: 'Keep the money clear.', text: 'See who covered what and who still owes. Record repayments as they happen, with less chasing in the group chat.', detail: 'Balances & payment records' },
+];
 </script>
-<template><Head title="Travel together. Split fairly."/><div class="landing"><nav><a href="/" class="logo"><Compass/> BarKadaKaskas</a><Link :href="page.props.auth?.user?'/dashboard':'/login'">{{ page.props.auth?.user?'My trips':'Log in' }} ↗</Link></nav><main><p class="eyebrow">FOR THE TRIPS THAT BECOME STORIES</p><h1>More memories.<br/>Less “who owes who?”</h1><p class="intro">Bring your barkada. Plan the adventure. Share every expense fairly, from the first coffee to the last ride home.</p><Link :href="page.props.auth?.user?'/dashboard':'/register'" class="cta">Let's plan a trip <ArrowUpRight :size="20"/></Link><a href="#download" class="cta ghost"><Smartphone :size="19"/> Get the app</a><div class="features"><article><span>01 / PLAN</span><h2>One trip. Everyone in.</h2><p>Keep your itinerary and your friends in the same place.</p></article><article><span>02 / SHARE</span><h2>Your order. Your share.</h2><p>Split the whole bill or assign each receipt item to its people.</p></article><article><span>03 / SETTLE</span><h2>Clear balances. Happy friends.</h2><p>Track payments, close expenses, and get back to the good part.</p></article></div>
-<section id="download" class="download" aria-labelledby="download-title">
- <div class="download-copy">
-  <p class="eyebrow">GET THE APP</p>
-  <h2 id="download-title">BarkadaKasKas on your phone</h2>
-  <p class="notice"><ShieldCheck :size="18" aria-hidden="true"/> <span><strong>Not on Google Play or the App Store (yet).</strong> Download the apps directly here. This page is the official download.</span></p>
-  <div class="download-buttons">
-   <a :href="props.android.downloadUrl" class="cta download-btn" download><Download :size="20"/> Download for Android <small>APK</small></a>
-   <a :href="props.android.iosDownloadUrl" class="cta ghost download-btn" download><Apple :size="19"/> iPhone <small>IPA</small></a>
-  </div>
-  <p class="small">Always the latest version. <a :href="props.android.releasesUrl" target="_blank" rel="noopener">See all versions</a></p>
- </div>
- <div class="steps" :class="{ iphone: isIphone }">
-  <article class="android-steps">
-   <h3><Smartphone :size="18" aria-hidden="true"/> Install on Android</h3>
-   <ol>
-    <li>Open this page on your Android phone and tap <strong>Download for Android</strong>.</li>
-    <li>If Chrome says the file might be harmful, tap <strong>Download anyway</strong>. Apps from outside Google Play always show this warning.</li>
-    <li>Open <strong>BarkadaKasKas.apk</strong> from your notifications or the Downloads app.</li>
-    <li>When asked, allow <strong>Install unknown apps</strong> for your browser, go back, then tap <strong>Install</strong>.</li>
-    <li>Open <strong>BarkadaKasKas</strong> (the green <strong>BK</strong> icon) and log in with your usual email and password.</li>
-   </ol>
-   <p class="small">Updating: download again from this page and tap Install. Your trips stay on the server, so nothing is lost.</p>
-  </article>
-  <article class="iphone-steps">
-   <h3><Apple :size="18" aria-hidden="true"/> Install on iPhone</h3>
-   <p>Apple only lets iPhones install apps from the App Store, so the iPhone app is installed from a <strong>computer</strong> with a free tool that signs it with your own Apple ID.</p>
-   <ol>
-    <li>On a Windows PC or Mac, install <a href="https://sideloadly.io" target="_blank" rel="noopener">Sideloadly</a> (or <a href="https://altstore.io" target="_blank" rel="noopener">AltStore</a>) and download <strong>BarkadaKasKas.ipa</strong> above.</li>
-    <li>Connect your iPhone with a cable, drag the IPA into Sideloadly, enter your Apple ID and click <strong>Start</strong>.</li>
-    <li>On the iPhone, go to <strong>Settings → General → VPN &amp; Device Management</strong>, tap your Apple ID and choose <strong>Trust</strong>.</li>
-    <li>On iOS 16 or later, turn on <strong>Settings → Privacy &amp; Security → Developer Mode</strong> when asked, then restart.</li>
-   </ol>
-   <p class="small">With a free Apple ID the app stops opening after 7 days. Repeat step 2 to refresh it (AltStore can do this automatically). Your trips stay on the server.</p>
-   <p class="small">No computer? Use BarkadaKasKas in Safari: open this site, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
-  </article>
- </div>
-</section>
-</main><footer>BarKadaKaskas · Made for going places, together.</footer></div></template>
-<style scoped>.landing{min-height:100vh;background:#f4f5ed;color:#244735;font-family:ui-sans-serif,system-ui}.landing nav{display:flex;justify-content:space-between;align-items:center;max-width:1160px;margin:auto;padding:30px 24px;font-size:14px}.logo{display:flex;gap:9px;align-items:center;font-size:20px;font-weight:800}.landing main{max-width:1160px;margin:auto;padding:70px 24px}.eyebrow{font-size:11px;letter-spacing:2px;color:#7a8b50;font-weight:800}.landing h1{font-size:clamp(42px,6.8vw,82px);font-weight:750;letter-spacing:-3px;line-height:1.08;margin:24px 0}.intro{font-size:18px;line-height:1.7;max-width:560px;color:#72806b}.cta{display:inline-flex;gap:28px;align-items:center;background:#264d3b;color:white;border-radius:10px;padding:17px 24px;margin-top:32px;font-weight:650}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:90px;border-top:1px solid #d7deca;padding-top:30px}.features span{font-size:10px;letter-spacing:2px;color:#819365}.features h2{font-size:19px;font-weight:700;margin:15px 0 10px}.features p{color:#74816b;line-height:1.6;font-size:14px}.landing footer{max-width:1160px;margin:auto;padding:24px;font-size:12px;color:#819077}.cta.ghost{background:transparent;color:#264d3b;border:1.5px solid #264d3b;margin-left:12px;gap:10px}
-.download{display:grid;grid-template-columns:1fr 1.1fr;gap:40px;margin-top:90px;padding:36px;border-radius:24px;background:#fff;border:1px solid #dfe5d3;scroll-margin-top:20px}
-.download h2{font-size:clamp(26px,3.4vw,38px);font-weight:750;letter-spacing:-1px;line-height:1.15;margin:14px 0 16px}
-.notice{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-radius:14px;background:#f0f5e9;color:#3e5a33;font-size:14px;line-height:1.55}
-.notice svg{flex-shrink:0;margin-top:2px}
-.download-buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}.download-buttons .cta{margin-top:0}.download-buttons .cta.ghost{margin-left:0}.download-btn{gap:12px}.cta.ghost.download-btn small{background:#264d3b1a}.steps a{color:#264d3b;font-weight:650;text-decoration:underline}.download-btn small{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 7px;border-radius:6px;background:#ffffff26}
-.small{font-size:13px;color:#7b8873;margin-top:12px;line-height:1.6}.small a{color:#264d3b;font-weight:650;text-decoration:underline}
-.steps{display:grid;gap:16px;align-content:start}.steps.iphone .iphone-steps{order:-1}
-.steps article{padding:20px 22px;border-radius:16px;background:#f7f8f3;border:1px solid #e3e8da}
-.steps h3{display:flex;gap:8px;align-items:center;font-size:16px;font-weight:700;margin-bottom:10px}
-.steps ol{display:grid;gap:9px;padding-left:20px;font-size:14px;line-height:1.55;color:#4d5d47;list-style:decimal}
-.steps p{font-size:14px;line-height:1.6;color:#4d5d47}
-@media(max-width:860px){.download{grid-template-columns:1fr;padding:24px;gap:26px}}
-@media(max-width:650px){.cta.ghost{margin-left:0;margin-top:12px}.landing main .cta{width:100%;justify-content:center}.landing main{padding-top:45px}.features{grid-template-columns:1fr;margin-top:60px}.landing h1{letter-spacing:-2px}}</style>
+
+<template>
+    <Head title="Good trips start with good company.">
+        <meta name="description" content="Plan your next barkada trip, share an itinerary, and split expenses fairly. BarKadaKaskas keeps the plans and payments together, wherever you go." />
+    </Head>
+    <div class="landing">
+        <a href="#main" class="skip-link">Skip to content</a>
+        <header class="site-header shell">
+            <a href="/" class="brand" aria-label="BarKadaKaskas home"><Compass :size="25" :stroke-width="1.6" aria-hidden="true" /><span>BarKadaKaskas</span></a>
+            <nav aria-label="Main navigation">
+                <a class="nav-secondary" href="#how-it-works">How it works</a>
+                <a class="nav-secondary" href="#download">Get the app</a>
+                <Link :href="page.props.auth?.user ? '/dashboard' : '/login'" class="login-link">{{ page.props.auth?.user ? 'My trips' : 'Log in' }}<ArrowUpRight :size="16" aria-hidden="true" /></Link>
+            </nav>
+        </header>
+
+        <main id="main">
+            <section class="hero shell" aria-labelledby="hero-title">
+                <div class="hero-copy">
+                    <p class="eyebrow"><span class="eyebrow-line" /> YOUR PEOPLE. YOUR NEXT ADVENTURE.</p>
+                    <h1 id="hero-title">Good trips.<br />Great company.<br /><em>Less figuring<br class="desktop-break" /> it all out.</em></h1>
+                    <p class="hero-intro">Bring your barkada. Keep the plans, shared expenses, and who-owes-who in one place. Leave more room for the good stuff.</p>
+                    <div class="hero-actions">
+                        <Link :href="startUrl" class="button primary">{{ page.props.auth?.user ? 'Go to my trips' : 'Plan a trip' }}<ArrowUpRight :size="18" aria-hidden="true" /></Link>
+                        <a href="#how-it-works" class="text-link">Take a look around <ArrowDown :size="16" aria-hidden="true" /></a>
+                    </div>
+                    <p class="hero-note"><Users :size="16" aria-hidden="true" /> Made for friends who go places together.</p>
+                </div>
+                <figure class="hero-visual">
+                    <div class="photo-wrap">
+                        <img src="/images/landing/barkada-coast.jpg" width="1536" height="1024" fetchpriority="high" alt="Four friends walking toward a quiet tropical beach, with an outrigger boat on the water" />
+                        <div class="photo-label"><MapPin :size="15" aria-hidden="true" /> A little further from the everyday.</div>
+                    </div>
+                    <figcaption><span>LESS ADMIN. MORE ADVENTURE.</span><span>Go somewhere good.</span></figcaption>
+                    <div class="trip-note" aria-label="A shared trip checklist">
+                        <span class="trip-note-icon"><Compass :size="22" aria-hidden="true" /></span>
+                        <div><strong>The next trip starts here.</strong><p>A plan. Your people. One shared place.</p></div>
+                    </div>
+                </figure>
+            </section>
+
+            <div class="promise-strip"><div class="shell"><span>From the first “G?” to the last ride home.</span><p>Less scrolling through chats. More being there.</p></div></div>
+
+            <section id="how-it-works" class="how-section shell" aria-labelledby="how-title">
+                <div class="section-heading"><div><p class="eyebrow">A BETTER WAY TO TRAVEL TOGETHER</p><h2 id="how-title">All the trip details.<br /><em>None of the awkward asks.</em></h2></div><p>For the friend who plans everything.<br />And everyone coming along.</p></div>
+                <div class="feature-grid">
+                    <article v-for="feature in features" :key="feature.number" class="feature">
+                        <div class="feature-top"><component :is="feature.icon" :size="27" :stroke-width="1.5" aria-hidden="true" /><span>{{ feature.number }}</span></div>
+                        <h3>{{ feature.title }}</h3><p>{{ feature.text }}</p><span class="feature-detail">{{ feature.detail }}<ArrowUpRight :size="15" aria-hidden="true" /></span>
+                    </article>
+                </div>
+            </section>
+
+            <section class="together-section shell" aria-labelledby="together-title">
+                <div class="sample-trip" aria-label="Illustrative trip summary, not a live trip">
+                    <div class="sample-header"><span class="eyebrow">A LITTLE PREVIEW</span><span class="sample-tag">Sample trip</span></div>
+                    <h3>A weekend in Siquijor</h3><p class="sample-subtitle"><Users :size="14" aria-hidden="true" /> 4 friends · 3 days · One good plan</p>
+                    <div class="sample-row"><span class="sample-icon"><MapPin :size="18" aria-hidden="true" /></span><div><strong>Next stop: the beach</strong><small>Friday · 3:00 PM</small></div><span class="sample-status">Planned</span></div>
+                    <div class="sample-row"><span class="sample-icon"><ReceiptText :size="18" aria-hidden="true" /></span><div><strong>Our stay</strong><small>Shared equally between 4 friends</small></div><strong class="sample-money">₱12,000</strong></div>
+                    <div class="sample-total"><div><span>Your share of the stay</span><strong>₱3,000<span>.00</span></strong></div><Check :size="21" aria-hidden="true" /></div>
+                    <p class="sample-footnote">Everyone sees the same plan and the same numbers.</p>
+                </div>
+                <div class="together-copy"><p class="eyebrow">YOUR TRIP, WITHOUT THE GUESSWORK</p><h2>Be the travel buddy.<br /><em>Not the spreadsheet.</em></h2><p>The hotel booking, the shared van, the dinner someone paid for. Keep track as you go, so settling up doesn’t become another thing to plan.</p><Link :href="startUrl" class="text-link">Get your barkada together <ArrowRight :size="18" aria-hidden="true" /></Link></div>
+            </section>
+
+            <section id="download" class="download-section" aria-labelledby="download-title">
+                <div class="shell">
+                    <div class="download-heading"><div><p class="eyebrow">READY WHEN YOU ARE</p><h2 id="download-title">Your next trip.<br /><em>Always within reach.</em></h2></div><p>Start in your browser or take the app along.<br />Your plans and expenses stay in the same account.</p></div>
+                    <div class="download-grid">
+                        <article class="download-card web-card"><Globe2 :size="28" :stroke-width="1.5" aria-hidden="true" /><span class="download-kicker">NO DOWNLOAD NEEDED</span><h3>Open it. Plan it. Go.</h3><p>Use BarKadaKaskas on your phone, tablet, or laptop. The easiest way to get everyone on board.</p><Link :href="startUrl" class="button light">{{ page.props.auth?.user ? 'Open my trips' : 'Start on the web' }}<ArrowUpRight :size="18" aria-hidden="true" /></Link><span class="download-note">Works on Android, iPhone, and desktop.</span></article>
+                        <article class="download-card"><Smartphone :size="28" :stroke-width="1.5" aria-hidden="true" /><span class="download-kicker">TAKE US WITH YOU</span><h3>A home on your phone.</h3><p>Get the latest Android app, or explore the iPhone installation options below.</p><a :href="props.android.downloadUrl" class="button light" download><Download :size="17" aria-hidden="true" /> Download Android <span class="file-type">APK</span></a><span class="download-note">Direct download. Not listed on Google Play or the App Store.</span></article>
+                    </div>
+                    <div class="installation-details">
+                        <details><summary>How do I install the Android app?<ChevronDown :size="18" aria-hidden="true" /></summary><div class="details-content"><ol><li>Download the APK on your Android phone from the button above.</li><li>Open it from Downloads. If prompted, review your phone’s permission to install apps from this source.</li><li>Install BarKadaKaskas, then sign in with the same account you use on the web.</li></ol><p>For an update, download the latest APK and install it over your existing app. Your saved trips are linked to your account.</p></div></details>
+                        <details><summary>Can I use it on my iPhone?<ChevronDown :size="18" aria-hidden="true" /></summary><div class="details-content"><p>Yes. Open this website in Safari, tap Share, then Add to Home Screen for easy access.</p><p>The native iPhone app is also available as an IPA. It requires signing and installation with a compatible tool on a computer; it cannot be installed by simply tapping the file.</p><a :href="props.android.iosDownloadUrl" class="iphone-download" download>Download iPhone IPA <Download :size="16" aria-hidden="true" /></a><p class="advanced-note">For signing guidance, see <a href="https://sideloadly.io" target="_blank" rel="noopener noreferrer">Sideloadly</a> or <a href="https://altstore.io" target="_blank" rel="noopener noreferrer">AltStore</a>. Signing requirements and renewal depend on your Apple account and installation method.</p></div></details>
+                    </div>
+                    <a class="release-link" :href="props.android.releasesUrl" target="_blank" rel="noopener noreferrer">View all app releases <ArrowUpRight :size="14" aria-hidden="true" /></a>
+                </div>
+            </section>
+            <section class="closing shell"><Compass :size="30" :stroke-width="1.4" aria-hidden="true" /><h2>Pick a place.<br /><em>Bring your people.</em></h2><Link :href="startUrl" class="button primary">Let's plan a trip <ArrowUpRight :size="18" aria-hidden="true" /></Link></section>
+        </main>
+        <footer class="site-footer shell"><a href="/" class="brand"><Compass :size="20" aria-hidden="true" /><span>BarKadaKaskas</span></a><p>Made for going places, together.</p><a href="#main" class="back-top">Back to top <ArrowUpRight :size="15" aria-hidden="true" /></a></footer>
+    </div>
+</template>
+
+<style scoped>
+.landing{--forest:#214c3d;--ink:#203d32;--muted:#617167;--sand:#f7f6ef;min-height:100vh;background:var(--sand);color:var(--ink);font-family:'Instrument Sans',ui-sans-serif,system-ui,sans-serif}.shell{width:min(1240px,calc(100% - 96px));margin-inline:auto}.landing a,.landing button,.landing summary{-webkit-tap-highlight-color:transparent}.landing a:focus-visible,.landing summary:focus-visible{outline:3px solid #b78240;outline-offset:6px}.skip-link{position:fixed;top:-80px;left:20px;padding:14px;background:white;z-index:10}.skip-link:focus{top:15px}.site-header{height:104px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #dce0d5}.brand{display:inline-flex;align-items:center;gap:9px;font-size:18px;font-weight:750;letter-spacing:-.7px}.site-header nav{display:flex;align-items:center;gap:35px;font-size:13px;font-weight:600}.login-link{display:inline-flex;align-items:center;gap:13px;border:1px solid #a8b6a7;border-radius:6px;padding:11px 18px}.hero{display:grid;grid-template-columns:1fr 1.06fr;align-items:center;gap:60px;padding-top:68px;padding-bottom:86px}.eyebrow{display:flex;align-items:center;gap:10px;font-size:10px;line-height:1.6;font-weight:750;letter-spacing:1.9px}.eyebrow-line{width:24px;height:1px;background:#a87947}.hero h1{font-size:clamp(46px,4.5vw,66px);font-weight:650;letter-spacing:-2.8px;line-height:1.07;margin:23px 0}.landing em{font-family:Georgia,'Times New Roman',serif;font-weight:400;color:#6b7952;letter-spacing:-2px}.hero-intro{font-size:16px;line-height:1.85;color:var(--muted);max-width:390px}.hero-actions{display:flex;gap:25px;align-items:center;flex-wrap:wrap;margin-top:28px}.button{display:inline-flex;align-items:center;justify-content:center;gap:23px;min-height:49px;border-radius:6px;padding:14px 20px;font-size:13px;font-weight:650;text-decoration:none;transition:background .2s,transform .2s}.primary{background:var(--forest);color:white}.primary:hover{background:#163b2d;transform:translateY(-2px)}.text-link{display:inline-flex;align-items:center;gap:10px;font-size:13px;font-weight:650}.text-link:hover{text-decoration:underline;text-underline-offset:5px}.hero-note{display:flex;gap:8px;align-items:center;margin-top:26px;font-size:11px;color:var(--muted)}.hero-visual{position:relative;min-width:0;margin:0;padding-bottom:36px}.photo-wrap{position:relative;overflow:hidden;border-radius:140px 12px 12px 12px;background:#e2e4d6;aspect-ratio:1.02}.photo-wrap img{width:100%;height:100%;object-fit:cover;object-position:51% center}.photo-label{position:absolute;bottom:24px;left:24px;display:flex;align-items:center;gap:8px;background:#fcfaf0ee;color:#284431;border-radius:4px;padding:9px 12px;font-size:11px}.hero-visual figcaption{display:flex;justify-content:space-between;gap:12px;font-size:9px;color:#6b7766;letter-spacing:1px;margin-top:14px}.hero-visual figcaption span:last-child{font-family:Georgia,serif;font-style:italic;font-size:13px;letter-spacing:0}.trip-note{position:absolute;left:-30px;bottom:-15px;display:flex;align-items:center;gap:13px;padding:17px 22px;border:1px solid #dce1d1;background:#fffef8;border-radius:9px;box-shadow:0 12px 35px #213e3010}.trip-note-icon{display:grid;place-items:center;background:#edf0e3;color:#52683f;width:42px;height:42px;border-radius:50%}.trip-note strong{font-size:13px;font-weight:650}.trip-note p{font-size:11px;color:var(--muted);margin-top:4px}.promise-strip{border-top:1px solid #dce0d5;border-bottom:1px solid #dce0d5;background:#ecefe2}.promise-strip .shell{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 0;font-size:13px}.promise-strip span{font-weight:650}.promise-strip p{color:var(--muted);font-size:12px}.how-section{padding-block:82px}.section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:35px;margin-bottom:36px}.landing h2{font-size:clamp(32px,3.2vw,45px);line-height:1.18;letter-spacing:-1.6px;font-weight:600}.section-heading h2{margin-top:15px}.section-heading>p{font-size:14px;line-height:1.8;color:var(--muted);padding-bottom:4px}.feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:30px}.feature{border-top:1px solid #cfd7c8;padding-top:23px}.feature-top{display:flex;align-items:center;justify-content:space-between;color:#536c4c}.feature-top span{font-size:11px;color:#7b8773}.feature h3{font-size:20px;font-weight:650;letter-spacing:-.5px;margin:25px 0 12px}.feature>p{font-size:14px;line-height:1.8;color:var(--muted);max-width:330px}.feature-detail{display:flex;gap:10px;align-items:center;font-size:11px;margin-top:25px;color:#475d3d;font-weight:600}.together-section{display:grid;grid-template-columns:1fr 1fr;gap:100px;align-items:center;padding:45px 65px 60px;background:#e9eddf;border-radius:12px;margin-bottom:85px}.sample-trip{background:#fffef8;border:1px solid #d7dfcf;border-radius:12px;padding:26px;box-shadow:0 15px 35px #35472a0c;transform:rotate(-2deg)}.sample-header{display:flex;justify-content:space-between;align-items:center;gap:10px}.sample-header .eyebrow{font-size:8px;letter-spacing:1.4px}.sample-tag{font-size:9px;border:1px solid #dce2d3;border-radius:4px;padding:4px 7px;color:#677460}.sample-trip h3{font-size:23px;font-weight:650;letter-spacing:-.8px;margin-top:23px}.sample-subtitle{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:24px}.sample-row{display:flex;align-items:center;gap:10px;border-top:1px solid #e7eadf;padding:17px 0}.sample-icon{display:grid;place-items:center;width:35px;height:35px;background:#f0f2e8;border-radius:8px;flex-shrink:0;color:#5f7554}.sample-row strong{font-size:11px;font-weight:650}.sample-row small{display:block;font-size:9px;margin-top:5px;color:var(--muted)}.sample-status{margin-left:auto;font-size:9px;background:#eef2e5;padding:4px 7px;border-radius:5px}.sample-money{margin-left:auto;white-space:nowrap}.sample-total{display:flex;align-items:center;justify-content:space-between;background:#edf1e5;border-radius:7px;padding:16px;margin-top:6px}.sample-total div>span{font-size:10px;color:var(--muted)}.sample-total strong{display:block;font-size:28px;font-weight:650;letter-spacing:-1px;margin-top:4px}.sample-total strong span{font-size:18px}.sample-footnote{font-size:9px;color:var(--muted);margin-top:16px}.together-copy .eyebrow{font-size:9px}.together-copy h2{margin:18px 0}.together-copy>p:not(.eyebrow){font-size:14px;line-height:1.9;color:var(--muted);max-width:350px}.together-copy .text-link{margin-top:25px}.download-section{background:#214c3d;color:#f8f8ed;padding:70px 0;scroll-margin-top:20px}.download-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:30px}.download-heading .eyebrow{color:#c5d3ab}.download-heading h2{margin-top:15px}.download-heading em{color:#d7deb9}.download-heading>p{font-size:14px;line-height:1.8;color:#c9d5c7;max-width:340px}.download-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:35px}.download-card{display:flex;align-items:flex-start;flex-direction:column;background:#ffffff06;border:1px solid #ffffff25;border-radius:9px;padding:30px}.download-card>svg{color:#c7d6ae}.download-kicker{font-size:9px;letter-spacing:1.6px;color:#d0d8be;margin-top:22px}.download-card h3{font-size:25px;font-weight:550;letter-spacing:-.6px;margin-top:8px}.download-card>p{font-size:14px;line-height:1.8;color:#d0dace;max-width:390px;margin:12px 0 22px}.light{background:#f3f4e7;color:#214c3d}.light:hover{background:white}.download-note{font-size:11px;line-height:1.6;color:#c9d5c7;margin-top:14px}.file-type{font-size:9px;border:1px solid #bdc9b3;padding:2px 5px;border-radius:3px}.installation-details{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:20px;align-items:start}.installation-details details{border-bottom:1px solid #ffffff30}.installation-details summary{display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:13px;cursor:pointer;padding:17px 0;list-style:none;min-height:50px}.installation-details summary::-webkit-details-marker{display:none}.installation-details summary svg{flex-shrink:0;transition:transform .2s}.installation-details details[open] summary svg{transform:rotate(180deg)}.details-content{font-size:12px;line-height:1.8;color:#d8dfd2;padding:0 12px 20px 0}.details-content ol{list-style:decimal;padding-left:18px;display:grid;gap:8px}.details-content p{margin-top:12px}.details-content a{text-decoration:underline;text-underline-offset:3px}.iphone-download{display:inline-flex;align-items:center;gap:10px;margin-top:16px;font-weight:650;color:white}.release-link{display:inline-flex;gap:7px;align-items:center;font-size:11px;color:#d1ddc5;margin-top:23px;text-decoration:underline;text-underline-offset:4px}.closing{text-align:center;display:flex;flex-direction:column;align-items:center;padding-block:75px}.closing>svg{color:#758559;margin-bottom:17px}.closing .button{margin-top:26px}.site-footer{display:flex;justify-content:space-between;align-items:center;gap:20px;border-top:1px solid #dce0d5;padding-block:25px}.site-footer .brand{font-size:14px}.site-footer p{font-size:11px;color:var(--muted)}.back-top{display:flex;align-items:center;gap:7px;font-size:11px}
+@media(min-width:1500px){.hero{gap:85px}.hero h1{font-size:72px}}
+@media(max-width:1050px){.shell{width:calc(100% - 56px)}.hero{gap:35px;padding-top:50px}.hero h1{font-size:52px}.hero-intro{font-size:15px}.hero-actions{gap:18px}.photo-wrap{aspect-ratio:.8;border-top-left-radius:100px}.trip-note{left:-10px;padding:13px}.together-section{gap:40px;padding:40px}.landing h2{font-size:35px}.section-heading>p{font-size:13px}.sample-trip{padding:20px}}
+@media(max-width:760px){.shell{width:calc(100% - 40px)}.site-header{height:78px}.brand{font-size:16px}.site-header nav{gap:16px}.nav-secondary{display:none}.login-link{padding:9px 12px;font-size:12px}.hero{grid-template-columns:1fr;gap:35px;padding-top:35px;padding-bottom:60px}.hero h1{font-size:clamp(45px,9vw,65px);letter-spacing:-2.2px;margin:18px 0}.desktop-break{display:none}.hero-intro{max-width:480px;font-size:15px}.hero-actions{margin-top:22px;gap:23px}.hero-note{margin-top:20px}.photo-wrap{aspect-ratio:1.23;border-radius:70px 9px 9px 9px}.hero-visual{padding-bottom:30px;margin-top:4px}.hero-visual figcaption{font-size:8px}.hero-visual figcaption span:last-child{font-size:12px}.trip-note{bottom:-16px;left:14px;right:14px;width:fit-content;padding:12px 16px}.trip-note p{font-size:10px}.trip-note strong{font-size:12px}.trip-note-icon{width:35px;height:35px}.photo-label{bottom:18px;left:16px;font-size:10px}.promise-strip .shell{flex-direction:column;align-items:flex-start;gap:7px;padding-block:19px}.promise-strip span{font-size:12px}.promise-strip p{font-size:11px}.how-section{padding-block:50px}.section-heading{flex-direction:column;align-items:flex-start;gap:16px;margin-bottom:24px}.landing h2{font-size:34px}.landing em{letter-spacing:-1.2px}.section-heading>p br{display:none}.feature-grid{grid-template-columns:1fr;gap:26px}.feature{padding-top:20px}.feature h3{margin-top:15px}.feature>p{max-width:none}.feature-detail{margin-top:15px}.together-section{grid-template-columns:1fr;gap:35px;padding:28px 20px 32px;margin-bottom:50px}.together-copy{order:-1}.sample-trip{transform:none}.together-copy>p:not(.eyebrow){max-width:none}.download-section{padding-block:45px}.download-heading{flex-direction:column;align-items:flex-start;gap:18px}.download-grid,.installation-details{grid-template-columns:1fr;gap:16px}.download-card{padding:25px}.download-card h3{font-size:24px}.download-card .button{width:100%}.download-heading>p{font-size:13px}.installation-details{gap:0}.closing{padding-block:50px}.site-footer{flex-wrap:wrap;gap:15px;padding-block:24px}.site-footer p{order:3;width:100%}.back-top{margin-left:auto}.eyebrow{font-size:9px;letter-spacing:1.5px}}
+@media(prefers-reduced-motion:reduce){.landing *{transition:none!important;scroll-behavior:auto!important}.primary:hover{transform:none}}
+</style>

@@ -8,10 +8,11 @@ Editing a location, time, or transport recalculates the map when saved.
 ## Enable the interactive map
 
 1. Create a Google Cloud project and attach a billing account.
-2. Enable **Maps JavaScript API** and **Routes API** in that project.
+2. Enable **Maps JavaScript API**, **Routes API**, and **Geocoding API** in that
+   project.
 3. Create a browser API key. Set application restrictions to **Websites (HTTP
    referrers)**, allowing `http://barkadakaskas.test/*` for Herd and your actual
-   production HTTPS domain. Restrict the key to those two APIs. This key is
+   production HTTPS domain. Restrict the key to those three APIs. This key is
    intentionally visible to the browser; do not reuse a server or OCR key.
 4. Add to your local `.env` and Forge environment (do not commit the key):
 
@@ -42,8 +43,13 @@ for routing; no live GPS tracking is performed.
 - Motorcycle, walking, bicycle, and public transit use their respective modes
   where Google supports them. Transit estimates use Google's current default
   departure time, not future itinerary schedules.
-- Ferry, flight, and other transport are recorded but have no fabricated road
-  route. Missing locations or transport choices leave a gap in the mapped path.
+- Ferry, flight, and other transport have no Google route. Their stops are
+  geocoded and joined by a direct line (dashed for flights, dotted for ferries
+  and other transport) labelled with the straight-line distance. This needs the
+  Geocoding API; without it the map shows a notice and those legs stay unmapped.
+- If a road, walking, or transit route cannot be found (for example across
+  water), the leg falls back to a direct line and says so.
+- Missing locations or transport choices leave a gap in the mapped path.
 - Route failures stay visible per leg; other available legs still render.
   Google route warnings are displayed with the corresponding leg.
 - Without a key, all itinerary editing and per-leg Google Maps links still work.

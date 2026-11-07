@@ -14,8 +14,6 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # publish the APK as a GitHub Release
     defaults:
       run:
         working-directory: android/BarKadaKaskas
@@ -75,23 +73,8 @@ jobs:
         with:
           name: android-build-log
           path: android/BarKadaKaskas/gradle.log
-      # The landing page links to releases/latest/download/BarkadaKasKas.apk, so the newest build is always one tap away.
-      - name: Publish release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: android-v0.1.${{ github.run_number }}
-          name: BarkadaKasKas for Android 0.1.${{ github.run_number }}
-          target_commitish: ${{ github.sha }}
-          make_latest: true
-          files: android/BarKadaKaskas/dist/BarkadaKasKas.apk
-          body: |
-            Android app built from ${{ github.ref_name }} (${{ github.sha }}).
 
-            **Install:** download `BarkadaKasKas.apk` on your Android phone, open it, allow "Install unknown apps" for your browser if asked, then tap Install.
-            This app is not on Google Play; this page is the official download.
-
-  ios-simulator:
+  ios:
     runs-on: macos-latest
     defaults:
       run:
@@ -102,10 +85,13 @@ jobs:
         run: |
           brew install xcodegen
           xcodegen generate
-      - name: Build for simulator without signing
+      # Unsigned device build: installable with Sideloadly/AltStore, which sign it with the user's own Apple ID.
+      - name: Build for iPhone without signing
         run: |
           set -o pipefail
-          xcodebuild -project BarKadaKaskas.xcodeproj -scheme BarKadaKaskas -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+          xcodebuild -project BarKadaKaskas.xcodeproj -scheme BarKadaKaskas -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} MARKETING_VERSION=0.1.${{ github.run_number }} build 2>&1 | tee xcodebuild.log
       # Turn Swift compiler errors into annotations so they are visible without opening the log.
       - name: Report build errors
         if: failure()
@@ -115,12 +101,15 @@ jobs:
             echo "::error file=${file#"$GITHUB_WORKSPACE"/},line=$line,col=$col::$msg"
           done
           grep -E 'error: ' xcodebuild.log | grep -vE '\.swift:[0-9]+' | sort -u | head -10 | sed 's/^/::error title=Xcode::/'
-      - name: Package simulator app
-        run: ditto -c -k --sequesterRsrc --keepParent DerivedData/Build/Products/Debug-iphonesimulator/BarKadaKaskas.app BarKadaKaskas-simulator.zip
+      - name: Package IPA
+        run: |
+          mkdir -p dist/Payload
+          cp -R DerivedData/Build/Products/Release-iphoneos/BarKadaKaskas.app dist/Payload/
+          (cd dist && zip -qry BarkadaKasKas.ipa Payload)
       - uses: actions/upload-artifact@v4
         with:
-          name: BarKadaKaskas-iOS-simulator
-          path: ios/BarKadaKaskas/BarKadaKaskas-simulator.zip
+          name: BarkadaKasKas-IPA
+          path: ios/BarKadaKaskas/dist/BarkadaKasKas.ipa
           if-no-files-found: error
       - name: Upload build log
         if: failure()
@@ -128,3 +117,34 @@ jobs:
         with:
           name: ios-build-log
           path: ios/BarKadaKaskas/xcodebuild.log
+
+  # One release per build with both apps. The landing page links to
+  # releases/latest/download/BarkadaKasKas.apk and .ipa, so the newest build is always one tap away.
+  release:
+    needs: [android, ios]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: BarkadaKasKas-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v0.1.${{ github.run_number }}
+          name: BarkadaKasKas 0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/BarkadaKasKas.apk
+            dist/BarkadaKasKas.ipa
+          body: |
+            Built from ${{ github.ref_name }} (${{ github.sha }}). Not on Google Play or the App Store; this page is the official download.
+
+            **Android:** download `BarkadaKasKas.apk` on your phone, open it, allow "Install unknown apps" for your browser if asked, then tap Install.
+
+            **iPhone:** `BarkadaKasKas.ipa` is unsigned. Install it with [Sideloadly](https://sideloadly.io) or [AltStore](https://altstore.io) on a computer, signing in with your own Apple ID. With a free Apple ID the app must be refreshed every 7 days (AltStore can do this automatically).

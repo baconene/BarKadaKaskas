@@ -133,10 +133,10 @@ Each itinerary day has an in-app map with numbered pins joined in visiting order
 This is a different key from the web's `GOOGLE_MAPS_BROWSER_KEY`
 (`docs/google-maps-setup.md`), which is restricted to your website.
 
-## Android downloads (outside Google Play)
+## App downloads (outside Google Play and the App Store)
 
-Every successful Android build on a push publishes a GitHub Release
-(`android-v0.1.<run>`) with `BarkadaKasKas.apk` attached. The landing page's
+When both app builds succeed on a push, the workflow publishes one GitHub
+Release (`app-v0.1.<run>`) with `BarkadaKasKas.apk` and `BarkadaKasKas.ipa`. The landing page's
 **Download for Android** button points at
 `https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk`,
 which always serves the newest release. Override it with `ANDROID_DOWNLOAD_URL`
@@ -167,3 +167,17 @@ cannot update an earlier install.
 
 The app pre-fills `https://barkadakaskas.on-forge.com` as its server. Set the
 repository variable `DEFAULT_SERVER_URL` to change it for CI builds.
+
+### iPhone
+
+`BarkadaKasKas.ipa` is an **unsigned** device build. iPhones only install apps
+signed by Apple-issued certificates, so people install it with Sideloadly or
+AltStore, which sign it with their own Apple ID. With a free Apple ID the
+install expires after 7 days and must be refreshed (AltStore can do this
+automatically). The landing page explains the steps; `IOS_DOWNLOAD_URL`
+overrides its link.
+
+For a normal tap-to-install experience use **TestFlight** (public link, up to
+10,000 testers, builds valid for 90 days). It needs an Apple Developer Program
+membership ($99/year); after joining, the workflow can upload builds with an
+App Store Connect API key.

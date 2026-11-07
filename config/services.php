@@ -10,6 +10,7 @@ return [
     // permanent URL (published by .github/workflows/mobile.yml). An empty env value keeps the default.
     'android' => [
         'download_url' => env('ANDROID_DOWNLOAD_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk',
+        'ios_download_url' => env('IOS_DOWNLOAD_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.ipa',
         'releases_url' => env('ANDROID_RELEASES_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases',
     ],
 

@@ -12,6 +12,7 @@ class LandingTest extends TestCase
         $this->withoutVite();
         $this->get('/')->assertOk()->assertInertia(fn (Assert $page) => $page->component('Landing')
             ->where('android.downloadUrl', 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk')
+            ->where('android.iosDownloadUrl', 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.ipa')
             ->where('android.releasesUrl', 'https://github.com/baconene/BarKadaKaskas/releases'));
     }
 

@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    return Inertia::render('Landing', ['android' => ['downloadUrl' => config('services.android.download_url'), 'releasesUrl' => config('services.android.releases_url')]]);
+    return Inertia::render('Landing', ['android' => ['downloadUrl' => config('services.android.download_url'), 'iosDownloadUrl' => config('services.android.ios_download_url'), 'releasesUrl' => config('services.android.releases_url')]]);
 })->name('home');
 
 // Cover photos are served by an unguessable name so the mobile apps can load them without a session.

@@ -3,18 +3,21 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Compass, ArrowUpRight, Download, ShieldCheck, Smartphone, Apple } from 'lucide-vue-next';
 import { computed } from 'vue';
 import type { SharedData } from '@/types';
-const props=defineProps<{android:{downloadUrl:string;releasesUrl:string}}>();
+const props=defineProps<{android:{downloadUrl:string;iosDownloadUrl:string;releasesUrl:string}}>();
 const page=usePage<SharedData>();
 // Put the steps for the visitor's own phone first.
 const isIphone=computed(()=>typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.test(navigator.userAgent));
 </script>
-<template><Head title="Travel together. Split fairly."/><div class="landing"><nav><a href="/" class="logo"><Compass/> BarKadaKaskas</a><Link :href="page.props.auth?.user?'/dashboard':'/login'">{{ page.props.auth?.user?'My trips':'Log in' }} ↗</Link></nav><main><p class="eyebrow">FOR THE TRIPS THAT BECOME STORIES</p><h1>More memories.<br/>Less “who owes who?”</h1><p class="intro">Bring your barkada. Plan the adventure. Share every expense fairly, from the first coffee to the last ride home.</p><Link :href="page.props.auth?.user?'/dashboard':'/register'" class="cta">Let's plan a trip <ArrowUpRight :size="20"/></Link><a href="#download" class="cta ghost"><Smartphone :size="19"/> Get the Android app</a><div class="features"><article><span>01 / PLAN</span><h2>One trip. Everyone in.</h2><p>Keep your itinerary and your friends in the same place.</p></article><article><span>02 / SHARE</span><h2>Your order. Your share.</h2><p>Split the whole bill or assign each receipt item to its people.</p></article><article><span>03 / SETTLE</span><h2>Clear balances. Happy friends.</h2><p>Track payments, close expenses, and get back to the good part.</p></article></div>
+<template><Head title="Travel together. Split fairly."/><div class="landing"><nav><a href="/" class="logo"><Compass/> BarKadaKaskas</a><Link :href="page.props.auth?.user?'/dashboard':'/login'">{{ page.props.auth?.user?'My trips':'Log in' }} ↗</Link></nav><main><p class="eyebrow">FOR THE TRIPS THAT BECOME STORIES</p><h1>More memories.<br/>Less “who owes who?”</h1><p class="intro">Bring your barkada. Plan the adventure. Share every expense fairly, from the first coffee to the last ride home.</p><Link :href="page.props.auth?.user?'/dashboard':'/register'" class="cta">Let's plan a trip <ArrowUpRight :size="20"/></Link><a href="#download" class="cta ghost"><Smartphone :size="19"/> Get the app</a><div class="features"><article><span>01 / PLAN</span><h2>One trip. Everyone in.</h2><p>Keep your itinerary and your friends in the same place.</p></article><article><span>02 / SHARE</span><h2>Your order. Your share.</h2><p>Split the whole bill or assign each receipt item to its people.</p></article><article><span>03 / SETTLE</span><h2>Clear balances. Happy friends.</h2><p>Track payments, close expenses, and get back to the good part.</p></article></div>
 <section id="download" class="download" aria-labelledby="download-title">
  <div class="download-copy">
   <p class="eyebrow">GET THE APP</p>
   <h2 id="download-title">BarkadaKasKas on your phone</h2>
-  <p class="notice"><ShieldCheck :size="18" aria-hidden="true"/> <span><strong>Not on Google Play or the App Store (yet).</strong> Download the Android app directly here. This page is the official download.</span></p>
-  <a :href="props.android.downloadUrl" class="cta download-btn" download><Download :size="20"/> Download for Android <small>APK</small></a>
+  <p class="notice"><ShieldCheck :size="18" aria-hidden="true"/> <span><strong>Not on Google Play or the App Store (yet).</strong> Download the apps directly here. This page is the official download.</span></p>
+  <div class="download-buttons">
+   <a :href="props.android.downloadUrl" class="cta download-btn" download><Download :size="20"/> Download for Android <small>APK</small></a>
+   <a :href="props.android.iosDownloadUrl" class="cta ghost download-btn" download><Apple :size="19"/> iPhone <small>IPA</small></a>
+  </div>
   <p class="small">Always the latest version. <a :href="props.android.releasesUrl" target="_blank" rel="noopener">See all versions</a></p>
  </div>
  <div class="steps" :class="{ iphone: isIphone }">
@@ -30,8 +33,16 @@ const isIphone=computed(()=>typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.
    <p class="small">Updating: download again from this page and tap Install. Your trips stay on the server, so nothing is lost.</p>
   </article>
   <article class="iphone-steps">
-   <h3><Apple :size="18" aria-hidden="true"/> On iPhone</h3>
-   <p>The iPhone app isn't available for download yet. Until then, use BarkadaKasKas in Safari: open this site, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+   <h3><Apple :size="18" aria-hidden="true"/> Install on iPhone</h3>
+   <p>Apple only lets iPhones install apps from the App Store, so the iPhone app is installed from a <strong>computer</strong> with a free tool that signs it with your own Apple ID.</p>
+   <ol>
+    <li>On a Windows PC or Mac, install <a href="https://sideloadly.io" target="_blank" rel="noopener">Sideloadly</a> (or <a href="https://altstore.io" target="_blank" rel="noopener">AltStore</a>) and download <strong>BarkadaKasKas.ipa</strong> above.</li>
+    <li>Connect your iPhone with a cable, drag the IPA into Sideloadly, enter your Apple ID and click <strong>Start</strong>.</li>
+    <li>On the iPhone, go to <strong>Settings → General → VPN &amp; Device Management</strong>, tap your Apple ID and choose <strong>Trust</strong>.</li>
+    <li>On iOS 16 or later, turn on <strong>Settings → Privacy &amp; Security → Developer Mode</strong> when asked, then restart.</li>
+   </ol>
+   <p class="small">With a free Apple ID the app stops opening after 7 days. Repeat step 2 to refresh it (AltStore can do this automatically). Your trips stay on the server.</p>
+   <p class="small">No computer? Use BarkadaKasKas in Safari: open this site, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
   </article>
  </div>
 </section>
@@ -41,7 +52,7 @@ const isIphone=computed(()=>typeof navigator!=='undefined'&&/iPhone|iPad|iPod/i.
 .download h2{font-size:clamp(26px,3.4vw,38px);font-weight:750;letter-spacing:-1px;line-height:1.15;margin:14px 0 16px}
 .notice{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-radius:14px;background:#f0f5e9;color:#3e5a33;font-size:14px;line-height:1.55}
 .notice svg{flex-shrink:0;margin-top:2px}
-.download-btn{margin-top:22px;gap:12px}.download-btn small{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 7px;border-radius:6px;background:#ffffff26}
+.download-buttons{display:flex;flex-wrap:wrap;gap:12px;margin-top:22px}.download-buttons .cta{margin-top:0}.download-buttons .cta.ghost{margin-left:0}.download-btn{gap:12px}.cta.ghost.download-btn small{background:#264d3b1a}.steps a{color:#264d3b;font-weight:650;text-decoration:underline}.download-btn small{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 7px;border-radius:6px;background:#ffffff26}
 .small{font-size:13px;color:#7b8873;margin-top:12px;line-height:1.6}.small a{color:#264d3b;font-weight:650;text-decoration:underline}
 .steps{display:grid;gap:16px;align-content:start}.steps.iphone .iphone-steps{order:-1}
 .steps article{padding:20px 22px;border-radius:16px;background:#f7f8f3;border:1px solid #e3e8da}

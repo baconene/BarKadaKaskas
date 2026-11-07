@@ -129,12 +129,24 @@ internal object ApiJson {
         .put("transport_mode", draft.transport ?: JSONObject.NULL)
         .apply { if (draft.latitude != null && draft.longitude != null) put("latitude", draft.latitude).put("longitude", draft.longitude) }
 
-    /** Equal split between the chosen travellers; the server allocates leftover centavos fairly. */
+    /** Equal split between the chosen travellers, or per item when the draft has items. The server allocates leftover centavos fairly. */
     fun expenseBody(draft: ExpenseDraft) = JSONObject()
         .put("title", draft.title.trim()).put("merchant", draft.merchant.trim())
         .put("category_id", draft.categoryId).put("incurred_at", draft.incurredAt.trim())
-        .put("total_minor", draft.totalMinor).put("split_method", "equal")
+        .put("total_minor", draft.totalMinor).put("split_method", if (draft.items.isEmpty()) "equal" else "itemized")
         .put("payments", JSONArray().apply { draft.paidByMemberId?.let { put(JSONObject().put("trip_member_id", it).put("amount_minor", draft.totalMinor)) } })
-        .put("allocations", JSONArray().apply { draft.memberIds.forEach { put(JSONObject().put("trip_member_id", it).put("weight", 1)) } })
-        .put("items", JSONArray())
+        .put("allocations", JSONArray().apply { if (draft.items.isEmpty()) draft.memberIds.forEach { put(JSONObject().put("trip_member_id", it).put("weight", 1)) } })
+        .put("items", JSONArray().apply { draft.items.forEach { item -> put(JSONObject().put("description", item.description.trim()).put("amount_minor", item.amountMinor).put("member_ids", JSONArray(item.memberIds))) } })
+        .put("receipt_scan_id", draft.receiptScanId ?: JSONObject.NULL)
+
+    fun receiptDraft(data: JSONObject) = ReceiptDraft(
+        scanId = data.getLong("scan_id"),
+        title = data.text("title").ifBlank { "Receipt" },
+        merchant = data.textOrNull("merchant"),
+        incurredAt = data.textOrNull("incurred_at"),
+        categoryId = data.longOrNull("category_id"),
+        totalMinor = data.longOrNull("total_minor"),
+        lines = data.optJSONArray("lines").mapObjects { ReceiptLine(it.text("description"), it.optLong("amount_minor")) }.filter { it.amountMinor > 0 },
+        warnings = data.optJSONArray("warnings")?.let { array -> (0 until array.length()).mapNotNull { array.optString(it).takeIf { w -> w.isNotBlank() } } }.orEmpty(),
+    )
 }

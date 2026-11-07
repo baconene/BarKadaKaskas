@@ -53,6 +53,12 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = repository.trip(current.trip.id)
         done()
     }
+    /** Reads a receipt photo; [done] receives the draft to fill the expense form with. */
+    fun scanReceipt(jpeg: ByteArray, done: (ReceiptDraft) -> Unit) = launch {
+        val id = detail?.trip?.id ?: return@launch
+        done(repository.scanReceipt(id, jpeg))
+    }
+
     /** Edits that change the trip card (name, dates, cover) also reload the trips list. */
     private fun editTrip(done: () -> Unit = {}, action: suspend (Long) -> Unit) = launch {
         val id = detail?.trip?.id ?: return@launch

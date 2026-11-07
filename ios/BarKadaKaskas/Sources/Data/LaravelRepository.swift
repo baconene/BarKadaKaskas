@@ -93,15 +93,21 @@ struct APIError: LocalizedError {
         try await upload("/trips/\(tripID)/expenses/\(expenseID)/receipts", field: "receipt", data: data, fileName: fileName, mimeType: mimeType)
     }
 
-    /// Sends one file as multipart/form-data.
-    private func upload(_ path: String, field: String, data: Data, fileName: String, mimeType: String) async throws {
+    func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft {
+        let body = try await upload("/trips/\(tripID)/receipt-scans", field: "receipt", data: jpeg, fileName: "receipt.jpg", mimeType: "image/jpeg")
+        return try JSONDecoder().decode(DataBox<ReceiptDraft>.self, from: body).data
+    }
+
+    /// Sends one file as multipart/form-data and returns the response body.
+    @discardableResult
+    private func upload(_ path: String, field: String, data: Data, fileName: String, mimeType: String) async throws -> Data {
         let boundary = "BarKadaKaskas-\(UUID().uuidString)"
         let safeName = fileName.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
         var body = Data()
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field)\"; filename=\"\(safeName)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
         body.append(data)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        _ = try await request("POST", path, body: body, contentType: "multipart/form-data; boundary=\(boundary)")
+        return try await request("POST", path, body: body, contentType: "multipart/form-data; boundary=\(boundary)")
     }
 
     func createSettlement(tripID: Int, input: SettlementInput) async throws { try await call("POST", "/trips/\(tripID)/settlements", json: input) }
@@ -150,7 +156,8 @@ struct APIError: LocalizedError {
 
     private func request(_ method: String, _ path: String, body: Data? = nil, contentType: String = "application/json", auth: Bool = true) async throws -> Data {
         guard !serverURL.isEmpty, let url = URL(string: serverURL + "/api/v1" + path) else { throw MobileError.validation("Enter your server address first.") }
-        var request = URLRequest(url: url, timeoutInterval: 30)
+        // Uploads (receipt scans run Gemini on the server) can take longer than plain API calls.
+        var request = URLRequest(url: url, timeoutInterval: contentType.hasPrefix("multipart") ? 90 : 30)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {

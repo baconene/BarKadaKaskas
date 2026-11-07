@@ -1,6 +1,8 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
-/// Record a shared bill, split equally between the chosen travellers. The server allocates leftover centavos.
+/// Record a shared bill: split equally, or per item after scanning a receipt. The server allocates leftover centavos.
 struct ExpenseForm: View {
     let detail: TripDetail
     @EnvironmentObject var store: AppStore
@@ -12,13 +14,29 @@ struct ExpenseForm: View {
     @State private var categoryID = 0
     @State private var payerID = 0
     @State private var sharedBy: Set<Int> = []
+    // Filled by "Scan a receipt".
+    @State private var lines: [LineState] = []
+    @State private var scanID: Int?
+    @State private var warnings: [String] = []
+    @State private var scanning = false
+    @State private var photo: PhotosPickerItem?
+    @State private var showCamera = false
+
+    struct LineState: Identifiable { let id = UUID(); let description: String; let amountMinor: Int; var members: Set<Int> }
 
     private var members: [TripMember] { detail.trip.members ?? [] }
     private var totalMinor: Int? { TravelFormat.minor(amount) }
+    private var itemized: Bool { !lines.isEmpty }
+    private var lineSum: Int { lines.reduce(0) { $0 + $1.amountMinor } }
+    private var valid: Bool {
+        guard !title.isEmpty, categoryID != 0, let total = totalMinor else { return false }
+        return itemized ? total == lineSum && lines.allSatisfy { !$0.members.isEmpty } : !sharedBy.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
             Form {
+                scanSection
                 Section("The bill") {
                     TextField("Description, e.g. Dinner", text: $title)
                     TextField("Merchant", text: $merchant)
@@ -34,45 +52,154 @@ struct ExpenseForm: View {
                         ForEach(members) { member in Text(member.user.name).tag(member.id) }
                     }
                 }
-                Section {
-                    ForEach(members) { member in
-                        Toggle(member.user.name, isOn: Binding(
-                            get: { sharedBy.contains(member.id) },
-                            set: { on in if on { sharedBy.insert(member.id) } else { sharedBy.remove(member.id) } }
-                        ))
-                    }
-                } header: { Text("Split equally between") } footer: {
-                    if let total = totalMinor, !sharedBy.isEmpty {
-                        Text("About \(TravelFormat.money(total / sharedBy.count, currency: detail.trip.currency_code)) each.")
-                    }
-                }
+                if itemized { itemSections } else { equalSection }
             }
             .navigationTitle("New expense").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(title.isEmpty || categoryID == 0 || totalMinor == nil || sharedBy.isEmpty || store.busy)
+                    Button("Save") { Task { await save() } }.disabled(!valid || store.busy || scanning)
                 }
             }
             .onAppear {
                 if categoryID == 0 { categoryID = detail.categories.first?.id ?? 0 }
                 if sharedBy.isEmpty { sharedBy = Set(members.map(\.id)) }
             }
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                Task {
+                    defer { photo = nil }
+                    if let data = try? await item.loadTransferable(type: Data.self) { await scan(data) }
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraPicker { data in Task { await scan(data) } }.ignoresSafeArea()
+            }
         }
+    }
+
+    private var scanSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                if scanning { ProgressView() } else { Image(systemName: "doc.text.viewfinder").font(.title2).foregroundStyle(Theme.forest) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(scanning ? "Reading your receipt…" : scanID != nil ? "Filled in from your receipt" : "Scan a receipt").font(.subheadline.bold())
+                    Text(scanning ? "This takes a few seconds." : scanID != nil ? "Check the amounts and who shares each item." : "We’ll fill in the items for you.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 10) {
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    Button { showCamera = true } label: { Label("Take photo", systemImage: "camera.fill").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).tint(Theme.forest)
+                }
+                PhotosPicker(selection: $photo, matching: .images) { Label("Choose", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity) }.buttonStyle(.bordered).tint(Theme.forest)
+            }
+            .disabled(scanning || store.busy)
+            ForEach(warnings, id: \.self) { warning in
+                Label(warning, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(Color(red: 0.48, green: 0.33, blue: 0.07))
+            }
+        }
+    }
+
+    private var equalSection: some View {
+        Section {
+            ForEach(members) { member in
+                Toggle(member.user.name, isOn: Binding(
+                    get: { sharedBy.contains(member.id) },
+                    set: { on in if on { sharedBy.insert(member.id) } else { sharedBy.remove(member.id) } }
+                ))
+            }
+        } header: { Text("Split equally between") } footer: {
+            if let total = totalMinor, !sharedBy.isEmpty {
+                Text("About \(TravelFormat.money(total / sharedBy.count, currency: detail.trip.currency_code)) each.")
+            }
+        }
+    }
+
+    @ViewBuilder private var itemSections: some View {
+        Section {
+            ForEach($lines) { $line in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack { Text(line.description).font(.subheadline.bold()); Spacer(); Text(TravelFormat.money(line.amountMinor, currency: detail.trip.currency_code)).font(.subheadline.bold()) }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(members) { member in
+                                let on = line.members.contains(member.id)
+                                Button { if on { line.members.remove(member.id) } else { line.members.insert(member.id) } } label: {
+                                    Label(member.user.name, systemImage: on ? "checkmark" : "plus").font(.caption.bold())
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(on ? Theme.forest : Color.gray.opacity(0.12), in: Capsule())
+                                        .foregroundStyle(on ? Color.white : Color.primary)
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if line.members.isEmpty { Text("Pick at least one person").font(.caption).foregroundStyle(.red) }
+                }.padding(.vertical, 4)
+            }
+        } header: { Text("Who had what?") } footer: {
+            if let total = totalMinor, total != lineSum {
+                Text("Items add up to \(TravelFormat.money(lineSum, currency: detail.trip.currency_code)). Make the total match, or split equally instead.").foregroundStyle(.red)
+            }
+        }
+        Section { Button("Split equally instead") { lines = [] } }
+    }
+
+    private func scan(_ data: Data) async {
+        guard let jpeg = CoverPhoto.jpeg(from: data, maxSide: 2000) else { store.error = "That photo couldn’t be opened. Try another one."; return }
+        scanning = true
+        defer { scanning = false }
+        var draft: ReceiptDraft?
+        _ = await store.perform { draft = try await store.repository.scanReceipt(tripID: detail.trip.id, jpeg: jpeg) }
+        guard let draft else { return }
+        scanID = draft.scan_id
+        title = draft.title
+        if let value = draft.merchant { merchant = value }
+        if let value = draft.incurred_at { date = TravelFormat.parse(value) }
+        if let id = draft.category_id, detail.categories.contains(where: { $0.id == id }) { categoryID = id }
+        if let total = draft.total_minor { amount = String(format: "%.2f", Double(total) / 100) }
+        let everyone = Set(members.map(\.id))
+        lines = draft.lines.map { LineState(description: $0.description, amountMinor: $0.amount_minor, members: everyone) }
+        warnings = draft.warnings
     }
 
     private func save() async {
         guard let total = totalMinor else { return }
-        let input = ExpenseInput(
+        var input = ExpenseInput(
             title: title, merchant: merchant, category_id: categoryID,
             incurred_at: TravelFormat.date(date, timezone: detail.trip.timezone),
-            total_minor: total, split_method: "equal",
+            total_minor: total, split_method: itemized ? "itemized" : "equal",
             payments: payerID == 0 ? [] : [.init(trip_member_id: payerID, amount_minor: total)],
-            allocations: sharedBy.sorted().map { .init(trip_member_id: $0, weight: 1) }
+            allocations: itemized ? [] : sharedBy.sorted().map { .init(trip_member_id: $0, weight: 1) }
         )
+        input.items = lines.map { .init(description: $0.description, amount_minor: $0.amountMinor, member_ids: $0.members.sorted()) }
+        input.receipt_scan_id = scanID
         let saved = await store.mutate { try await store.repository.createExpense(tripID: detail.trip.id, input: input) }
         if saved { dismiss() }
+    }
+}
+
+/// The system camera, returning the photo as JPEG data.
+struct CameraPicker: UIViewControllerRepresentable {
+    let onCapture: (Data) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(_ parent: CameraPicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.95) { parent.onCapture(data) }
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }
 

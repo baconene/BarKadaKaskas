@@ -15,10 +15,11 @@ class ExpenseController extends Controller
         Gate::authorize('addExpense', $trip);
         $data = $this->validatedExpense($request, $trip);
         $expense = DB::transaction(function () use ($data, $trip, $request, $splitter) {
-            $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
+            $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items', 'version', 'receipt_scan_id'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
             foreach ($data['payments'] as $payment) { $expense->payments()->create($payment + ['paid_at' => now()]); }
             $this->writeAllocations($expense, $data, $splitter);
             ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'created', 'after' => ['total_minor' => $expense->total_minor, 'status' => 'open']]);
+            if (! empty($data['receipt_scan_id'])) { $this->attachScan($expense, (int) $data['receipt_scan_id'], $expense->created_by_member_id); }
             return $expense;
         });
         return $this->respond($request, $expense, 201);
@@ -51,11 +52,21 @@ class ExpenseController extends Controller
         return $this->respond($request, $expense);
     }
 
+    /** Keeps a scanned receipt photo with the expense it became, along with what was read from it. */
+    private function attachScan(Expense $expense, int $scanId, ?int $memberId): void
+    {
+        $scan = \App\Models\ReceiptScan::where('id', $scanId)->where('trip_id', $expense->trip_id)->where('trip_member_id', $memberId)->whereNull('expense_id')->lockForUpdate()->first();
+        if (! $scan) { return; }
+        $receipt = $expense->receipts()->create(['uploaded_by_member_id' => $memberId, 'storage_path' => $scan->storage_path, 'mime_type' => $scan->mime_type, 'file_hash' => $scan->file_hash, 'processing_status' => 'extracted']);
+        \App\Models\ReceiptExtraction::create(['receipt_id' => $receipt->id, 'provider' => $scan->provider, 'status' => 'reviewed', 'raw_result' => $scan->raw_result, 'normalized_result' => $scan->normalized_result, 'reviewed_by_member_id' => $memberId, 'reviewed_at' => now()]);
+        $scan->update(['expense_id' => $expense->id]);
+    }
+
     private function validatedExpense(Request $request, Trip $trip): array
     {
         $memberIds = $trip->members()->where('status', 'active')->pluck('id')->all();
         $data = $request->validate([
-            'version' => 'sometimes|integer|min:1',
+            'version' => 'sometimes|integer|min:1', 'receipt_scan_id' => 'nullable|integer',
             'title' => 'required|string|max:200', 'merchant' => 'nullable|string|max:200', 'incurred_at' => 'required|date_format:Y-m-d',
             'category_id' => ['required', Rule::in(ExpenseCategory::where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->pluck('id')->all())],
             'total_minor' => 'required|integer|min:1|max:100000000', 'split_method' => 'required|in:equal,exact,percentage,shares,itemized',

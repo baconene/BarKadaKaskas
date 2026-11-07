@@ -24,6 +24,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.travel
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: Take a photo of a receipt to fill in an expense.
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Show where you are on the trip map.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to your development server on the local network.
         SUPPORTS_MACCATALYST: NO

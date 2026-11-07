@@ -110,9 +110,25 @@ struct ExpenseInput: Encodable {
     struct Payment: Encodable { let trip_member_id: Int; let amount_minor: Int }
     struct Share: Encodable { let trip_member_id: Int; let weight: Int }
     let title: String; let merchant: String; let category_id: Int; let incurred_at: String
+    struct Item: Encodable { let description: String; let amount_minor: Int; let member_ids: [Int] }
     let total_minor: Int; let split_method: String; let payments: [Payment]; let allocations: [Share]
-    /// Required by the API (receipt lines for itemized splits); empty for equal splits.
-    let items: [String] = []
+    /// Receipt lines for itemized splits (must add up to the total); empty for equal splits.
+    var items: [Item] = []
+    /// A receipt scan to attach to the new expense.
+    var receipt_scan_id: Int? = nil
+}
+
+/// What the server read from a receipt photo. Everything is a suggestion the traveller can edit.
+struct ReceiptDraft: Decodable {
+    struct Line: Decodable { let description: String; let amount_minor: Int }
+    let scan_id: Int
+    let title: String
+    let merchant: String?
+    let incurred_at: String?
+    let category_id: Int?
+    let total_minor: Int?
+    let lines: [Line]
+    let warnings: [String]
 }
 struct CancelTripInput: Encodable { let reason: String?; let hide: Bool }
 struct TripVisibilityInput: Encodable { let hidden: Bool }

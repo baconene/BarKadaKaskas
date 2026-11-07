@@ -56,6 +56,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     }
 
     override suspend fun createExpense(tripId: Long, draft: ExpenseDraft) { request("POST", "/trips/$tripId/expenses", ApiJson.expenseBody(draft)) }
+    override suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft = ApiJson.receiptDraft(data(request("POST", "/trips/$tripId/receipt-scans", raw = multipart("receipt", "receipt.jpg", "image/jpeg", jpeg))))
 
     override suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String?, voidPayments: Boolean) {
         val body = JSONObject().put("status", status).put("version", expense.version).put("reason", reason ?: JSONObject.NULL).put("void_payments", voidPayments)

@@ -670,25 +670,107 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     }
 }
 
+/** A receipt line in the form; [members] share it equally. */
+private data class LineState(val description: String, val amountMinor: Long, val members: Set<Long>)
+
 @Composable private fun ExpenseForm(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var title by rememberSaveable { mutableStateOf("") }; var merchant by rememberSaveable { mutableStateOf("") }; var total by rememberSaveable { mutableStateOf("") }; var date by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }; var category by rememberSaveable { mutableStateOf(detail.categories.firstOrNull()?.id?.toString() ?: "") }; var payer by rememberSaveable { mutableStateOf("") }; var selected by remember { mutableStateOf(detail.members.map { it.id }.toSet()) }
+    // Filled by "Scan receipt": per-item lines, the scan to attach, and anything the reader wants checked.
+    var lines by remember { mutableStateOf<List<LineState>>(emptyList()) }
+    var scanId by remember { mutableStateOf<Long?>(null) }
+    var warnings by remember { mutableStateOf<List<String>>(emptyList()) }
+    var preparing by remember { mutableStateOf(false) }
+    val everyone = detail.members.map { it.id }.toSet()
     val symbol = runCatching { Currency.getInstance(detail.trip.currency).getSymbol(Locale("en", "PH")) }.getOrDefault(detail.trip.currency)
-    FormSheet("Add shared expense", vm, dismiss, "Split equally with the barkada") {
-        Field("Total", total, { total = it }, number = true, prefix = "$symbol ", supporting = amount(total)?.let { cents -> if (selected.isNotEmpty()) "About ${money(cents / selected.size, detail.trip.currency)} each" else null })
+
+    fun applyDraft(draft: ReceiptDraft) {
+        scanId = draft.scanId; title = draft.title; draft.merchant?.let { merchant = it }; draft.incurredAt?.let { date = it }
+        draft.categoryId?.takeIf { id -> detail.categories.any { it.id == id } }?.let { category = it.toString() }
+        draft.totalMinor?.let { total = BigDecimal.valueOf(it, 2).toPlainString() }
+        lines = draft.lines.map { LineState(it.description, it.amountMinor, everyone) }
+        warnings = draft.warnings
+    }
+    fun upload(uri: Uri) = scope.launch {
+        preparing = true
+        val jpeg = Photos.jpeg(context, uri, maxSide = 2000)
+        preparing = false
+        if (jpeg == null) Toast.makeText(context, "That photo couldn't be opened. Try another one.", Toast.LENGTH_LONG).show() else vm.scanReceipt(jpeg, ::applyDraft)
+    }
+    // Full-resolution camera photo via a cache file, so small receipt text stays readable.
+    val cameraFile = remember { java.io.File(context.cacheDir, "camera/receipt.jpg").apply { parentFile?.mkdirs() } }
+    val cameraUri = remember { androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", cameraFile) }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved -> if (saved) upload(cameraUri) }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) upload(uri) }
+    val scanning = preparing || (vm.busy && scanId == null && lines.isEmpty())
+    val itemized = lines.isNotEmpty()
+    val lineSum = lines.sumOf { it.amountMinor }
+
+    FormSheet("Add shared expense", vm, dismiss, if (itemized) "Split by item from your receipt" else "Split equally with the barkada") {
+        Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFF5F9EF), border = BorderStroke(1.dp, Color(0xFF9CB865))) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (scanning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Default.DocumentScanner, null, tint = Forest)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (scanning) "Reading your receipt…" else if (scanId != null) "Filled in from your receipt" else "Scan a receipt", fontWeight = FontWeight.SemiBold, color = Forest)
+                        Text(if (scanning) "This takes a few seconds." else if (scanId != null) "Check the amounts and who shares each item." else "We'll fill in the items for you.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { takePhoto.launch(cameraUri) }, enabled = !scanning && !vm.busy, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Take photo") }
+                    OutlinedButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !scanning && !vm.busy, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PhotoLibrary, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Choose") }
+                }
+                warnings.forEach { Row { Icon(Icons.Default.WarningAmber, null, tint = Color(0xFF926815), modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(it, color = Color(0xFF7A5512), style = MaterialTheme.typography.bodySmall) } }
+            }
+        }
+        Field("Total", total, { total = it }, number = true, prefix = "$symbol ", supporting = when {
+            itemized && amount(total) != lineSum -> "Items add up to ${money(lineSum, detail.trip.currency)}. Make the total match, or split equally instead."
+            itemized -> "Matches the ${lines.size} receipt items"
+            else -> amount(total)?.let { cents -> if (selected.isNotEmpty()) "About ${money(cents / selected.size, detail.trip.currency)} each" else null }
+        })
         Field("Description", title, { title = it }, leading = Icons.Default.Edit, supporting = "e.g. Dinner, Van rental")
         Field("Merchant", merchant, { merchant = it }, leading = Icons.Default.Storefront)
         Choice("Expense type", category, detail.categories.map { it.id.toString() to it.name }, { category = it })
         DateField("Date", date, { date = it })
         Choice("Who paid the full bill?", payer, listOf("" to "Not paid yet") + detail.members.map { it.id.toString() to if (it.id == detail.currentMemberId) "${it.name} (you)" else it.name }, { payer = it })
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Split between", Modifier.weight(1f), fontWeight = FontWeight.Bold)
-            TextButton(onClick = { selected = if (selected.size == detail.members.size) emptySet() else detail.members.map { it.id }.toSet() }) { Text(if (selected.size == detail.members.size) "Clear" else "Everyone") }
+        if (itemized) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Who had what?", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                TextButton(onClick = { lines = emptyList() }) { Text("Split equally instead") }
+            }
+            lines.forEachIndexed { index, line ->
+                Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Line), color = Color.White) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row { Text(line.description, Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(money(line.amountMinor, detail.trip.currency), fontWeight = FontWeight.SemiBold) }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            detail.members.forEach { member ->
+                                val on = member.id in line.members
+                                FilterChip(on, { lines = lines.toMutableList().also { it[index] = line.copy(members = if (on) line.members - member.id else line.members + member.id) } }, label = { Text(member.name) },
+                                    leadingIcon = if (on) { { Icon(Icons.Default.Check, null, Modifier.size(14.dp)) } } else null)
+                            }
+                        }
+                        if (line.members.isEmpty()) Text("Pick at least one person", color = Danger, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Split between", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                TextButton(onClick = { selected = if (selected.size == detail.members.size) emptySet() else everyone }) { Text(if (selected.size == detail.members.size) "Clear" else "Everyone") }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                detail.members.forEach { member -> FilterChip(member.id in selected, { selected = if (member.id in selected) selected - member.id else selected + member.id }, label = { Text(member.name) },
+                    leadingIcon = if (member.id in selected) { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } } else null) }
+            }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            detail.members.forEach { member -> FilterChip(member.id in selected, { selected = if (member.id in selected) selected - member.id else selected + member.id }, label = { Text(member.name) },
-                leadingIcon = if (member.id in selected) { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } } else null) }
+        val valid = title.isNotBlank() && category.isNotBlank() && amount(total) != null &&
+            (if (itemized) amount(total) == lineSum && lines.all { it.members.isNotEmpty() } else selected.isNotEmpty())
+        Submit("Save expense", vm.busy, valid, Icons.Default.Check) {
+            val items = lines.map { ItemDraft(it.description, it.amountMinor, it.members.toList()) }
+            vm.mutate(dismiss) { repo, current -> repo.createExpense(current.trip.id, ExpenseDraft(title, merchant, category.toLong(), amount(total)!!, date, selected.toList(), payer.toLongOrNull(), items, scanId)) }
         }
-        Submit("Save expense", vm.busy, title.isNotBlank() && category.isNotBlank() && amount(total) != null && selected.isNotEmpty(), Icons.Default.Check) { vm.mutate(dismiss) { repo, current -> repo.createExpense(current.trip.id, ExpenseDraft(title, merchant, category.toLong(), amount(total)!!, date, selected.toList(), payer.toLongOrNull())) } }
     }
 }
 

@@ -16,7 +16,13 @@ data class TripDetail(val trip: Trip, val members: List<Member>, val categories:
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")
 /** latitude/longitude keep (or set) the map pin; the server clears it when they are omitted. */
 data class StopDraft(val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null)
-data class ExpenseDraft(val title: String, val merchant: String, val categoryId: Long, val totalMinor: Long, val incurredAt: String, val memberIds: List<Long>, val paidByMemberId: Long?)
+/** One receipt line in an itemized split, shared equally by [memberIds]. */
+data class ItemDraft(val description: String, val amountMinor: Long, val memberIds: List<Long>)
+/** With [items] the expense is split per item (lines must add up to [totalMinor]); otherwise equally between [memberIds]. */
+data class ExpenseDraft(val title: String, val merchant: String, val categoryId: Long, val totalMinor: Long, val incurredAt: String, val memberIds: List<Long>, val paidByMemberId: Long?, val items: List<ItemDraft> = emptyList(), val receiptScanId: Long? = null)
+data class ReceiptLine(val description: String, val amountMinor: Long)
+/** What the server read from a receipt photo. Everything is a suggestion the traveller can edit. */
+data class ReceiptDraft(val scanId: Long, val title: String, val merchant: String?, val incurredAt: String?, val categoryId: Long?, val totalMinor: Long?, val lines: List<ReceiptLine>, val warnings: List<String>)
 
 /** HTTP adapter owns token persistence, JSON mapping, 401 handling and validation errors. */
 interface TravelRepository {
@@ -32,6 +38,8 @@ interface TravelRepository {
     suspend fun trip(id: Long): TripDetail
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
+    /** Reads a receipt photo (downscaled JPEG) into an expense draft. */
+    suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft
     suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String? = null, voidPayments: Boolean = false)
     suspend fun markSharePaid(tripId: Long, expense: Expense, memberId: Long, settlementId: Long? = null, newPayment: Boolean = false)
     suspend fun recordMerchantPayment(tripId: Long, expense: Expense, memberId: Long, amountMinor: Long)

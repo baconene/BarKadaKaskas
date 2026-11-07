@@ -14,6 +14,8 @@ import Foundation
     func trip(id: Int) async throws -> TripDetail
     func saveStop(tripID: Int, stopID: Int?, input: StopInput) async throws
     func createExpense(tripID: Int, input: ExpenseInput) async throws
+    /// Reads a receipt photo (downscaled JPEG) into an expense draft.
+    func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft
     func changeExpenseStatus(tripID: Int, expenseID: Int, version: Int, status: String, reason: String?, voidPayments: Bool) async throws
     func markSharePaid(tripID: Int, expenseID: Int, memberID: Int, version: Int) async throws
     func uploadReceipt(tripID: Int, expenseID: Int, data: Data, fileName: String, mimeType: String) async throws

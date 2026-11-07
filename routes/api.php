@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, TripController, TripCoverController};
+use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TripController, TripCoverController};
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +25,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('invitations/{token}/join', [TripController::class, 'join']);
         Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary']);
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
+        Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
         Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store']);
         Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update']);
         Route::patch('trips/{trip}/expenses/{expense}/status', [ExpenseController::class, 'status']);

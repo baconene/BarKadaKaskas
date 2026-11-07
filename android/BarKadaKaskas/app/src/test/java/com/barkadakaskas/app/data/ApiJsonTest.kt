@@ -101,4 +101,16 @@ class ApiJsonTest {
         assertEquals("Carpool", body.getString("description"))
         assertTrue(ApiJson.tripBody(com.barkadakaskas.app.domain.TripDraft("A", "B", "2026-11-08", "2026-11-09")).isNull("description"))
     }
+
+    @Test fun itemizedExpenseAndReceiptDraft() {
+        val body = ApiJson.expenseBody(ExpenseDraft("Dinner", "Cafe", 3, 1000, "2026-11-11", listOf(7, 8), null, listOf(com.barkadakaskas.app.domain.ItemDraft("Sisig", 600, listOf(7)), com.barkadakaskas.app.domain.ItemDraft("Rice", 400, listOf(7, 8))), receiptScanId = 42))
+        assertEquals("itemized", body.getString("split_method"))
+        assertEquals(0, body.getJSONArray("allocations").length())
+        assertEquals(2, body.getJSONArray("items").getJSONObject(1).getJSONArray("member_ids").length())
+        assertEquals(42L, body.getLong("receipt_scan_id"))
+        assertTrue(ApiJson.expenseBody(ExpenseDraft("A", "", 1, 100, "2026-11-11", listOf(7), null)).isNull("receipt_scan_id"))
+
+        val draft = ApiJson.receiptDraft(JSONObject("""{"scan_id":5,"title":"Jollibee","merchant":"Jollibee","incurred_at":null,"category_id":2,"total_minor":50000,"lines":[{"description":"Chickenjoy","amount_minor":50000}],"warnings":["Check the total"]}"""))
+        assertEquals(5L, draft.scanId); assertNull(draft.incurredAt); assertEquals(2L, draft.categoryId); assertEquals(1, draft.lines.size); assertEquals(listOf("Check the total"), draft.warnings)
+    }
 }

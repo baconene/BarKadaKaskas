@@ -6,6 +6,16 @@ return [
         'map_id' => env('GOOGLE_MAPS_MAP_ID', 'DEMO_MAP_ID'),
     ],
 
+    // Receipt scanning with Gemini on Vertex AI (see docs/receipt-scanning.md). Use either a service-account
+    // key (VERTEX_CREDENTIALS: JSON, base64 JSON or a file path) or a Vertex express-mode VERTEX_API_KEY.
+    'gemini' => [
+        'credentials' => env('VERTEX_CREDENTIALS'),
+        'api_key' => env('VERTEX_API_KEY'),
+        'project' => env('VERTEX_PROJECT_ID'),
+        'location' => env('VERTEX_LOCATION') ?: 'global',
+        'model' => env('VERTEX_GEMINI_MODEL') ?: 'gemini-2.5-flash',
+    ],
+
     // The landing page's "Download for Android" button. GitHub serves the newest release's APK at this
     // permanent URL (published by .github/workflows/mobile.yml). An empty env value keeps the default.
     'android' => [

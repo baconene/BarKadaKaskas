@@ -19,6 +19,7 @@ Route::middleware('auth')->group(function () {
     Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary'])->name('itinerary.store');
     Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store'])->name('expenses.store');
     Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update'])->name('expenses.update');
+    Route::post('trips/{trip}/expenses/{expense}/shares/paid', [ExpenseController::class, 'sharePaid'])->name('expenses.share-paid');
     Route::patch('trips/{trip}/expenses/{expense}/status', [ExpenseController::class, 'status'])->name('expenses.status');
     Route::post('trips/{trip}/expenses/{expense}/payments', [ExpenseController::class, 'payment'])->name('expenses.payment');
     Route::post('trips/{trip}/expenses/{expense}/receipts', [ExpenseController::class, 'receipt'])->name('receipts.store');

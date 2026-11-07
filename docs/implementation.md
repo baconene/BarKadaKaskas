@@ -19,9 +19,11 @@ Laravel 13 / Vue 3 / Inertia 2. All amounts use integer minor units. The initial
 
 `draft -> open -> completed -> closed`
 
-`draft/open -> cancelled` only when no payments have been recorded, with a required reason.
+`draft/open/completed -> cancelled` with a required reason. Expenses with recorded payments require explicit confirmation that the expense and linked reimbursements are voided from balances; payment records remain for audit and no money is refunded.
 
-Completed means the merchant is fully paid and the allocation equals the expense total. Closed locks the record; it does not erase member reimbursement obligations. Cancelled is terminal and excluded from spending/balances. A paid expense cannot be cancelled until a refund/reversal workflow is implemented. Never delete recorded payments to simulate a refund.
+Completed means the merchant is fully paid and the allocation equals the expense total. Closed locks the expense details; it does not erase member reimbursement obligations. Cancelled is terminal and excluded from spending/balances, including its expense-linked settlements. Never delete recorded payments to simulate a refund.
+
+Each assigned share shows paid/covered or the remaining reimbursement. Organizers can confirm money already reimbursed via Mark as paid. It creates confirmed expense-linked settlements to the bill's net creditors and never adds a duplicate merchant payment. Repeated requests cannot double-record a paid share. Recording a reimbursement on a fully funded open expense completes that expense; reimbursements remain possible after closure. General trip reimbursements cannot be automatically attributed to a particular bill, so trips containing those records require reconciliation before using per-expense Mark as paid or cancellation.
 
 Open expenses are provisional and excluded from balances even if partially paid. The UI labels the balance summary as completed/closed expenses only. Completion and closure retain their timestamps. Status changes and payment additions have audit records.
 

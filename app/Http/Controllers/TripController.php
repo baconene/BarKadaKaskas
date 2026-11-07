@@ -27,10 +27,13 @@ class TripController extends Controller
     public function show(Request $request, Trip $trip, TripBalances $balances)
     {
         Gate::authorize('view', $trip);
+        $trip->load(['expenses.payments', 'expenses.allocations', 'expenses.settlements']);
+        $shareRows = $trip->expenses->mapWithKeys(fn ($expense) => [$expense->id => app(\App\Services\ExpenseShares::class)->rows($expense)]);
         return Inertia::render('Trips/Show', [
             'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
             'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
             'balances' => $balances->calculate($trip), 'isOrganizer' => $trip->organizer_user_id === $request->user()->id,
+            'expenseShares' => $shareRows,
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
         ]);
     }

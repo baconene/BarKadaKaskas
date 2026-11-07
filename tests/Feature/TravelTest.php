@@ -235,4 +235,51 @@ class TravelTest extends TestCase
         $this->assertSame(1, $expense->fresh()->version);
         $this->assertSame(10001, (int) $expense->allocations()->sum('amount_minor'));
     }
+
+    public function test_mark_share_paid_records_reimbursement_not_a_second_merchant_payment(): void
+    {
+        $expense = $this->createExpense();
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid";
+        $this->post($url, ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasNoErrors();
+        $this->assertSame(ExpenseStatus::Completed, $expense->fresh()->status);
+        $this->assertSame(10001, (int) $expense->payments()->sum('amount_minor'));
+        $this->assertDatabaseHas('settlements', ['expense_id' => $expense->id, 'from_member_id' => $this->friendMember, 'to_member_id' => $this->ownerMember, 'amount_minor' => 5000, 'status' => 'confirmed']);
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->post($url, ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('settlements', 1);
+        $rows = app(\App\Services\ExpenseShares::class)->rows($expense->fresh());
+        $this->assertSame([0, 0], array_column($rows, 'remaining_minor'));
+    }
+
+    public function test_paid_expense_cancellation_requires_explicit_void_and_preserves_history(): void
+    {
+        $expense = $this->createExpense();
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasNoErrors();
+        $this->changeStatus($expense, 'cancelled', ['reason' => 'Duplicate bill'])->assertSessionHasErrors('status');
+        $this->changeStatus($expense, 'cancelled', ['reason' => 'Duplicate bill', 'void_payments' => true])->assertSessionHasNoErrors();
+        $this->assertSame(ExpenseStatus::Cancelled, $expense->fresh()->status);
+        $this->assertNotNull($expense->fresh()->cancelled_at);
+        $this->assertDatabaseCount('expense_payments', 1); $this->assertDatabaseCount('settlements', 1);
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
+
+    public function test_share_paid_rejects_non_admin_foreign_members_unfunded_and_cancelled_expenses(): void
+    {
+        $expense = $this->createExpense(false); $url = "/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid";
+        $this->actingAs($this->friend)->post($url, ['member_id' => $this->friendMember, 'version' => 1])->assertForbidden();
+        $this->actingAs($this->owner)->post($url, ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasErrors('share');
+        $this->changeStatus($expense, 'cancelled', ['reason' => 'Not needed'])->assertSessionHasNoErrors();
+        $this->post($url, ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasErrors('share');
+        $paid = $this->createExpense();
+        $this->post("/trips/{$this->trip->id}/expenses/{$paid->id}/shares/paid", ['member_id' => 999999, 'version' => 1])->assertSessionHasErrors('share');
+        $this->assertDatabaseCount('settlements', 0);
+    }
+
+    public function test_share_reimbursement_can_be_recorded_after_closing(): void
+    {
+        $expense = $this->createExpense(); $this->changeStatus($expense, 'completed'); $this->changeStatus($expense, 'closed');
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->assertSame(ExpenseStatus::Closed, $expense->fresh()->status);
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
 }

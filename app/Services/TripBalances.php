@@ -13,7 +13,7 @@ class TripBalances
             foreach ($expense->payments as $payment) { $balances[$payment->trip_member_id]['net_minor'] += $payment->amount_minor; }
             foreach ($expense->allocations as $allocation) { $balances[$allocation->trip_member_id]['net_minor'] -= $allocation->amount_minor; }
         }
-        foreach ($trip->settlements()->where('status', 'confirmed')->get() as $settlement) {
+        foreach ($trip->settlements()->where('status', 'confirmed')->where(fn ($q) => $q->whereNull('expense_id')->orWhereHas('expense', fn ($e) => $e->whereIn('status', ['completed', 'closed'])))->get() as $settlement) {
             $balances[$settlement->from_member_id]['net_minor'] += $settlement->amount_minor;
             $balances[$settlement->to_member_id]['net_minor'] -= $settlement->amount_minor;
         }

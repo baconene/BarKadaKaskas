@@ -85,8 +85,15 @@ class ExpenseController extends Controller
     public function status(Request $request, Trip $trip, Expense $expense, ExpenseLifecycle $lifecycle)
     {
         abort_unless($expense->trip_id === $trip->id, 404);
-        $data = $request->validate(['status' => ['required', Rule::enum(ExpenseStatus::class)], 'version' => 'required|integer|min:1', 'reason' => 'nullable|string|max:2000']);
-        $lifecycle->transition($expense, $request->user(), ExpenseStatus::from($data['status']), (int) $data['version'], $data['reason'] ?? null);
+        $data = $request->validate(['status' => ['required', Rule::enum(ExpenseStatus::class)], 'version' => 'required|integer|min:1', 'reason' => 'nullable|string|max:2000', 'void_payments' => 'sometimes|boolean']);
+        $lifecycle->transition($expense, $request->user(), ExpenseStatus::from($data['status']), (int) $data['version'], $data['reason'] ?? null, (bool) ($data['void_payments'] ?? false));
+        return back();
+    }
+    public function sharePaid(Request $request, Trip $trip, Expense $expense, \App\Services\ExpenseShares $shares)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        $data = $request->validate(['member_id' => 'required|integer', 'version' => 'required|integer']);
+        $shares->markPaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version']);
         return back();
     }
     public function payment(Request $request, Trip $trip, Expense $expense)

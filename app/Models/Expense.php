@@ -18,4 +18,5 @@ class Expense extends Model
     public function adjustments(): HasMany { return $this->hasMany(ExpenseAdjustment::class); }
     public function allocations(): HasMany { return $this->hasMany(ExpenseAllocation::class); }
     public function receipts(): HasMany { return $this->hasMany(Receipt::class); }
+    public function settlements(): HasMany { return $this->hasMany(Settlement::class); }
 }

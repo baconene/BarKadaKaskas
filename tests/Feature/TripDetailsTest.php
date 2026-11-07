@@ -49,7 +49,7 @@ class TripDetailsTest extends TestCase
     public function test_currency_is_locked_once_expenses_exist(): void
     {
         $this->patchJson("/api/v1/trips/{$this->trip->id}", $this->details(['currency_code' => 'USD']), $this->headers($this->owner))->assertOk();
-        $this->trip->expenses()->create(['title' => 'Tickets', 'category_id' => ExpenseCategory::create(['name' => 'Fun'])->id, 'incurred_at' => '2026-11-08', 'total_minor' => 1000, 'split_method' => 'equal', 'currency_code' => 'USD', 'status' => 'open']);
+        $this->trip->expenses()->create(['created_by_member_id' => $this->trip->members()->where('user_id', $this->owner->id)->value('id'), 'title' => 'Tickets', 'category_id' => ExpenseCategory::create(['name' => 'Fun'])->id, 'incurred_at' => '2026-11-08', 'total_minor' => 1000, 'split_method' => 'equal', 'currency_code' => 'USD', 'status' => 'open']);
         $this->patchJson("/api/v1/trips/{$this->trip->id}", $this->details(['currency_code' => 'PHP']), $this->headers($this->owner))->assertUnprocessable()->assertJsonValidationErrors('currency_code');
     }
 

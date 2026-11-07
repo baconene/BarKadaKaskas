@@ -99,5 +99,20 @@ Review the workflow result before treating a platform as verified.
 
 Android's `HttpURLConnection` cannot send PATCH, so the Android client sends
 POST with `X-HTTP-Method-Override: PATCH`, which Laravel honours. Web-only for
-now: itemized/exact/percentage splits, maps and routes, per-stop budgets in the
-UI, and adding expenses on iOS.
+now: itemized/exact/percentage splits and editing per-stop budgets (the apps
+show them read-only).
+
+## Maps in the apps
+
+Both apps show each itinerary day on an in-app map with numbered pins joined in
+visiting order, plus **Navigate** (Google Maps directions through the day) and
+per-stop **Map** / **Directions** links.
+
+- Android uses OpenStreetMap tiles through osmdroid and iOS uses Apple MapKit,
+  so neither needs a Google Maps API key. (The web map still needs
+  `GOOGLE_MAPS_BROWSER_KEY`; see `docs/google-maps-setup.md`.)
+- Stops picked from place search on the web already carry coordinates. For
+  typed addresses the app asks the device geocoder (Android `Geocoder`, iOS
+  `CLGeocoder`) and shows those pins slightly faded as approximate.
+- Saving a stop from the app keeps its pin when the address is unchanged and
+  geocodes a new address, so editing on mobile no longer clears web pins.

@@ -12,6 +12,7 @@ internal object ApiJson {
     private fun JSONObject.text(name: String): String = if (!has(name) || isNull(name)) "" else optString(name)
     private fun JSONObject.textOrNull(name: String): String? = text(name).ifBlank { null }
     private fun JSONObject.longOrNull(name: String): Long? = if (!has(name) || isNull(name)) null else optLong(name)
+    private fun JSONObject.doubleOrNull(name: String): Double? = if (!has(name) || isNull(name)) null else optDouble(name).takeUnless { it.isNaN() }
     private inline fun <T> JSONArray?.mapObjects(transform: (JSONObject) -> T): List<T> =
         if (this == null) emptyList() else (0 until length()).mapNotNull { index -> optJSONObject(index)?.let(transform) }
 
@@ -55,6 +56,11 @@ internal object ApiJson {
         startsAt = json.text("starts_at"),
         endsAt = json.text("ends_at"),
         transport = json.textOrNull("transport_mode"),
+        latitude = json.doubleOrNull("latitude"),
+        longitude = json.doubleOrNull("longitude"),
+        costMinMinor = json.longOrNull("cost_min_minor"),
+        costMaxMinor = json.longOrNull("cost_max_minor"),
+        costNote = json.textOrNull("cost_note"),
     )
 
     fun expense(json: JSONObject, shareRows: JSONArray?): Expense {
@@ -113,6 +119,7 @@ internal object ApiJson {
         .put("title", draft.title.trim()).put("location", draft.location.trim()).put("description", draft.description.trim())
         .put("starts_at", draft.startsAt.trim()).put("ends_at", draft.endsAt.trim())
         .put("transport_mode", draft.transport ?: JSONObject.NULL)
+        .apply { if (draft.latitude != null && draft.longitude != null) put("latitude", draft.latitude).put("longitude", draft.longitude) }
 
     /** Equal split between the chosen travellers; the server allocates leftover centavos fairly. */
     fun expenseBody(draft: ExpenseDraft) = JSONObject()

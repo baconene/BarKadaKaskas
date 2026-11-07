@@ -77,4 +77,10 @@ class ApiJsonTest {
         assertTrue(body.isNull("transport_mode"))
         assertFalse(body.has("latitude"))
     }
+
+    @Test fun stopBodyKeepsMapPin() {
+        val body = ApiJson.stopBody(StopDraft("Falls", "Cambugahay Falls", "", "2026-11-11T08:00", "2026-11-11T09:00", "tricycle", 9.14, 123.62))
+        assertEquals(9.14, body.getDouble("latitude"), 0.0)
+        assertEquals(123.62, body.getDouble("longitude"), 0.0)
+    }
 }

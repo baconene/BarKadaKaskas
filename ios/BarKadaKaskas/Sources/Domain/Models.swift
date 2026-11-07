@@ -27,6 +27,9 @@ struct ItineraryStop: Codable, Identifiable {
     let starts_at: String
     let ends_at: String
     let transport_mode: String?
+    /// Set when the place was picked from search (web) or looked up on the device; nil for unresolved typed addresses.
+    let latitude: Double?
+    let longitude: Double?
     let cost_min_minor: Int?
     let cost_max_minor: Int?
     let cost_note: String?
@@ -89,6 +92,9 @@ struct TripInput: Encodable {
 struct StopInput: Encodable {
     let title: String; let location: String; let description: String
     let starts_at: String; let ends_at: String; let transport_mode: String?
+    /// Keeps (or sets) the map pin. Omitted when nil, which makes the server clear the pin.
+    var latitude: Double? = nil
+    var longitude: Double? = nil
 }
 struct ExpenseInput: Encodable {
     struct Payment: Encodable { let trip_member_id: Int; let amount_minor: Int }
@@ -103,6 +109,11 @@ struct SettlementInput: Encodable { let to_member_id: Int; let amount_minor: Int
 enum TravelFormat {
     static func money(_ minor: Int, currency: String) -> String {
         (Decimal(minor) / 100).formatted(.currency(code: currency))
+    }
+    /// Drops ".00" for whole amounts, e.g. "₱1,430".
+    static func wholeMoney(_ minor: Int, currency: String) -> String {
+        let style = Decimal.FormatStyle.Currency(code: currency).precision(.fractionLength(minor % 100 == 0 ? 0 : 2))
+        return (Decimal(minor) / 100).formatted(style)
     }
     static func minor(_ input: String) -> Int? {
         guard let amount = Decimal(string: input, locale: Locale(identifier: "en_US_POSIX")), amount > 0 else { return nil }

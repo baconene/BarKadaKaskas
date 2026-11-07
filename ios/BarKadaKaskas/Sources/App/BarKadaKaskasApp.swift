@@ -43,8 +43,41 @@ import SwiftUI
 }
 
 enum Theme {
-    static let forest = Color(red: 0.14, green: 0.30, blue: 0.24)
-    static let canvas = Color(red: 0.96, green: 0.97, blue: 0.94)
+    static let forest = Color(red: 0.13, green: 0.31, blue: 0.24)
+    static let moss = Color(red: 0.45, green: 0.53, blue: 0.23)
+    static let sage = Color(red: 0.89, green: 0.93, blue: 0.85)
+    static let line = Color(red: 0.87, green: 0.90, blue: 0.85)
+    static let canvas = Color(red: 0.97, green: 0.97, blue: 0.96)
+}
+
+/// Gentle press-down feedback for tappable cards and buttons.
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.spring(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline).foregroundStyle(.white)
+            .padding(.vertical, 15).padding(.horizontal, 18)
+            .background(Theme.forest.opacity(configuration.isPressed ? 0.85 : 1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+extension View {
+    /// White rounded card with a hairline border, as on the web app.
+    func cardStyle(padding: CGFloat = 16) -> some View {
+        self.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.line, lineWidth: 1))
+    }
 }
 
 struct RootView: View {

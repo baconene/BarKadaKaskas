@@ -17,6 +17,8 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     var error by mutableStateOf<String?>(null); private set
     var invitationUrl by mutableStateOf<String?>(null); private set
     var serverUrl by mutableStateOf(repository.serverUrl); private set
+    /** True while a bottom-sheet form is open; it shows errors inline, so screens skip their snackbar. */
+    var formOpen by mutableStateOf(false)
 
     init { if (repository.hasSession) launch { user = repository.currentUser(); trips = repository.trips() } }
     fun clearError() { error = null }

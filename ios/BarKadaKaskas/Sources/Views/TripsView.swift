@@ -83,11 +83,12 @@ struct TripForm: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Create") {
                     Task {
-                        if await store.perform {
+                        // Parentheses are required for a closure inside an `if` condition.
+                        if await store.perform({
                             guard TimeZone(identifier: timezone) != nil else { throw MobileError.validation("Enter a valid time zone, such as Asia/Manila.") }
                             _ = try await store.repository.createTrip(TripInput(name: name, destination: destination, description: description, starts_on: TravelFormat.date(start), ends_on: TravelFormat.date(max(start, end)), timezone: timezone, currency_code: currency))
                             store.trips = try await store.repository.trips()
-                        } { dismiss() }
+                        }) { dismiss() }
                     }
                 }.disabled(name.isEmpty || destination.isEmpty || store.busy) }
             }

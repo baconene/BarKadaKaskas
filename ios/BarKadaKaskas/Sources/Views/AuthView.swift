@@ -28,9 +28,12 @@ struct AuthView: View {
                             if registering && password != confirmation { store.error = "Passwords do not match."; return }
                             await store.perform {
                                 try store.repository.configure(serverURL: server)
-                                store.user = registering
-                                    ? try await store.repository.register(name: name, email: email, password: password)
-                                    : try await store.repository.login(email: email, password: password)
+                                // `try` cannot sit inside a ternary, so branch explicitly.
+                                if registering {
+                                    store.user = try await store.repository.register(name: name, email: email, password: password)
+                                } else {
+                                    store.user = try await store.repository.login(email: email, password: password)
+                                }
                                 password = ""; confirmation = ""
                             }
                         }

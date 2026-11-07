@@ -57,4 +57,16 @@ jobs:
         run: npx vue-tsc --noEmit
 
       - name: Tests
-        run: ./vendor/bin/phpunit
+        run: |
+          set -o pipefail
+          ./vendor/bin/phpunit 2>&1 | tee phpunit.log
+
+      # Publish the failure summary as an annotation so it is readable without opening the log.
+      - name: Report test failures
+        if: failure()
+        run: |
+          summary=$(awk '/^There (was|were) [0-9]+ (failure|error)/{f=1} f' phpunit.log | head -c 3500)
+          [ -z "$summary" ] && summary=$(tail -c 3500 phpunit.log)
+          summary=${summary//'%'/'%25'}
+          summary=${summary//$'\n'/'%0A'}
+          echo "::error title=PHPUnit failures::$summary"

@@ -21,6 +21,10 @@ import Foundation
     func confirmSettlement(tripID: Int, settlementID: Int) async throws
     func createInvitation(tripID: Int) async throws -> URL
     func joinInvitation(token: String) async throws -> Int
+    /// Organizer only. `hide` also removes the trip from everyone's trip list.
+    func cancelTrip(tripID: Int, reason: String?, hide: Bool) async throws
+    func reopenTrip(tripID: Int) async throws
+    func setTripHidden(tripID: Int, hidden: Bool) async throws
 }
 
 enum MobileError: LocalizedError {

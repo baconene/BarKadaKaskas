@@ -185,7 +185,7 @@ struct GroupView: View {
                     }
                 }
             }
-            if detail.is_organizer {
+            if detail.canPlan {
                 Section {
                     if let invitation {
                         ShareLink(item: invitation, message: Text("Join our trip on BarKadaKaskas")) { Label("Share invitation link", systemImage: "square.and.arrow.up") }

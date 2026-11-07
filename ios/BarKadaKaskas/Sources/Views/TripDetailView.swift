@@ -5,22 +5,105 @@ import UniformTypeIdentifiers
 struct TripDetailView: View {
     let tripID: Int
     @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
     @State private var tab = 0
+    @State private var cancelling = false
+    @State private var confirmHide = false
+
+    /// Hiding removes the trip from the list, so go back to it afterwards.
+    private func lifecycle(hideAfter: Bool, _ action: @escaping () async throws -> Void) {
+        Task {
+            let done = await store.mutate { try await action(); store.trips = try await store.repository.trips() }
+            if done && hideAfter { dismiss() }
+        }
+    }
+
     var body: some View {
         Group {
             if let detail = store.detail, detail.trip.id == tripID {
+                VStack(spacing: 0) {
+                if detail.trip.isCancelled { CancelledBanner(detail: detail) { lifecycle(hideAfter: false) { try await store.repository.reopenTrip(tripID: tripID) } } }
                 TabView(selection: $tab) {
                     ItineraryView(detail: detail).tabItem { Label("Itinerary", systemImage: "map") }.tag(0)
                     ExpensesView(detail: detail).tabItem { Label("Expenses", systemImage: "receipt") }.tag(1)
                     BalancesView(detail: detail).tabItem { Label("Balances", systemImage: "arrow.left.arrow.right") }.tag(2)
                     GroupView(detail: detail).tabItem { Label("Group", systemImage: "person.2") }.tag(3)
                 }
+                }
                 .navigationTitle(detail.trip.name).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if detail.is_organizer {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                if !detail.trip.isCancelled {
+                                    Button("Cancel trip…", systemImage: "xmark.circle", role: .destructive) { cancelling = true }
+                                } else {
+                                    Button("Reopen trip", systemImage: "arrow.uturn.backward.circle") { lifecycle(hideAfter: false) { try await store.repository.reopenTrip(tripID: tripID) } }
+                                    if detail.trip.hidden_at == nil { Button("Hide from trip lists", systemImage: "eye.slash") { confirmHide = true } }
+                                    else { Button("Show in trip lists", systemImage: "eye") { lifecycle(hideAfter: false) { try await store.repository.setTripHidden(tripID: tripID, hidden: false) } } }
+                                }
+                            } label: { Image(systemName: "ellipsis.circle") }
+                            .accessibilityLabel("Trip options")
+                        }
+                    }
+                }
+                .sheet(isPresented: $cancelling) {
+                    CancelTripSheet(tripName: detail.trip.name) { reason, hide in
+                        lifecycle(hideAfter: hide) { try await store.repository.cancelTrip(tripID: tripID, reason: reason, hide: hide) }
+                    }
+                }
+                .confirmationDialog("Hide this trip?", isPresented: $confirmHide, titleVisibility: .visible) {
+                    Button("Hide trip") { lifecycle(hideAfter: true) { try await store.repository.setTripHidden(tripID: tripID, hidden: true) } }
+                } message: { Text("It won’t show in anyone’s trip list. You can show it again from this menu.") }
             } else if store.busy { ProgressView("Loading your trip…") }
             else {
                 VStack { EmptyMessage(title: "Couldn’t load this trip", subtitle: "Check your connection and try again.", icon: "wifi.exclamationmark"); Button("Try again") { Task { await store.loadTrip(tripID) } } }
             }
         }.task { await store.loadTrip(tripID) }
+    }
+}
+
+private struct CancelledBanner: View {
+    let detail: TripDetail
+    let reopen: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(detail.trip.hidden_at == nil ? "This trip was cancelled" : "Cancelled · hidden from trip lists", systemImage: "xmark.octagon.fill").font(.subheadline.bold())
+            if let reason = detail.trip.cancellation_reason, !reason.isEmpty { Text("“\(reason)”").font(.subheadline) }
+            Text("The plan and new expenses are locked. You can still record repayments and settle up.").font(.caption)
+            if detail.is_organizer { Button("Reopen trip", systemImage: "arrow.uturn.backward", action: reopen).font(.caption.bold()).buttonStyle(.bordered).tint(Color(red: 0.49, green: 0.20, blue: 0.14)) }
+        }
+        .foregroundStyle(Color(red: 0.49, green: 0.20, blue: 0.14))
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 1.0, green: 0.96, blue: 0.94))
+    }
+}
+
+/// Organizer confirmation for cancelling a trip, with the option to hide it from trip lists.
+private struct CancelTripSheet: View {
+    let tripName: String
+    let confirm: (String, Bool) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason = ""
+    @State private var hide = false
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Reason (optional)", text: $reason, axis: .vertical).lineLimit(2...4)
+                } footer: { Text("The plan and new expenses are locked. Everyone can still settle up, and you can reopen the trip later.") }
+                Section {
+                    Toggle(isOn: $hide) { Label { VStack(alignment: .leading) { Text("Hide this trip"); Text("It won’t show in anyone’s trip list.").font(.caption).foregroundStyle(.secondary) } } icon: { Image(systemName: "eye.slash") } }
+                        .tint(Theme.forest)
+                }
+                Section {
+                    Button(role: .destructive) { dismiss(); confirm(reason, hide) } label: { Text(hide ? "Cancel & hide trip" : "Cancel trip").frame(maxWidth: .infinity).fontWeight(.semibold) }
+                }
+            }
+            .navigationTitle("Cancel “\(tripName)”?").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Keep trip") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
@@ -53,14 +136,14 @@ struct ItineraryView: View {
                 if days.isEmpty {
                     VStack(spacing: 14) {
                         EmptyMessage(title: "Your days are open", subtitle: "Add your arrival point, then the places you want to visit.", icon: "map")
-                        if detail.is_organizer { Button { editing = nil; form = true } label: { Label("Add the first stop", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(PrimaryButtonStyle()) }
+                        if detail.canPlan { Button { editing = nil; form = true } label: { Label("Add the first stop", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(PrimaryButtonStyle()) }
                     }.cardStyle()
                 } else if let day {
                     dayPicker(current: day.key)
                     mapCard(day)
                     VStack(spacing: 0) {
                         ForEach(Array(day.stops.enumerated()), id: \.element.id) { index, stop in
-                            TimelineRow(stop: stop, previous: index > 0 ? day.stops[index - 1] : nil, isLast: index == day.stops.count - 1, trip: trip, canEdit: detail.is_organizer, guesses: guesses) { editing = stop; form = true }
+                            TimelineRow(stop: stop, previous: index > 0 ? day.stops[index - 1] : nil, isLast: index == day.stops.count - 1, trip: trip, canEdit: detail.canPlan, guesses: guesses) { editing = stop; form = true }
                         }
                     }
                 }
@@ -86,7 +169,7 @@ struct ItineraryView: View {
                 }
             }
             Spacer()
-            if detail.is_organizer {
+            if detail.canPlan {
                 Button { editing = nil; form = true } label: { Label("Add", systemImage: "plus").font(.subheadline.bold()) }
                     .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Theme.forest)
             }
@@ -291,7 +374,7 @@ struct ExpensesView: View {
     @State private var adding = false
     var body: some View {
         List {
-            Section { Button("Record an expense", systemImage: "plus") { adding = true } }
+            if !detail.trip.isCancelled { Section { Button("Record an expense", systemImage: "plus") { adding = true } } }
             if (detail.trip.expenses ?? []).isEmpty { EmptyMessage(title: "No shared bills yet", subtitle: "Record a bill and choose who shares it.", icon: "receipt") }
             ForEach(detail.trip.expenses ?? []) { expense in
                 NavigationLink { ExpenseDetailView(tripID: detail.trip.id, expenseID: expense.id) } label: {

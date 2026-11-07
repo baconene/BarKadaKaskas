@@ -241,8 +241,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val list = rememberLazyListState()
     val today = LocalDate.now()
     val sorted = remember(vm.trips) { vm.trips.sortedBy { it.startsOn } }
-    val active = sorted.filter { Itinerary.phase(it, today) != Itinerary.Phase.Past }
-    val past = sorted.filter { Itinerary.phase(it, today) == Itinerary.Phase.Past }.reversed()
+    val active = sorted.filter { !it.cancelled && Itinerary.phase(it, today) != Itinerary.Phase.Past }
+    val past = sorted.filter { it.cancelled || Itinerary.phase(it, today) == Itinerary.Phase.Past }.reversed()
     ErrorSnackbar(vm, snackbar)
     Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(title = { Text("My trips", fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
@@ -265,7 +265,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                     itemsIndexed(active.drop(1), key = { _, trip -> trip.id }) { index, trip -> TripCard(trip, index + 1, today, Modifier.animateItem()) { vm.openTrip(trip) } }
                 }
                 if (past.isNotEmpty()) {
-                    item { SectionTitle("Past trips", past.size) }
+                    item { SectionTitle(if (past.any { it.cancelled }) "Past & cancelled" else "Past trips", past.size) }
                     itemsIndexed(past, key = { _, trip -> trip.id }) { index, trip -> TripCard(trip, index, today, Modifier.animateItem()) { vm.openTrip(trip) } }
                 }
             }
@@ -321,7 +321,9 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Eyebrow(trip.destination)
                 Text(trip.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${Itinerary.dateRange(trip.startsOn, trip.endsOn)} · ${trip.memberCount} traveler${if (trip.memberCount == 1) "" else "s"}", color = Muted, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(2.dp)); Pill(Itinerary.phaseLabel(phase), container = if (phase == Itinerary.Phase.Past) Color(0xFFE9EDEF) else Color(0xFFEDF2E6), content = if (phase == Itinerary.Phase.Past) Color(0xFF4D6168) else Color(0xFF526936))
+                Spacer(Modifier.height(2.dp))
+                if (trip.cancelled) Pill("Cancelled", Icons.Default.Block, Color(0xFFFCE8E3), Color(0xFFA04735))
+                else Pill(Itinerary.phaseLabel(phase), container = if (phase == Itinerary.Phase.Past) Color(0xFFE9EDEF) else Color(0xFFEDF2E6), content = if (phase == Itinerary.Phase.Past) Color(0xFF4D6168) else Color(0xFF526936))
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted)
         }
@@ -334,12 +336,28 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val haptic = LocalHapticFeedback.current
     val labels = listOf("Itinerary", "Expenses", "Balances", "Group")
     val icons = listOf(Icons.Default.Map, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.AccountBalanceWallet, Icons.Default.Groups)
+    var menu by remember { mutableStateOf(false) }
+    var cancelling by remember { mutableStateOf(false) }
+    var confirmHide by remember { mutableStateOf(false) }
+    // A cancelled trip locks the plan for everyone, organizer included; settling up stays available.
+    val planning = if (detail.trip.cancelled) detail.copy(isOrganizer = false) else detail
     ErrorSnackbar(vm, snackbar)
     androidx.activity.compose.BackHandler(enabled = !vm.busy) { vm.backToTrips() }
     Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
             title = { Column { Text(detail.trip.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold); Text("${detail.trip.destination} · ${Itinerary.dateRange(detail.trip.startsOn, detail.trip.endsOn)}", style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-            navigationIcon = { IconButton(vm::backToTrips, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to trips") } }) },
+            navigationIcon = { IconButton(vm::backToTrips, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to trips") } },
+            actions = { if (detail.isOrganizer) Box {
+                IconButton(onClick = { menu = true }, enabled = !vm.busy) { Icon(Icons.Default.MoreVert, "Trip options") }
+                DropdownMenu(menu, { menu = false }) {
+                    if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Cancel trip…", color = Danger) }, leadingIcon = { Icon(Icons.Default.Block, null, tint = Danger) }, onClick = { menu = false; cancelling = true })
+                    else {
+                        DropdownMenuItem(text = { Text("Reopen trip") }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { menu = false; vm.reopenTrip() })
+                        DropdownMenuItem(text = { Text(if (detail.trip.hidden) "Show in trip lists" else "Hide from trip lists") }, leadingIcon = { Icon(if (detail.trip.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
+                            onClick = { menu = false; if (detail.trip.hidden) vm.setTripHidden(false) else confirmHide = true })
+                    }
+                }
+            } }) },
         bottomBar = { NavigationBar(containerColor = Color.White) { labels.forEachIndexed { index, label ->
             NavigationBarItem(tab == index, { if (tab != index) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); tab = index }, icon = { Icon(icons[index], null) }, label = { Text(label) },
                 colors = NavigationBarItemDefaults.colors(selectedIconColor = Forest, selectedTextColor = Forest, indicatorColor = Sage))
@@ -347,12 +365,18 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         PullToRefreshBox(isRefreshing = vm.busy, onRefresh = vm::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
             AnimatedContent(tab, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "tab") { current ->
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    when (current) { 0 -> ItineraryTab(vm, detail); 1 -> ExpensesTab(vm, detail); 2 -> BalancesTab(vm, detail); else -> GroupTab(vm, detail) }
+                    if (detail.trip.cancelled) CancelledBanner(detail, vm)
+                    when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) }
                     Spacer(Modifier.height(24.dp))
                 }
             }
         }
     }
+    if (cancelling) CancelTripSheet(vm, detail) { cancelling = false }
+    if (confirmHide) AlertDialog(onDismissRequest = { confirmHide = false }, icon = { Icon(Icons.Default.VisibilityOff, null) },
+        title = { Text("Hide this trip?") }, text = { Text("It won't show in anyone's trip list. You can show it again from this menu.") },
+        confirmButton = { TextButton(onClick = { confirmHide = false; vm.setTripHidden(true) }) { Text("Hide trip") } },
+        dismissButton = { TextButton(onClick = { confirmHide = false }) { Text("Keep visible") } })
 }
 
 @Composable private fun ItineraryTab(vm: TravelViewModel, detail: TripDetail) {
@@ -489,13 +513,13 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val pending = detail.expenses.filter { it.status == "open" }.sumOf { it.totalMinor }
     Row(verticalAlignment = Alignment.Bottom) {
         Text("Shared expenses", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        FilledTonalButton(onClick = { create = true }, enabled = !vm.busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add") }
+        if (!detail.trip.cancelled) FilledTonalButton(onClick = { create = true }, enabled = !vm.busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add") }
     }
     Card(colors = CardDefaults.cardColors(containerColor = Forest), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Trip spending", color = Color(0xFFCDDEBC)); Text(money(total, detail.trip.currency), color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text(if (pending > 0) "+ ${money(pending, detail.trip.currency)} still open" else "Completed and closed expenses", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.bodySmall)
     } }
-    if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", "Add an expense") { create = true }
+    if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Sage), contentAlignment = Alignment.Center) { Icon(kindIcon(Itinerary.kind("${expense.category} ${expense.title}")), null, tint = Forest) }
@@ -706,5 +730,41 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         Text("Payment method", fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("gcash" to "GCash", "cash" to "Cash", "bank_transfer" to "Bank transfer", "other" to "Other").forEach { (key, label) -> FilterChip(method == key, { method = key }, label = { Text(label) }) } }
         Submit("Record reimbursement", vm.busy, recipient.isNotBlank() && amount(total) != null, Icons.AutoMirrored.Filled.Send) { vm.mutate(dismiss) { repo, current -> repo.recordSettlement(current.trip.id, recipient.toLong(), amount(total)!!, method) } }
+    }
+}
+
+@Composable private fun CancelledBanner(detail: TripDetail, vm: TravelViewModel) {
+    Surface(color = Color(0xFFFFF4EF), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color(0xFFEDC9BD))) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Block, null, tint = Danger, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text(if (detail.trip.hidden) "Cancelled · hidden from trip lists" else "This trip was cancelled", color = Color(0xFF7D3424), fontWeight = FontWeight.Bold)
+            }
+            detail.trip.cancellationReason?.let { Text("“$it”", color = Color(0xFF7D3424), style = MaterialTheme.typography.bodyMedium) }
+            Text("The plan and new expenses are locked. You can still record repayments and settle up.", color = Color(0xFF7D3424), style = MaterialTheme.typography.bodySmall)
+            if (detail.isOrganizer) OutlinedButton(onClick = vm::reopenTrip, enabled = !vm.busy) { Icon(Icons.Default.Restore, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Reopen trip") }
+        }
+    }
+}
+
+@Composable private fun CancelTripSheet(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {
+    var reason by rememberSaveable { mutableStateOf("") }
+    var hide by rememberSaveable { mutableStateOf(false) }
+    FormSheet("Cancel “${detail.trip.name}”?", vm, dismiss, "The plan and new expenses are locked. Everyone can still settle up, and you can reopen the trip later.") {
+        Field("Reason (optional)", reason, { reason = it }, singleLine = false, supporting = "e.g. Typhoon warning, moving to next month")
+        Surface(onClick = { hide = !hide }, shape = RoundedCornerShape(14.dp), color = if (hide) Color(0xFFF5F9EF) else Color.White, border = BorderStroke(1.dp, if (hide) Color(0xFF9CB865) else Line)) {
+            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.VisibilityOff, null, tint = Forest); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Hide this trip", fontWeight = FontWeight.SemiBold)
+                    Text("It won't show in anyone's trip list.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(hide, { hide = it })
+            }
+        }
+        Button(onClick = { vm.cancelTrip(reason, hide, dismiss) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Danger)) {
+            if (vm.busy) CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp) else Text(if (hide) "Cancel & hide trip" else "Cancel trip", fontWeight = FontWeight.SemiBold)
+        }
+        TextButton(onClick = dismiss, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Keep trip") }
     }
 }

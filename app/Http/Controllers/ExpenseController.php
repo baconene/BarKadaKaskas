@@ -12,7 +12,7 @@ class ExpenseController extends Controller
 {
     public function store(Request $request, Trip $trip, SplitCalculator $splitter)
     {
-        Gate::authorize('view', $trip);
+        Gate::authorize('addExpense', $trip);
         $data = $this->validatedExpense($request, $trip);
         $expense = DB::transaction(function () use ($data, $trip, $request, $splitter) {
             $expense = $trip->expenses()->create(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['created_by_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'currency_code' => $trip->currency_code, 'status' => 'open']);
@@ -27,7 +27,7 @@ class ExpenseController extends Controller
     public function update(Request $request, Trip $trip, Expense $expense, SplitCalculator $splitter)
     {
         abort_unless($expense->trip_id === $trip->id, 404);
-        Gate::authorize('update', $trip);
+        Gate::authorize('plan', $trip);
         $request->validate(['version' => 'required|integer|min:1']);
         $data = $this->validatedExpense($request, $trip);
         DB::transaction(function () use ($data, $expense, $request, $splitter) {

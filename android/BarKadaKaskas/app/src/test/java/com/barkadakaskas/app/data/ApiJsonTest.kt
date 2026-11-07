@@ -83,4 +83,13 @@ class ApiJsonTest {
         assertEquals(9.14, body.getDouble("latitude"), 0.0)
         assertEquals(123.62, body.getDouble("longitude"), 0.0)
     }
+
+    @Test fun tripReadsCancellationAndHiddenState() {
+        val active = ApiJson.trip(JSONObject("""{"id":1,"name":"A","destination":"B","starts_on":"2026-11-11","ends_on":"2026-11-12","status":"planning","cancellation_reason":null,"hidden_at":null}"""))
+        assertFalse(active.cancelled); assertFalse(active.hidden); assertNull(active.cancellationReason)
+        val hidden = ApiJson.trip(JSONObject("""{"id":2,"name":"A","destination":"B","starts_on":"2026-11-11","ends_on":"2026-11-12","status":"cancelled","cancellation_reason":"Typhoon","hidden_at":"2026-11-08T10:00:00.000000Z"}"""))
+        assertTrue(hidden.cancelled); assertTrue(hidden.hidden); assertEquals("Typhoon", hidden.cancellationReason)
+        val body = ApiJson.cancelBody("  ", true)
+        assertTrue(body.isNull("reason")); assertTrue(body.getBoolean("hide"))
+    }
 }

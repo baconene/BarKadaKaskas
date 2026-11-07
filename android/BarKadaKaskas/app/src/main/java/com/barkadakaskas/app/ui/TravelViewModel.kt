@@ -53,5 +53,20 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = repository.trip(current.trip.id)
         done()
     }
+    /** Hiding leaves the trip screen, since the trip no longer appears in the list. */
+    fun cancelTrip(reason: String, hide: Boolean, done: () -> Unit) = launch {
+        val current = detail ?: return@launch
+        repository.cancelTrip(current.trip.id, reason, hide)
+        trips = repository.trips()
+        detail = if (hide) null else repository.trip(current.trip.id)
+        done()
+    }
+    fun reopenTrip() = launch { detail?.let { repository.reopenTrip(it.trip.id); trips = repository.trips(); detail = repository.trip(it.trip.id) } }
+    fun setTripHidden(hidden: Boolean) = launch {
+        val current = detail ?: return@launch
+        repository.setTripHidden(current.trip.id, hidden)
+        trips = repository.trips()
+        detail = if (hidden) null else repository.trip(current.trip.id)
+    }
     fun invite() = launch { detail?.let { invitationUrl = repository.createInvitation(it.trip.id) } }
 }

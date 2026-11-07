@@ -98,6 +98,15 @@ struct APIError: LocalizedError {
     func createSettlement(tripID: Int, input: SettlementInput) async throws { try await call("POST", "/trips/\(tripID)/settlements", json: input) }
     func confirmSettlement(tripID: Int, settlementID: Int) async throws { try await call("POST", "/trips/\(tripID)/settlements/\(settlementID)/confirm") }
 
+    // MARK: Trip lifecycle
+
+    func cancelTrip(tripID: Int, reason: String?, hide: Bool) async throws {
+        let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await call("POST", "/trips/\(tripID)/cancel", json: CancelTripInput(reason: trimmed?.isEmpty == false ? trimmed : nil, hide: hide))
+    }
+    func reopenTrip(tripID: Int) async throws { try await call("POST", "/trips/\(tripID)/reopen") }
+    func setTripHidden(tripID: Int, hidden: Bool) async throws { try await call("PATCH", "/trips/\(tripID)/visibility", json: TripVisibilityInput(hidden: hidden)) }
+
     // MARK: Invitations
 
     func createInvitation(tripID: Int) async throws -> URL {

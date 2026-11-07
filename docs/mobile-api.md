@@ -26,12 +26,19 @@ string (max 120), optional, defaults to `Mobile app`.
 
 ## Trips and invitations
 
+`GET /trips` leaves out hidden trips and returns `meta.hidden_count`; `GET /trips?hidden=1` lists only the hidden ones.
+A cancelled trip stays viewable. Itinerary changes, invitations, new expenses and expense edits return 403 with a
+message; expense status changes, merchant payments, share confirmations and settlements still work so people can settle up.
+
 | Method | Path | Body / response |
 |---|---|---|
 | GET | `/trips` | `{data:[TripSummary]}`; only active memberships |
 | POST | `/trips` | `{name,destination,description?,starts_on,ends_on,timezone,currency_code}` → 201 `{data:TripSummary}` |
 | GET | `/trips/{trip}` | `{data:{trip,categories,balances,expense_shares,current_member_id,is_organizer}}` |
 | POST | `/trips/{trip}/invitations` | Organizer only → 201 `{data:{token,url,expires_at}}` |
+| POST | `/trips/{trip}/cancel` | Organizer only. Body `{reason?, hide?}`. Sets `status: "cancelled"`; `hide: true` also sets `hidden_at`. 422 if already cancelled |
+| POST | `/trips/{trip}/reopen` | Organizer only. Back to `planning`, clears `cancelled_at`, `cancellation_reason`, `hidden_at` |
+| PATCH | `/trips/{trip}/visibility` | Organizer only. Body `{hidden}`. Only a cancelled trip can be hidden (422 otherwise) |
 | GET | `/invitations/{token}` | Public, limited preview → `{data:{organizer_name,trip_name,destination,starts_on,ends_on}}` |
 | POST | `/invitations/{token}/join` | Authenticated → `{data:{trip_id}}` |
 

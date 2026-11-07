@@ -1,7 +1,7 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\{ExpenseCategory, Trip, TripInvitation, TripMember};
+use App\Models\{ActivityLog, ExpenseCategory, Trip, TripInvitation, TripMember};
 use App\Services\TripBalances;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Gate};
@@ -12,8 +12,14 @@ class TripController extends Controller
 {
     public function index(Request $request)
     {
-        $trips = Trip::whereHas('members', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'))->withCount('members')->latest()->get();
-        return $request->is('api/*') ? response()->json(['data' => $trips]) : Inertia::render('Trips/Index', ['trips' => $trips]);
+        // Hidden (cancelled) trips are left out unless asked for with ?hidden=1.
+        $mine = Trip::whereHas('members', fn ($q) => $q->where('user_id', $request->user()->id)->where('status', 'active'));
+        $showHidden = $request->boolean('hidden');
+        $hiddenCount = (clone $mine)->whereNotNull('hidden_at')->count();
+        $trips = $mine->when($showHidden, fn ($q) => $q->whereNotNull('hidden_at'), fn ($q) => $q->whereNull('hidden_at'))->withCount('members')->latest()->get();
+        return $request->is('api/*')
+            ? response()->json(['data' => $trips, 'meta' => ['hidden_count' => $hiddenCount]])
+            : Inertia::render('Trips/Index', ['trips' => $trips, 'hiddenCount' => $hiddenCount, 'showingHidden' => $showHidden]);
     }
     public function store(Request $request)
     {
@@ -48,9 +54,43 @@ class TripController extends Controller
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
         ]);
     }
-    public function invite(Request $request, Trip $trip)
+    /** Organizer cancels the trip, optionally hiding it from everyone's trip list. */
+    public function cancel(Request $request, Trip $trip)
     {
         Gate::authorize('update', $trip);
+        $data = $request->validate(['reason' => 'nullable|string|max:500', 'hide' => 'boolean']);
+        abort_if($trip->isCancelled(), 422, 'This trip is already cancelled.');
+        $hide = (bool) ($data['hide'] ?? false);
+        $before = $trip->only(['status']);
+        $trip->update(['status' => 'cancelled', 'cancelled_at' => now(), 'cancellation_reason' => $data['reason'] ?? null, 'hidden_at' => $hide ? now() : null]);
+        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'cancelled', 'before' => $before, 'after' => ['status' => 'cancelled', 'hidden' => $hide, 'reason' => $data['reason'] ?? null]]);
+        if ($request->is('api/*')) { return response()->json(['data' => $trip->fresh()]); }
+        return $hide ? to_route('dashboard') : back();
+    }
+
+    /** Organizer undoes a cancellation; the trip becomes visible and editable again. */
+    public function reopen(Request $request, Trip $trip)
+    {
+        Gate::authorize('update', $trip);
+        abort_unless($trip->isCancelled(), 422, 'Only a cancelled trip can be reopened.');
+        $trip->update(['status' => 'planning', 'cancelled_at' => null, 'cancellation_reason' => null, 'hidden_at' => null]);
+        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'reopened', 'before' => ['status' => 'cancelled'], 'after' => ['status' => 'planning']]);
+        return $request->is('api/*') ? response()->json(['data' => $trip->fresh()]) : back();
+    }
+
+    /** Organizer hides or shows a cancelled trip in members' trip lists. */
+    public function visibility(Request $request, Trip $trip)
+    {
+        Gate::authorize('update', $trip);
+        $hidden = $request->validate(['hidden' => 'required|boolean'])['hidden'];
+        abort_if($hidden && ! $trip->isCancelled(), 422, 'Cancel the trip before hiding it.');
+        $trip->update(['hidden_at' => $hidden ? now() : null]);
+        return $request->is('api/*') ? response()->json(['data' => $trip->fresh()]) : ($hidden ? to_route('dashboard') : back());
+    }
+
+    public function invite(Request $request, Trip $trip)
+    {
+        Gate::authorize('plan', $trip);
         $token = Str::random(48);
         $invitation = TripInvitation::create(['trip_id' => $trip->id, 'created_by_user_id' => $request->user()->id, 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays(7)]);
         if ($request->is('api/*')) {
@@ -94,7 +134,7 @@ class TripController extends Controller
     }
     public function itinerary(Request $request, Trip $trip)
     {
-        Gate::authorize('update', $trip);
+        Gate::authorize('plan', $trip);
         $data = $this->itineraryData($request, $trip);
         $item = $trip->itineraryItems()->create([...$data, 'timezone' => $trip->timezone, 'created_by_user_id' => $request->user()->id]);
         return $request->is('api/*') ? response()->json(['data' => $item], 201) : back();
@@ -102,7 +142,7 @@ class TripController extends Controller
 
     public function updateItinerary(Request $request, Trip $trip, \App\Models\ItineraryItem $item)
     {
-        Gate::authorize('update', $trip);
+        Gate::authorize('plan', $trip);
         abort_unless($item->trip_id === $trip->id, 404);
         $item->update($this->itineraryData($request, $trip));
         return $request->is('api/*') ? response()->json(['data' => $item->fresh()]) : back();

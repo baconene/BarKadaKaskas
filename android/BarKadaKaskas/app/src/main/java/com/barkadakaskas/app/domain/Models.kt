@@ -1,7 +1,9 @@
 package com.barkadakaskas.app.domain
 
 data class User(val id: Long, val name: String, val email: String)
-data class Trip(val id: Long, val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val memberCount: Int = 0)
+data class Trip(val id: Long, val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val memberCount: Int = 0, val status: String = "planning", val cancellationReason: String? = null, val hidden: Boolean = false) {
+    val cancelled: Boolean get() = status == "cancelled"
+}
 data class Member(val id: Long, val name: String)
 data class Category(val id: Long, val name: String)
 data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null)
@@ -36,4 +38,8 @@ interface TravelRepository {
     suspend fun recordSettlement(tripId: Long, recipientId: Long, amountMinor: Long, method: String)
     suspend fun confirmSettlement(tripId: Long, settlementId: Long)
     suspend fun createInvitation(tripId: Long): String
+    /** Organizer only. Cancels the trip; [hide] also removes it from everyone's trip list. */
+    suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean)
+    suspend fun reopenTrip(tripId: Long)
+    suspend fun setTripHidden(tripId: Long, hidden: Boolean)
 }

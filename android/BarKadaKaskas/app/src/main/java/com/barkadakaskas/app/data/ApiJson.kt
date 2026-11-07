@@ -27,6 +27,9 @@ internal object ApiJson {
         currency = json.text("currency_code").ifBlank { "PHP" },
         timezone = json.text("timezone").ifBlank { "Asia/Manila" },
         memberCount = json.optInt("members_count", json.optJSONArray("members")?.length() ?: 0),
+        status = json.text("status").ifBlank { "planning" },
+        cancellationReason = json.textOrNull("cancellation_reason"),
+        hidden = json.textOrNull("hidden_at") != null,
     )
 
     fun trips(data: JSONArray?): List<Trip> = data.mapObjects(::trip)
@@ -109,6 +112,8 @@ internal object ApiJson {
         }
         return json.textOrNull("message")
     }
+
+    fun cancelBody(reason: String?, hide: Boolean) = JSONObject().put("reason", reason?.trim()?.ifBlank { null } ?: JSONObject.NULL).put("hide", hide)
 
     fun tripBody(draft: TripDraft) = JSONObject()
         .put("name", draft.name.trim()).put("destination", draft.destination.trim())

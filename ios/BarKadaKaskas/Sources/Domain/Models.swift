@@ -13,6 +13,12 @@ struct Trip: Codable, Identifiable {
     let ends_on: String
     let timezone: String
     let currency_code: String
+    /// "planning" or "cancelled"; optional so older servers still decode.
+    let status: String?
+    let cancellation_reason: String?
+    /// Set when the organizer hid this cancelled trip from trip lists.
+    let hidden_at: String?
+    var isCancelled: Bool { status == "cancelled" }
     let members_count: Int?
     let members: [TripMember]?
     let itinerary_items: [ItineraryStop]?
@@ -82,7 +88,9 @@ struct TripDetail: Codable {
     let current_member_id: Int
     let is_organizer: Bool
     let categories: [ExpenseCategory]
-    func name(_ id: Int) -> String { trip.members?.first { $0.id == id }?.user.name ?? "Traveler" }
+    /// Organizer and the trip is not cancelled: may change the plan, add stops and invite.
+    var canPlan: Bool { is_organizer && !trip.isCancelled }
+        func name(_ id: Int) -> String { trip.members?.first { $0.id == id }?.user.name ?? "Traveler" }
 }
 
 struct TripInput: Encodable {
@@ -104,6 +112,8 @@ struct ExpenseInput: Encodable {
     /// Required by the API (receipt lines for itemized splits); empty for equal splits.
     let items: [String] = []
 }
+struct CancelTripInput: Encodable { let reason: String?; let hide: Bool }
+struct TripVisibilityInput: Encodable { let hidden: Bool }
 struct SettlementInput: Encodable { let to_member_id: Int; let amount_minor: Int; let payment_method: String }
 
 enum TravelFormat {

@@ -4,8 +4,8 @@ import { ArrowLeft, CalendarDays, Ellipsis, MapPin, UserPlus, Users } from 'luci
 import { googleMapsUrl } from '@/lib/maps';
 
 /** Compact trip header with the money summary strip. Metrics open the related screen. */
-const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean }>();
-const emit = defineEmits<{ open: [screen: 'expenses' | 'group'] }>();
+const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean; cancelled?: boolean; hidden?: boolean }>();
+const emit = defineEmits<{ open: [screen: 'expenses' | 'group']; manage: [action: 'cancel' | 'reopen' | 'hide' | 'show'] }>();
 const range = (() => {
     const fmt = (value: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-PH', { ...options, timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
     const sameYear = props.startsOn.slice(0, 4) === props.endsOn.slice(0, 4);
@@ -23,13 +23,21 @@ const range = (() => {
                 <p class="meta"><span><CalendarDays :size="13" aria-hidden="true" /> {{ range }}</span><span><Users :size="13" aria-hidden="true" /> {{ travelers }} {{ travelers === 1 ? 'traveler' : 'travelers' }}</span></p>
             </div>
             <div class="trip-header-actions">
-                <button v-if="isOrganizer" type="button" class="round" aria-label="Invite friends" title="Invite friends" @click="emit('open', 'group')"><UserPlus :size="18" /></button>
+                <button v-if="isOrganizer && !cancelled" type="button" class="round" aria-label="Invite friends" title="Invite friends" @click="emit('open', 'group')"><UserPlus :size="18" /></button>
                 <details class="more">
                     <summary class="round" aria-label="More trip actions"><Ellipsis :size="18" /></summary>
                     <div class="more-menu" role="menu">
                         <a role="menuitem" :href="googleMapsUrl(destination)" target="_blank" rel="noopener noreferrer">Open destination in Google Maps</a>
                         <button role="menuitem" type="button" @click="emit('open', 'group')">Travelers &amp; balances</button>
                         <Link role="menuitem" href="/dashboard">All trips</Link>
+                        <template v-if="isOrganizer">
+                            <hr />
+                            <button v-if="!cancelled" role="menuitem" type="button" class="danger" @click="emit('manage', 'cancel')">Cancel trip…</button>
+                            <template v-else>
+                                <button role="menuitem" type="button" @click="emit('manage', 'reopen')">Reopen trip</button>
+                                <button role="menuitem" type="button" @click="emit('manage', hidden ? 'show' : 'hide')">{{ hidden ? 'Show in trip lists' : 'Hide from trip lists' }}</button>
+                            </template>
+                        </template>
                     </div>
                 </details>
             </div>
@@ -58,6 +66,8 @@ const range = (() => {
 .more-menu{position:absolute;right:0;top:50px;z-index:45;display:grid;min-width:240px;padding:6px;background:#fff;border:1px solid #e0e7dc;border-radius:14px;box-shadow:0 12px 32px #233d2626}
 .more-menu a,.more-menu button{display:block;text-align:left;padding:12px;border-radius:10px;border:0;background:transparent;font:inherit;font-size:14px;color:#172f2a;cursor:pointer}
 .more-menu a:hover,.more-menu button:hover{background:#f2f6ec}
+.more-menu hr{border:0;border-top:1px solid #e7ece3;margin:4px 6px}
+.more-menu .danger{color:#9c3e2d}
 .summary-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .metric{display:grid;gap:2px;text-align:left;min-height:60px;padding:10px 12px;border-radius:14px;border:1px solid #e0e7dc;background:#fff;color:#172f2a;font:inherit;cursor:pointer;min-width:0}
 .metric span{font-size:11px;color:#6c7c72;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

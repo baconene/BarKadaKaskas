@@ -15,6 +15,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('trips', [TripController::class, 'index']);
         Route::post('trips', [TripController::class, 'store']);
         Route::get('trips/{trip}', [TripController::class, 'show']);
+        Route::post('trips/{trip}/cancel', [TripController::class, 'cancel']);
+        Route::post('trips/{trip}/reopen', [TripController::class, 'reopen']);
+        Route::patch('trips/{trip}/visibility', [TripController::class, 'visibility']);
         Route::post('trips/{trip}/invitations', [TripController::class, 'invite'])->middleware('throttle:10,1');
         Route::post('invitations/{token}/join', [TripController::class, 'join']);
         Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary']);

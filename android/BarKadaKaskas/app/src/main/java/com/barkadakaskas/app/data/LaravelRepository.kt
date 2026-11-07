@@ -79,6 +79,10 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
 
     override suspend fun createInvitation(tripId: Long): String = data(request("POST", "/trips/$tripId/invitations")).getString("url")
 
+    override suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean) { request("POST", "/trips/$tripId/cancel", ApiJson.cancelBody(reason, hide)) }
+    override suspend fun reopenTrip(tripId: Long) { request("POST", "/trips/$tripId/reopen") }
+    override suspend fun setTripHidden(tripId: Long, hidden: Boolean) { request("PATCH", "/trips/$tripId/visibility", org.json.JSONObject().put("hidden", hidden)) }
+
     private fun data(body: JSONObject?): JSONObject = body?.optJSONObject("data") ?: throw ApiException("The server sent an unexpected response.")
 
     private fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(120).ifBlank { "Android" }

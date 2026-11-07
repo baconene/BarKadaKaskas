@@ -7,8 +7,8 @@ struct TripsView: View {
     @State private var invitation = ""
     private var sorted: [Trip] { store.trips.sorted { $0.starts_on < $1.starts_on } }
     private func phase(_ trip: Trip) -> ItineraryLogic.Phase { ItineraryLogic.phase(start: trip.starts_on, end: trip.ends_on, timezone: trip.timezone) }
-    private var active: [Trip] { sorted.filter { phase($0) != .past } }
-    private var past: [Trip] { sorted.filter { phase($0) == .past }.reversed() }
+    private var active: [Trip] { sorted.filter { !$0.isCancelled && phase($0) != .past } }
+    private var past: [Trip] { sorted.filter { $0.isCancelled || phase($0) == .past }.reversed() }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -34,7 +34,7 @@ struct TripsView: View {
                         }
                     }
                     if !past.isEmpty {
-                        SectionHeader(title: "Past trips", count: past.count)
+                        SectionHeader(title: past.contains(where: \.isCancelled) ? "Past & cancelled" : "Past trips", count: past.count)
                         ForEach(Array(past.enumerated()), id: \.element.id) { index, trip in
                             NavigationLink { TripDetailView(tripID: trip.id) } label: { TripCard(trip: trip, index: index, phase: .past) }.buttonStyle(PressableStyle())
                         }
@@ -138,8 +138,13 @@ private struct TripCard: View {
                 Text(trip.destination.uppercased()).font(.caption2.weight(.bold)).tracking(1).foregroundStyle(Theme.moss)
                 Text(trip.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
                 Text("\(ItineraryLogic.dateRange(trip.starts_on, trip.ends_on)) · \(trip.members_count ?? 0) travelers").font(.caption).foregroundStyle(.secondary)
-                Text(ItineraryLogic.phaseLabel(phase)).font(.caption2.bold()).foregroundStyle(phase == .past ? Color.secondary : Theme.forest)
-                    .padding(.horizontal, 8).padding(.vertical, 3).background((phase == .past ? Color.gray : Theme.moss).opacity(0.14), in: Capsule())
+                if trip.isCancelled {
+                    Label("Cancelled", systemImage: "xmark.octagon.fill").font(.caption2.bold()).foregroundStyle(Color(red: 0.63, green: 0.28, blue: 0.21))
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(Color(red: 0.99, green: 0.91, blue: 0.89), in: Capsule())
+                } else {
+                    Text(ItineraryLogic.phaseLabel(phase)).font(.caption2.bold()).foregroundStyle(phase == .past ? Color.secondary : Theme.forest)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background((phase == .past ? Color.gray : Theme.moss).opacity(0.14), in: Capsule())
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)

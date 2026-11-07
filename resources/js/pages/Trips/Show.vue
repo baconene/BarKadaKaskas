@@ -7,11 +7,12 @@ import { calculateShares } from '@/lib/splits';
 import TripItinerary from '@/components/TripItinerary.vue';
 import TripGroup from '@/components/trip/TripGroup.vue';
 import TripHeader from '@/components/trip/TripHeader.vue';
+import TripCancelDialog from '@/components/trip/TripCancelDialog.vue';
 import TripNavigation, { type TripScreen } from '@/components/trip/TripNavigation.vue';
 import type { ItineraryStop } from '@/lib/itinerary';
 type Member={id:number;user_id?:number;status?:string;user:{id?:number;name:string}};
 type Expense={id:number;title:string;merchant:string;status:string;version:number;total_minor:number;incurred_at:string;category_id:number;split_method:string;category:{name:string};cancellation_reason:string|null;payments:{trip_member_id:number;amount_minor:number}[];allocations:{trip_member_id:number;amount_minor:number;basis_value:string|null;expense_item_id:number|null}[];items:{id:number;description:string;line_total_minor:number}[];receipts:{id:number;processing_status:string}[]};
-const props=defineProps<{trip:{id:number;organizer_user_id?:number;name:string;destination:string;description:string;starts_on:string;ends_on:string;timezone:string;currency_code:string;members:Member[];expenses:Expense[];itinerary_items:ItineraryStop[];settlements:{id:number;expense_id:number|null;from_member_id:number;to_member_id:number;amount_minor:number;status:string;payment_method:string;paid_at:string|null;confirmed_at:string|null}[]};googleMaps:{browserKey:string;mapId:string};categories:{id:number;name:string}[];balances:{member_id:number;name:string;net_minor:number}[];isOrganizer:boolean;currentMemberId:number;invitationUrl:string|null;expenseShares:Record<number,{member_id:number;share_minor:number;covered_minor:number;remaining_minor:number}[]>}>();
+const props=defineProps<{trip:{id:number;organizer_user_id?:number;status?:string;cancellation_reason?:string|null;cancelled_at?:string|null;hidden_at?:string|null;name:string;destination:string;description:string;starts_on:string;ends_on:string;timezone:string;currency_code:string;members:Member[];expenses:Expense[];itinerary_items:ItineraryStop[];settlements:{id:number;expense_id:number|null;from_member_id:number;to_member_id:number;amount_minor:number;status:string;payment_method:string;paid_at:string|null;confirmed_at:string|null}[]};googleMaps:{browserKey:string;mapId:string};categories:{id:number;name:string}[];balances:{member_id:number;name:string;net_minor:number}[];isOrganizer:boolean;currentMemberId:number;invitationUrl:string|null;expenseShares:Record<number,{member_id:number;share_minor:number;covered_minor:number;remaining_minor:number}[]>}>();
 // Which trip screen is shown. Kept in the URL hash (so Back works) and per browser tab (so it survives saves).
 type PlanScreen='today'|'itinerary'|'map';
 const screens:TripScreen[]=['today','itinerary','map','expenses','group'];
@@ -21,6 +22,14 @@ const readScreen=():TripScreen=>{try{return fromHash()??(sessionStorage.getItem(
 const screen=ref<TripScreen>(readScreen());
 const urlFor=(value:TripScreen)=>`${location.pathname}${location.search}#${value}`;
 const isPlan=computed(()=>['today','itinerary','map'].includes(screen.value));
+// A cancelled trip locks the plan and new expenses; settling up stays available.
+const cancelled=computed(()=>props.trip.status==='cancelled');
+const cancelling=ref(false);
+function manageTrip(action:'cancel'|'reopen'|'hide'|'show'){
+    if(action==='cancel'){cancelling.value=true;return;}
+    if(action==='reopen'){router.post(`/trips/${props.trip.id}/reopen`,{},{preserveScroll:true});return;}
+    router.patch(`/trips/${props.trip.id}/visibility`,{hidden:action==='hide'},{preserveScroll:true});
+}
 // The plan screens stay mounted (v-show) so the map is drawn once and keeps its state.
 const planView=ref<PlanScreen>(isPlan.value?screen.value as PlanScreen:'today');
 watch(screen,value=>{
@@ -110,13 +119,20 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 </script>
 <template>
 <Head :title="trip.name"/><TravelLayout app-nav>
- <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" @open="screen=$event"/>
+ <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" :cancelled="cancelled" :hidden="!!trip.hidden_at" @open="screen=$event" @manage="manageTrip"/>
+ <div v-if="cancelled" class="cancelled-banner" role="status">
+  <strong>This trip was cancelled<span v-if="trip.hidden_at"> and is hidden from trip lists</span>.</strong>
+  <span v-if="trip.cancellation_reason">“{{ trip.cancellation_reason }}”</span>
+  <span>The plan and new expenses are locked. You can still record repayments and settle up.</span>
+  <button v-if="isOrganizer" type="button" class="btn secondary" @click="manageTrip('reopen')">Reopen trip</button>
+ </div>
+ <TripCancelDialog v-if="cancelling" :trip-id="trip.id" :trip-name="trip.name" @close="cancelling=false"/>
  <TripNavigation v-model="screen" :badges="{group:pendingForMe}"/>
 
- <TripItinerary v-show="isPlan" :view="planView" :visible="isPlan" :trip-id="trip.id" :items="trip.itinerary_items" :timezone="trip.timezone" :is-organizer="isOrganizer" :google-maps="googleMaps" @navigate="screen=$event"/>
+ <TripItinerary v-show="isPlan" :view="planView" :visible="isPlan" :trip-id="trip.id" :items="trip.itinerary_items" :timezone="trip.timezone" :is-organizer="isOrganizer && !cancelled" :google-maps="googleMaps" @navigate="screen=$event"/>
 
  <section v-if="screen==='expenses'" class="expenses-screen" aria-labelledby="expenses-title">
- <div class="screen-top"><h2 id="expenses-title">Expenses</h2><button class="btn add-expense-desktop" @click="newExpense"><Plus :size="16"/> Add expense</button></div>
+ <div class="screen-top"><h2 id="expenses-title">Expenses</h2><button v-if="!cancelled" class="btn add-expense-desktop" @click="newExpense"><Plus :size="16"/> Add expense</button></div>
  <div class="money-strip"><div><span>Group spending</span><strong>{{ money(spent) }}</strong></div><div><span>You paid</span><strong>{{ money(myContribution) }}</strong></div><div><span>Your balance</span><strong :class="{owe:myBalance<0,receive:myBalance>0}">{{ money(myBalance) }}</strong></div></div>
  <div class="filter-row"><div class="chips" role="group" aria-label="Filter expenses"><button v-for="f in quickFilters" :key="f[0]" type="button" :aria-pressed="quickFilter===f[0]" @click="quickFilter=f[0]">{{ f[1] }}</button></div><select v-model="statusFilter" aria-label="Filter by status" class="filter"><option value="all">Any status</option><option v-for="s in ['open','completed','closed','cancelled']" :key="s" :value="s">{{ s }}</option></select></div>
  <form v-if="adding" ref="editor" class="card form-grid expense-form" @submit.prevent="saveExpense"><h2 class="full">{{ editingId ? 'Edit expense & assigned shares' : 'Record a shared expense' }}</h2><label class="field">Title<input v-model="expense.title" required placeholder="Dinner by the beach"/></label><label class="field">Category<select v-model="expense.category_id" required><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></label><label class="field">Total ({{ trip.currency_code }})<input v-model="expense.amount" type="number" min="0.01" max="1000000" step="0.01" required/></label><label class="field">Date<input v-model="expense.incurred_at" type="date" required/></label><label class="field">Merchant<input v-model="expense.merchant"/></label><label class="field">Split method<select v-model="expense.split_method"><option value="equal">Equally</option><option value="exact">Exact amounts</option><option value="percentage">Percentages</option><option value="shares">Shares</option><option value="itemized">By receipt item</option></select></label>
@@ -124,7 +140,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
  <div v-if="expense.split_method!=='itemized'" class="full"><h3>Who shares this expense?</h3><div v-for="person in expense.people" :key="person.id" class="row" style="margin-top:12px"><label style="flex:1"><input v-model="person.selected" type="checkbox"/> {{ name(person.id) }}</label><label v-if="expense.split_method!=='equal' && person.selected" class="field">{{ expense.split_method==='percentage'?'Percentage':expense.split_method==='exact'?'Amount':'Shares' }}<input v-model="person.value" type="number" min="0" :step="expense.split_method==='shares'?'1':'0.01'" required/></label></div></div>
  <div v-else class="full"><h3>Receipt items</h3><p class="muted">Enter reviewed line totals, including allocated tax or discounts. Each line is split equally among its selected travelers.</p><div v-for="(item,index) in expense.items" :key="index" class="item-entry"><div class="form-grid"><label class="field">Item<input v-model="item.description" required/></label><label class="field">Line total<input v-model="item.amount" type="number" min="0.01" step="0.01" required/></label></div><div class="row" style="margin-top:12px"><label v-for="m in trip.members" :key="m.id"><input v-model="item.member_ids" type="checkbox" :value="m.id"/> {{ m.user.name }}</label><button v-if="expense.items.length>1" type="button" class="btn secondary" @click="expense.items.splice(index,1)">Remove</button></div></div><button type="button" class="btn secondary" @click="expense.items.push({description:'',amount:'',member_ids:[]})">Add receipt line</button></div>
  <div class="full" style="background:#f0f5e9;border-radius:12px;padding:18px" aria-live="polite"><h3>Calculated shares</h3><p v-if="splitPreview.error" class="muted">{{ splitPreview.error }}</p><template v-else><p v-for="(amount,id) in splitPreview.amounts" :key="id" class="row spread" style="margin-top:10px;font-size:14px"><span>{{ name(Number(id)) }}</span><strong>{{ money(amount) }}</strong></p><p class="muted" style="margin-top:12px">Total assigned: {{ money(Object.values(splitPreview.amounts).reduce((sum,amount)=>sum+amount,0)) }}</p></template></div><div class="row full"><button class="btn" :disabled="expense.processing || !!splitPreview.error">{{ editingId ? 'Save changes' : 'Save expense' }}</button><button class="btn secondary" type="button" @click="adding=false">Cancel</button></div></form>
- <div v-if="!shown.length" class="card empty"><ReceiptText :size="36" style="margin:0 auto 16px;color:#839362"/><h2>{{ trip.expenses.length ? 'Nothing matches this filter.' : 'No expenses here yet.' }}</h2><p class="muted">{{ trip.expenses.length ? 'Try another filter.' : 'Record the first shared bill to keep everyone on the same page.' }}</p><button v-if="!trip.expenses.length" class="btn" @click="newExpense"><Plus :size="16"/> Add the first expense</button></div>
+ <div v-if="!shown.length" class="card empty"><ReceiptText :size="36" style="margin:0 auto 16px;color:#839362"/><h2>{{ trip.expenses.length ? 'Nothing matches this filter.' : 'No expenses here yet.' }}</h2><p class="muted">{{ trip.expenses.length ? 'Try another filter.' : 'Record the first shared bill to keep everyone on the same page.' }}</p><button v-if="!trip.expenses.length && !cancelled" class="btn" @click="newExpense"><Plus :size="16"/> Add the first expense</button></div>
  <ul v-else class="expense-list">
  <li v-for="e in shown" :key="e.id" class="expense-row" :class="{open:openExpense===e.id}">
  <button type="button" class="expense-summary" :aria-expanded="openExpense===e.id" @click="openExpense=openExpense===e.id?null:e.id">
@@ -154,7 +170,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
  </div>
  </li>
  </ul>
- <button type="button" class="fab" aria-label="Add expense" @click="newExpense"><Plus :size="24"/></button>
+ <button type="button" v-if="!cancelled" class="fab" aria-label="Add expense" @click="newExpense"><Plus :size="24"/></button>
  </section>
 
  <TripGroup v-if="screen==='group'" :trip-id="trip.id" :trip-name="trip.name" :organizer-user-id="trip.organizer_user_id" :currency="trip.currency_code" :timezone="trip.timezone" :members="trip.members" :balances="balances" :settlements="trip.settlements" :expenses="trip.expenses" :current-member-id="currentMemberId" :is-organizer="isOrganizer" :invitation-url="invitationUrl"/>
@@ -195,4 +211,5 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 @media(min-width:1024px){.fab{display:none}.add-expense-desktop{display:inline-flex}.money-strip strong{font-size:19px}}
 @media(max-width:360px){.money-strip strong{font-size:14px}.money-strip div{padding:9px 10px}}
 @media(prefers-reduced-motion:reduce){.expense-chevron{transition:none}}
+.cancelled-banner{display:grid;gap:6px;justify-items:start;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:#fff4ef;border:1px solid #edc9bd;color:#7d3424;font-size:14px;line-height:1.5}.cancelled-banner .btn{margin-top:4px}
 </style>

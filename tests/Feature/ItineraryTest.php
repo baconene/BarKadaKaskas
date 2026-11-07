@@ -71,6 +71,18 @@ class ItineraryTest extends TestCase
         $this->assertNull($item->fresh()->longitude);
     }
 
+    public function test_cost_estimates_are_saved_and_validated_as_a_range(): void
+    {
+        $owner = User::factory()->create(); $trip = $this->trip($owner);
+        $this->actingAs($owner)->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['cost_min_minor' => 30000, 'cost_max_minor' => 50000, 'cost_note' => 'Lunch']))->assertSessionHasNoErrors();
+        $item = $trip->itineraryItems()->firstOrFail();
+        $this->assertSame([30000, 50000, 'Lunch'], [$item->cost_min_minor, $item->cost_max_minor, $item->cost_note]);
+        $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['cost_min_minor' => 50000, 'cost_max_minor' => 30000]))->assertSessionHasErrors('cost_max_minor');
+        $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['cost_min_minor' => 30000]))->assertSessionHasErrors('cost_max_minor');
+        $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['cost_min_minor' => -1, 'cost_max_minor' => 100]))->assertSessionHasErrors('cost_min_minor');
+        $this->assertDatabaseCount('itinerary_items', 1);
+    }
+
     public function test_coordinates_must_be_valid_and_come_in_pairs(): void
     {
         $owner = User::factory()->create(); $trip = $this->trip($owner);

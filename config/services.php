@@ -6,6 +6,11 @@ return [
         'map_id' => env('GOOGLE_MAPS_MAP_ID', 'DEMO_MAP_ID'),
     ],
 
+    // Password for the organizer account created by SiquijorTripSeeder (only used when the account does not exist yet).
+    'seed' => [
+        'organizer_password' => env('SEED_ORGANIZER_PASSWORD') ?: 'password',
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

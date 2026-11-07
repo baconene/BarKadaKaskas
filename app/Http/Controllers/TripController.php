@@ -91,7 +91,7 @@ class TripController extends Controller
 
     private function itineraryData(Request $request, Trip $trip): array
     {
-        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
+        $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude', 'cost_min_minor' => 'nullable|integer|min:0|max:100000000|required_with:cost_max_minor', 'cost_max_minor' => 'nullable|integer|min:0|max:100000000|required_with:cost_min_minor|gte:cost_min_minor', 'cost_note' => 'nullable|string|max:255', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);
         // Coordinates only describe a picked place; a missing pin or cleared location resets them.
         $hasPin = ! empty($data['location']) && isset($data['latitude'], $data['longitude']);
         $data['latitude'] = $hasPin ? $data['latitude'] : null;

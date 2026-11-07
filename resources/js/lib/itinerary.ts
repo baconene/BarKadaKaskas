@@ -46,3 +46,13 @@ export function loadGoogleMaps(key: string): Promise<void> {
     });
     return mapsLoading;
 }
+
+/** Calendar day (YYYY-MM-DD) of an ISO time in the trip's timezone. */
+export function dayKey(value: string, timeZone: string): string {
+    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+}
+
+/** Short label for a day key, e.g. "Wed, Nov 11". */
+export function dayLabel(key: string): string {
+    return new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${key}T00:00:00Z`));
+}

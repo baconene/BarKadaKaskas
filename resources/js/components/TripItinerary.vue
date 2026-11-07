@@ -3,11 +3,20 @@ import { computed, ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import ItineraryRouteMap from '@/components/ItineraryRouteMap.vue';
 import LocationSearch, { type PickedPlace } from '@/components/LocationSearch.vue';
-import { orderedStops, transport, transportOptions, type ItineraryStop } from '@/lib/itinerary';
+import { dayKey, dayLabel, orderedStops, transport, transportOptions, type ItineraryStop } from '@/lib/itinerary';
 import { googleMapsUrl } from '@/lib/maps';
 
 const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string } }>();
 const stops = computed(() => orderedStops(props.items));
+const days = computed(() => {
+    const counts = new Map<string, number>();
+    for (const stop of stops.value) { const key = dayKey(stop.starts_at, props.timezone); counts.set(key, (counts.get(key) ?? 0) + 1); }
+    return [...counts].map(([key, count]) => ({ key, label: dayLabel(key), count }));
+});
+const selectedDay = ref<string | null>(null);
+// Drop a day filter whose stops were all moved or deleted.
+const activeDay = computed(() => (days.value.some(day => day.key === selectedDay.value) ? selectedDay.value : null));
+const onDay = (item: ItineraryStop) => !activeDay.value || dayKey(item.starts_at, props.timezone) === activeDay.value;
 const editingId = ref<number | null>(null);
 const formElement = ref<HTMLElement>();
 const form = useForm({ title: '', location: '', latitude: null as number | null, longitude: null as number | null, description: '', starts_at: '', ends_at: '', transport_mode: '' });
@@ -37,9 +46,14 @@ function save() {
 <template>
     <section>
         <div class="row spread"><h2>The plan</h2><span class="muted">Times in {{ timezone }}</span></div>
-        <ItineraryRouteMap :items="items" :browser-key="googleMaps.browserKey" :map-id="googleMaps.mapId" />
+        <div v-if="days.length > 1" class="day-filter section-gap" role="group" aria-label="Filter itinerary by day">
+            <button type="button" :class="{ active: !activeDay }" :aria-pressed="!activeDay" @click="selectedDay = null">All days <span>{{ stops.length }}</span></button>
+            <button v-for="day in days" :key="day.key" type="button" :class="{ active: activeDay === day.key }" :aria-pressed="activeDay === day.key" @click="selectedDay = day.key">{{ day.label }} <span>{{ day.count }}</span></button>
+        </div>
+        <ItineraryRouteMap :items="items" :browser-key="googleMaps.browserKey" :map-id="googleMaps.mapId" :timezone="timezone" :day="activeDay" />
         <p v-if="!stops.length" class="card empty section-gap">Start with your arrival point, then add the places you want to visit.</p>
-        <article v-for="(item, index) in stops" :key="item.id" class="card section-gap">
+        <template v-for="(item, index) in stops" :key="item.id">
+        <article v-if="onDay(item)" class="card section-gap">
             <div class="row spread"><p class="eyebrow">Stop {{ index + 1 }} · {{ displayDate(item.starts_at) }}</p><button v-if="isOrganizer" class="btn secondary" @click="edit(item)">Edit stop</button></div>
             <h3>{{ item.title }}</h3>
             <p class="muted"><a v-if="item.location" :href="googleMapsUrl(item.location)" target="_blank" rel="noopener noreferrer">{{ item.location }} ↗</a><span v-else>Location to follow</span></p>
@@ -48,6 +62,7 @@ function save() {
             <p v-if="item.description" class="stop-description">{{ item.description }}</p>
             <p class="muted">Until {{ displayDate(item.ends_at) }}</p>
         </article>
+        </template>
         <form v-if="isOrganizer" ref="formElement" class="card form-grid section-gap" @submit.prevent="save">
             <h3 class="full">{{ editingId ? 'Edit itinerary stop' : 'Add to the itinerary' }}</h3>
             <label class="field">Activity<input v-model="form.title" maxlength="200" required /></label>
@@ -64,4 +79,10 @@ function save() {
 
 <style scoped>
 .transport-label{font-size:13px;color:#426743;margin:12px 0}.stop-description{white-space:pre-wrap;font-size:13px;line-height:1.8;margin-bottom:12px}.muted a{text-decoration:underline;text-underline-offset:3px}.field small{font-weight:400;color:#71816f;line-height:1.6}.form-errors{color:#ae4e36;font-size:13px}
+.day-filter{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.day-filter button{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;border:1px solid #d5dfd5;background:#fff;color:#214e3e;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:650;cursor:pointer;transition:background .15s,border-color .15s}
+.day-filter button:hover{border-color:#a9bd8e}
+.day-filter button span{font-size:11px;background:#edf2e6;color:#526936;border-radius:999px;padding:1px 7px}
+.day-filter button.active{background:#214e3e;border-color:#214e3e;color:#fff}
+.day-filter button.active span{background:#ffffff26;color:#fff}
 </style>

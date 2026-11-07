@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,7 +8,7 @@ plugins {
 
 // Google Maps SDK key: MAPS_API_KEY in local.properties, a Gradle property, or the environment (CI secret).
 // Blank means the in-app map falls back to OpenStreetMap.
-val localProperties = java.util.Properties().apply {
+val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 val mapsApiKey: String = (findProperty("MAPS_API_KEY") as String?) ?: System.getenv("MAPS_API_KEY") ?: localProperties.getProperty("MAPS_API_KEY") ?: ""

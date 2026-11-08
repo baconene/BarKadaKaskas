@@ -675,7 +675,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var viewing by remember { mutableStateOf<String?>(null) }
+    // Full-screen gallery: the post's photos and the one that was tapped.
+    var viewing by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     LaunchedEffect(detail.trip.id) { if (vm.postsLoadedFor != detail.trip.id) vm.loadPosts() }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) picked = uris }
 
@@ -695,7 +696,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Column(Modifier.weight(1f)) { Text(post.authorName, fontWeight = FontWeight.SemiBold); Text(postTime(post.createdAt), color = Muted, style = MaterialTheme.typography.bodySmall) }
                 if (post.canDelete) IconButton(onClick = { vm.deletePost(post) }, enabled = !vm.busy) { Icon(Icons.Default.Delete, "Delete post", tint = Muted) }
             }
-            PhotoGrid(post.photos) { viewing = it }
+            PhotoGrid(post.photos) { url -> viewing = post.photos.map { it.url } to post.photos.indexOfFirst { it.url == url }.coerceAtLeast(0) }
             post.caption?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge) }
             Row(Modifier.padding(start = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.toggleLike(post) }) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (post.liked) "Remove heart" else "Add heart", tint = if (post.liked) Color(0xFFD0454C) else Muted) }
@@ -705,13 +706,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     }
     if (vm.postsNextBefore != null) OutlinedButton(onClick = { vm.loadPosts(more = true) }, enabled = !vm.postsLoading, modifier = Modifier.fillMaxWidth()) { Text(if (vm.postsLoading) "Loading…" else "Load more") }
     if (picked.isNotEmpty()) PostComposer(vm, picked, { picked = it }) { picked = emptyList() }
-    viewing?.let { url ->
-        androidx.compose.ui.window.Dialog(onDismissRequest = { viewing = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(Color.Black).clickable { viewing = null }, contentAlignment = Alignment.Center) {
-                AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
+    viewing?.let { (urls, start) -> PhotoViewer(urls, start) { viewing = null } }
 }
 
 private fun postTime(iso: String): String = runCatching {
@@ -734,6 +729,31 @@ private fun postTime(iso: String): String = runCatching {
             listOf(0, 2).forEach { start -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 PhotoTile(shown[start], Modifier.weight(1f).fillMaxHeight(), 0, open); PhotoTile(shown[start + 1], Modifier.weight(1f).fillMaxHeight(), if (start == 2) photos.size - 4 else 0, open)
             } }
+        }
+    }
+}
+
+/** Swipeable full-screen gallery of a post's photos, starting at [start]. */
+@Composable private fun PhotoViewer(urls: List<String>, start: Int, close: () -> Unit) {
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = start) { urls.size }
+    androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AsyncImage(model = urls[page], contentDescription = "Photo ${page + 1} of ${urls.size}", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+                }
+            }
+            if (urls.size > 1) {
+                Surface(color = Color.Black.copy(alpha = 0.55f), shape = RoundedCornerShape(50), modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 16.dp)) {
+                    Text("${pager.currentPage + 1} / ${urls.size}", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                }
+                Row(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    repeat(urls.size) { i -> Box(Modifier.size(7.dp).clip(CircleShape).background(if (i == pager.currentPage) Color.White else Color.White.copy(alpha = 0.35f))) }
+                }
+            }
+            IconButton(onClick = close, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))) {
+                Icon(Icons.Default.Close, "Close photo", tint = Color.White)
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Camera, Heart, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-vue-next';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { appFetch, shrinkImage } from '@/lib/uploads';
 
@@ -89,7 +89,28 @@ async function publish() {
 onBeforeUnmount(() => picked.value.forEach(p => URL.revokeObjectURL(p.url)));
 
 // Full-size viewer
-const viewing = ref<string | null>(null);
+const viewing = ref<{ photos: string[]; index: number } | null>(null);
+const strip = ref<HTMLElement | null>(null);
+/** Opens the swipeable viewer on the tapped photo of a post. */
+async function openViewer(post: Post, index: number) {
+    viewing.value = { photos: post.photos.map(p => p.url), index };
+    await nextTick();
+    strip.value?.scrollTo({ left: index * strip.value.clientWidth, behavior: 'instant' as ScrollBehavior });
+    strip.value?.focus();
+}
+function go(step: number) {
+    if (!viewing.value || !strip.value) return;
+    const index = Math.min(Math.max(viewing.value.index + step, 0), viewing.value.photos.length - 1);
+    strip.value.scrollTo({ left: index * strip.value.clientWidth, behavior: 'smooth' });
+}
+function onStripScroll() {
+    if (viewing.value && strip.value) viewing.value.index = Math.round(strip.value.scrollLeft / Math.max(strip.value.clientWidth, 1));
+}
+function onViewerKey(event: KeyboardEvent) {
+    if (event.key === 'ArrowRight') { event.preventDefault(); go(1); }
+    else if (event.key === 'ArrowLeft') { event.preventDefault(); go(-1); }
+    else if (event.key === 'Escape') viewing.value = null;
+}
 const gridClass = (count: number) => (count === 1 ? 'one' : count === 2 ? 'two' : count === 3 ? 'three' : 'many');
 const empty = computed(() => loaded.value && !posts.value.length);
 </script>
@@ -117,7 +138,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
                 <button v-if="post.can_delete" type="button" class="icon-btn" :aria-label="'Delete post by ' + post.author.name" @click="remove(post)"><Trash2 :size="16" /></button>
             </header>
             <div class="post-photos" :class="gridClass(post.photos.length)">
-                <button v-for="(photo, i) in post.photos.slice(0, post.photos.length > 4 ? 4 : post.photos.length)" :key="photo.url" type="button" class="photo" :style="post.photos.length === 1 && photo.width && photo.height ? { aspectRatio: `${photo.width} / ${photo.height}` } : undefined" @click="viewing = photo.url">
+                <button v-for="(photo, i) in post.photos.slice(0, post.photos.length > 4 ? 4 : post.photos.length)" :key="photo.url" type="button" class="photo" :style="post.photos.length === 1 && photo.width && photo.height ? { aspectRatio: `${photo.width} / ${photo.height}` } : undefined" @click="openViewer(post, i)">
                     <img :src="photo.url" :alt="post.caption ? `Photo ${i + 1}: ${post.caption}` : `Photo ${i + 1} by ${post.author.name}`" loading="lazy" />
                     <span v-if="i === 3 && post.photos.length > 4" class="more">+{{ post.photos.length - 4 }}</span>
                 </button>
@@ -147,7 +168,16 @@ const empty = computed(() => loaded.value && !posts.value.length);
             </form>
         </dialog>
 
-        <div v-if="viewing" class="viewer" role="dialog" aria-label="Photo" @click="viewing = null"><img :src="viewing" alt="" /><button type="button" class="icon-btn" aria-label="Close photo"><X :size="20" /></button></div>
+        <div v-if="viewing" class="viewer" role="dialog" aria-modal="true" :aria-label="`Photo ${viewing.index + 1} of ${viewing.photos.length}`">
+            <div ref="strip" class="strip" tabindex="0" @scroll.passive="onStripScroll" @keydown="onViewerKey">
+                <div v-for="(url, i) in viewing.photos" :key="url" class="slide"><img :src="url" :alt="`Photo ${i + 1} of ${viewing.photos.length}`" :loading="Math.abs(i - viewing.index) <= 1 ? 'eager' : 'lazy'" /></div>
+            </div>
+            <span v-if="viewing.photos.length > 1" class="counter" aria-hidden="true">{{ viewing.index + 1 }} / {{ viewing.photos.length }}</span>
+            <button v-if="viewing.photos.length > 1 && viewing.index > 0" type="button" class="nav prev" aria-label="Previous photo" @click="go(-1)"><ChevronLeft :size="26" /></button>
+            <button v-if="viewing.photos.length > 1 && viewing.index < viewing.photos.length - 1" type="button" class="nav next" aria-label="Next photo" @click="go(1)"><ChevronRight :size="26" /></button>
+            <button type="button" class="icon-btn close-viewer" aria-label="Close photo" @click="viewing = null"><X :size="22" /></button>
+            <div v-if="viewing.photos.length > 1" class="dots" aria-hidden="true"><span v-for="(_, i) in viewing.photos" :key="i" :class="{ on: i === viewing.index }" /></div>
+        </div>
     </section>
 </template>
 
@@ -198,9 +228,21 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .composer textarea{border:1px solid #d6dfd5;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical}
 .error{color:#9c3e2d;font-size:13px}
 .actions{display:flex;justify-content:flex-end;gap:10px}
-.viewer{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:#0b1512ee;cursor:zoom-out}
-.viewer img{max-width:100vw;max-height:100dvh;object-fit:contain}
-.viewer .icon-btn{position:absolute;top:16px;right:16px;color:#fff}
+.viewer{position:fixed;inset:0;z-index:60;background:#0b1512f2}
+.strip{display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior:contain;scrollbar-width:none;outline:none}
+.strip::-webkit-scrollbar{display:none}
+.slide{flex:0 0 100%;height:100%;display:grid;place-items:center;scroll-snap-align:center;scroll-snap-stop:always}
+.slide img{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}
+.close-viewer{position:absolute;top:calc(12px + env(safe-area-inset-top));right:12px;width:44px;height:44px;border-radius:50%;background:#0b151299;color:#fff}
+.close-viewer:hover{background:#0b1512cc;color:#fff}
+.counter{position:absolute;top:calc(22px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);padding:4px 12px;border-radius:999px;background:#0b151299;color:#fff;font-size:13px;font-weight:700}
+.nav{position:absolute;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:48px;height:48px;border-radius:50%;border:0;background:#ffffff26;color:#fff;cursor:pointer}
+.nav:hover{background:#ffffff40}
+.nav.prev{left:12px}.nav.next{right:12px}
+.dots{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:6px}
+.dots span{width:7px;height:7px;border-radius:50%;background:#ffffff59}
+.dots span.on{background:#fff}
+@media(hover:none){.nav{display:none}}
 @media(min-width:1024px){.post-fab{display:none}.post-desktop{display:inline-flex}.photos{padding-bottom:24px}}
 @media(prefers-reduced-motion:reduce){.spin{animation:none}.heart{transition:none}}
 </style>

@@ -12,7 +12,7 @@ struct PhotosView: View {
     @State private var loading = false
     @State private var picks: [PhotosPickerItem] = []
     @State private var composing: [UIImage] = []
-    @State private var viewing: String?
+    @State private var viewing: Gallery?
 
     var body: some View {
         ScrollView {
@@ -25,7 +25,9 @@ struct PhotosView: View {
                     EmptyMessage(title: "No photos yet", subtitle: "Be the first to share a moment from the trip.", icon: "camera").cardStyle()
                 }
                 if !loaded && loading { ProgressView().frame(maxWidth: .infinity) }
-                ForEach($posts) { $post in PostCard(post: $post, tripID: detail.trip.id, onOpen: { viewing = $0 }, onDelete: { delete(post) }) }
+                ForEach($posts) { $post in
+                    PostCard(post: $post, tripID: detail.trip.id, onOpen: { url in viewing = Gallery(urls: post.photos.map(\.url), start: post.photos.firstIndex { $0.url == url } ?? 0) }, onDelete: { delete(post) })
+                }
                 if nextBefore != nil {
                     Button(loading ? "Loading…" : "Load more") { Task { await load(more: true) } }.buttonStyle(.bordered).frame(maxWidth: .infinity).disabled(loading)
                 }
@@ -54,17 +56,8 @@ struct PhotosView: View {
         .sheet(isPresented: Binding(get: { !composing.isEmpty }, set: { if !$0 { composing = [] } })) {
             PostComposer(tripID: detail.trip.id, images: composing) { post in posts.insert(post, at: 0) }
         }
-        .fullScreenCover(item: Binding(get: { viewing.map(ViewedPhoto.init) }, set: { viewing = $0?.url })) { photo in
-            ZStack {
-                Color.black.ignoresSafeArea()
-                AsyncImage(url: URL(string: photo.url)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
-            }
-            .onTapGesture { viewing = nil }
-            .accessibilityAddTraits(.isButton).accessibilityLabel("Close photo")
-        }
+        .fullScreenCover(item: $viewing) { gallery in PhotoViewer(gallery: gallery) }
     }
-
-    private struct ViewedPhoto: Identifiable { let url: String; var id: String { url } }
 
     private func load(more: Bool = false) async {
         guard !loading else { return }
@@ -84,6 +77,45 @@ struct PhotosView: View {
                 posts.removeAll { $0.id == post.id }
             }
         }
+    }
+}
+
+/// The photos of one post, opened at the tapped one.
+struct Gallery: Identifiable { let urls: [String]; let start: Int; var id: String { urls.joined() + "#\(start)" } }
+
+/// Swipeable full-screen gallery with a counter and page dots.
+private struct PhotoViewer: View {
+    let gallery: Gallery
+    @Environment(\.dismiss) private var dismiss
+    @State private var page = 0
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $page) {
+                ForEach(Array(gallery.urls.enumerated()), id: \.offset) { index, url in
+                    AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
+                        .accessibilityLabel("Photo \(index + 1) of \(gallery.urls.count)")
+                        .tag(index)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: gallery.urls.count > 1 ? .always : .never))
+            .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+            .ignoresSafeArea()
+        }
+        .overlay(alignment: .top) {
+            if gallery.urls.count > 1 {
+                Text("\(page + 1) / \(gallery.urls.count)").font(.footnote.bold()).foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 5).background(.black.opacity(0.55), in: Capsule()).padding(.top, 8)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.headline).foregroundStyle(.white).frame(width: 40, height: 40).background(.black.opacity(0.55), in: Circle())
+            }
+            .padding(12).accessibilityLabel("Close photo")
+        }
+        .onAppear { page = gallery.start }
     }
 }
 

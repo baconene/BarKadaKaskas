@@ -19,8 +19,11 @@ receipt (`processing_status: extracted`) and records the reading in
 
 ## Setup
 
-1. In Google Cloud, pick (or create) a project with billing and enable the
-   **Vertex AI API**.
+1. In Google Cloud, pick (or create) a project with billing. Vertex AI is now
+   called **Agent Platform** in the console. Easiest: tap **Get API key** in its
+   sidebar (express mode) and set `VERTEX_API_KEY`; skip to step 4. Otherwise
+   enable only the **Agent Platform API** (`aiplatform.googleapis.com`) and the
+   **IAM API**; the "Enable APIs" bundle dialog is not needed.
 2. Create a service account with the **Vertex AI User** role and create a JSON
    key for it.
 3. In Forge → Environment, add the key in one of these forms (never commit it):
@@ -29,7 +32,7 @@ receipt (`processing_status: extracted`) and records the reading in
    # the whole JSON on one line, base64 of it, or a path on the server
    VERTEX_CREDENTIALS=base64-of-the-json-key
    VERTEX_LOCATION=global            # or e.g. asia-southeast1
-   VERTEX_GEMINI_MODEL=gemini-2.5-flash
+   VERTEX_GEMINI_MODEL=gemini-2.5-flash  # use the exact model ID of a current Flash / Flash Lite model
    ```
 
    `VERTEX_PROJECT_ID` is read from the key; set it only to use another project.

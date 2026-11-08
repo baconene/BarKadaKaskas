@@ -50,8 +50,7 @@ class GeminiReceiptReader
                 'temperature' => 0,
                 'responseMimeType' => 'application/json',
                 'responseSchema' => $this->schema(),
-                // Reading a receipt does not need extended reasoning; this keeps it fast and cheap.
-                'thinkingConfig' => ['thinkingBudget' => 0],
+                // No thinkingConfig: its format differs between Gemini generations, and some models reject it.
             ],
         ]);
 

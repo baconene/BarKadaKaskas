@@ -65,4 +65,13 @@ class TravelerProfileTest extends TestCase
         $this->actingAs($user)->from('/dashboard')->patch('/me/profile', ['phone' => '0917 000 0000'])->assertRedirect('/dashboard');
         $this->assertSame('0917 000 0000', $user->fresh()->phone);
     }
+
+    public function test_account_pages_use_the_app_layout_and_appearance_redirects(): void
+    {
+        $this->withoutVite();
+        $user = User::factory()->create(['phone' => '0917 111 2222']);
+        $this->actingAs($user)->get('/settings/profile')->assertOk()->assertInertia(fn ($page) => $page->component('settings/Profile')->where('auth.user.phone', '0917 111 2222')->missing('auth.user.avatar_path'));
+        $this->actingAs($user)->get('/settings/password')->assertOk()->assertInertia(fn ($page) => $page->component('settings/Password'));
+        $this->actingAs($user)->get('/settings/appearance')->assertRedirect('/settings/profile');
+    }
 }

@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\{Cache, Http, Log};
  */
 class VertexClient
 {
+    /** Project number learned from an express-mode 404, used when VERTEX_PROJECT_ID is not set. */
+    private const LEARNED_PROJECT = 'vertex-learned-project';
+
     public function configured(): bool
     {
         return $this->apiKey() !== null || $this->credentials() !== null;
@@ -27,10 +30,19 @@ class VertexClient
         if ($credentials = $this->credentials()) {
             $request = $request->withToken($this->accessToken($credentials));
             $url = $this->endpoint($credentials['project_id'], $model);
-        } elseif ($project = config('services.gemini.project')) {
+        } elseif ($project = config('services.gemini.project') ?: Cache::get(self::LEARNED_PROJECT)) {
             $url = $this->endpoint((string) $project, $model).'?key='.urlencode((string) $this->apiKey());
         } else {
             $url = 'https://aiplatform.googleapis.com/v1/publishers/google/models/'.$model.':generateContent?key='.urlencode((string) $this->apiKey());
+            $response = $request->post($url, $body);
+            // Express mode routes to us-central1, where newer models often don't exist. Google's 404 names the key's
+            // project, so retry at that project's configured location (default "global") and remember the project.
+            if ($response->status() === 404 && preg_match('#projects/([a-z0-9-]+)/locations/us-central1/#', (string) $response->json('error.message'), $m)) {
+                Cache::forever(self::LEARNED_PROJECT, $m[1]);
+                Log::info('Vertex AI: using project '.$m[1].' from the API key; set VERTEX_PROJECT_ID to make this explicit.');
+                return $request->post($this->endpoint($m[1], $model).'?key='.urlencode((string) $this->apiKey()), $body);
+            }
+            return $response;
         }
         return $request->post($url, $body);
     }

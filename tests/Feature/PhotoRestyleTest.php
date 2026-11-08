@@ -54,4 +54,20 @@ class PhotoRestyleTest extends TestCase
         config(['services.gemini.api_key' => null]);
         $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertStatus(503);
     }
+
+    public function test_express_mode_404_in_us_central1_retries_at_the_global_location(): void
+    {
+        config(['services.gemini.project' => null]);
+        $ok = ['candidates' => [['content' => ['parts' => [['inlineData' => ['mimeType' => 'image/png', 'data' => 'AAAA']]]]]]];
+        Http::fake(['aiplatform.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['status' => 'NOT_FOUND', 'message' => 'Publisher model `projects/1019187888243/locations/us-central1/publishers/google/models/nano-banana-test` was not found']], 404)
+            ->push($ok)->push($ok)]);
+        $user = User::factory()->create();
+        $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertOk();
+        $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertOk();
+        $urls = Http::recorded()->map(fn ($pair) => $pair[0]->url())->all();
+        $this->assertStringContainsString('/v1/publishers/google/models/nano-banana-test', $urls[0]);
+        $this->assertStringContainsString('/v1/projects/1019187888243/locations/global/', $urls[1]);
+        $this->assertStringContainsString('/v1/projects/1019187888243/locations/global/', $urls[2]); // remembered, no extra attempt
+    }
 }

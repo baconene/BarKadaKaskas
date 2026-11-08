@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { Camera, HeartPulse, Phone, Trash2 } from 'lucide-vue-next';
+import { Camera, HeartPulse, Phone, Sparkles, Trash2 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import AccountLayout from '@/layouts/AccountLayout.vue';
-import { shrinkImage } from '@/lib/uploads';
+import AvatarEditor from '@/components/account/AvatarEditor.vue';
 import { type SharedData } from '@/types';
 
 type ProfileUser = {
@@ -15,21 +15,19 @@ const page = usePage<SharedData>();
 const user = computed(() => page.props.auth.user as unknown as ProfileUser);
 const initials = computed(() => user.value.name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join(''));
 
-// Profile picture
+// Profile picture: every new or existing photo goes through the built-in editor before it is saved.
+const editing = ref<string | null>(null);
 const uploading = ref(false);
 const photoError = ref('');
-async function pickPhoto(event: Event) {
+function pickPhoto(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
-    uploading.value = true; photoError.value = '';
-    const blob = await shrinkImage(file, 800, 0.9);
-    router.post('/me/avatar', { avatar: new File([blob], 'avatar.jpg', { type: blob.type || 'image/jpeg' }) }, {
-        forceFormData: true, preserveScroll: true,
-        onError: errors => { photoError.value = Object.values(errors).join(' '); },
-        onFinish: () => { uploading.value = false; input.value = ''; },
-    });
+    photoError.value = '';
+    editing.value = URL.createObjectURL(file);
 }
+function closeEditor() { if (editing.value?.startsWith('blob:')) URL.revokeObjectURL(editing.value); editing.value = null; }
 function removePhoto() {
     uploading.value = true;
     router.delete('/me/avatar', { preserveScroll: true, onFinish: () => { uploading.value = false; } });
@@ -70,10 +68,11 @@ function deleteAccount() {
             </div>
             <div class="photo-body">
                 <h2 id="photo-title">Profile picture</h2>
-                <p class="muted">Shown to your barkada on trips, photos and expenses.</p>
+                <p class="muted">Shown to your barkada on trips, photos and expenses. Crop it, add a filter, or restyle it with AI.</p>
                 <div class="row">
-                    <label class="btn" :class="{ disabled: uploading }"><Camera :size="16" aria-hidden="true" /> {{ uploading ? 'Uploading…' : user.avatar_url ? 'Change photo' : 'Upload photo' }}<input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="pickPhoto" /></label>
-                    <button v-if="user.avatar_url" type="button" class="btn secondary" :disabled="uploading" @click="removePhoto"><Trash2 :size="15" aria-hidden="true" /> Remove</button>
+                    <label class="btn" :class="{ disabled: uploading }"><Camera :size="16" aria-hidden="true" /> {{ uploading ? 'Updating…' : user.avatar_url ? 'New photo' : 'Upload photo' }}<input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="pickPhoto" /></label>
+                    <button v-if="user.avatar_url" type="button" class="btn secondary" :disabled="uploading" @click="editing = user.avatar_url ?? null"><Sparkles :size="15" aria-hidden="true" /> Edit &amp; AI styles</button>
+                    <button v-if="user.avatar_url" type="button" class="btn secondary" :disabled="uploading" aria-label="Remove photo" @click="removePhoto"><Trash2 :size="15" aria-hidden="true" /></button>
                 </div>
                 <p v-if="photoError" class="error" role="alert">{{ photoError }}</p>
             </div>
@@ -110,14 +109,16 @@ function deleteAccount() {
                 <div class="row"><button class="btn danger" :disabled="removal.processing">Delete account</button><button type="button" class="btn secondary" @click="deleting = false; removal.reset(); removal.clearErrors()">Cancel</button></div>
             </form>
         </section>
+        <AvatarEditor v-if="editing" :source="editing" @close="closeEditor" />
     </AccountLayout>
 </template>
 
 <style scoped>
 .card h2{display:flex;align-items:center;gap:8px}
 .photo-card{display:flex;gap:20px;align-items:center}
-.photo{width:96px;height:96px;flex-shrink:0;border-radius:50%;background:#e3edd5;color:#214e3e;display:grid;place-items:center;font-size:32px;font-weight:800;overflow:hidden}
-.photo img{width:100%;height:100%;object-fit:cover}
+.photo{position:relative;width:96px;height:96px;flex-shrink:0;border-radius:50%;background:#e3edd5;color:#214e3e;display:grid;place-items:center;font-size:32px;font-weight:800;overflow:hidden}
+/* Absolutely positioned so tall photos fill the circle instead of stretching the grid row. */
+.photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .photo-body{display:grid;gap:8px}
 .btn.disabled{opacity:.6;pointer-events:none}
 .emergency{color:#9c3e2d}

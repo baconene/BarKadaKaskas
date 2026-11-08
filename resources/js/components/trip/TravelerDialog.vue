@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { router, useForm } from '@inertiajs/vue3';
-import { Camera, HeartPulse, MessageCircle, Phone, Trash2, UserRound, X } from 'lucide-vue-next';
+import { Camera, HeartPulse, MessageCircle, Phone, Sparkles, Trash2, UserRound, X } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
-import { shrinkImage } from '@/lib/uploads';
+import AvatarEditor from '@/components/account/AvatarEditor.vue';
 
 /** A traveller's contact details and emergency contact; your own can be edited here, including your photo. */
 export type TravelerUser = {
@@ -29,17 +29,15 @@ const hasEmergency = computed(() => !!props.user.emergency_contact_name || !!pro
 function save() {
     form.patch('/me/profile', { preserveScroll: true, preserveState: true, onSuccess: () => { editing.value = false; } });
 }
-async function pickPhoto(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    uploading.value = true; photoError.value = '';
-    const blob = await shrinkImage(file, 800, 0.9);
-    router.post('/me/avatar', { avatar: new File([blob], 'avatar.jpg', { type: blob.type || 'image/jpeg' }) }, {
-        forceFormData: true, preserveScroll: true, preserveState: true,
-        onError: errors => { photoError.value = Object.values(errors).join(' '); },
-        onFinish: () => { uploading.value = false; },
-    });
+// New photos (and "Edit") open the built-in editor with crop, filters and AI styles.
+const editingPhoto = ref<string | null>(null);
+function pickPhoto(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) { photoError.value = ''; editingPhoto.value = URL.createObjectURL(file); }
 }
+function closeEditor() { if (editingPhoto.value?.startsWith('blob:')) URL.revokeObjectURL(editingPhoto.value); editingPhoto.value = null; }
 function removePhoto() {
     uploading.value = true;
     router.delete('/me/avatar', { preserveScroll: true, preserveState: true, onFinish: () => { uploading.value = false; } });
@@ -62,7 +60,7 @@ function removePhoto() {
                 <h2>{{ user.name }}</h2>
                 <p class="tags"><span v-if="isMe" class="tag">You</span><span v-if="isOrganizer" class="tag organizer">Organizer</span></p>
                 <p v-if="uploading" class="muted small">Updating photo…</p>
-                <button v-else-if="isMe && user.avatar_url" type="button" class="link small" @click="removePhoto"><Trash2 :size="13" aria-hidden="true" /> Remove photo</button>
+                <p v-else-if="isMe && user.avatar_url" class="photo-links"><button type="button" class="link small edit-link" @click="editingPhoto = user.avatar_url ?? null"><Sparkles :size="13" aria-hidden="true" /> Edit &amp; AI styles</button><button type="button" class="link small" @click="removePhoto"><Trash2 :size="13" aria-hidden="true" /> Remove</button></p>
                 <p v-if="photoError" class="error small" role="alert">{{ photoError }}</p>
             </div>
 
@@ -96,6 +94,7 @@ function removePhoto() {
                 <div class="actions"><button type="button" class="btn secondary" :disabled="form.processing" @click="editing = false">Cancel</button><button class="btn" :disabled="form.processing || !form.isDirty">{{ form.processing ? 'Saving…' : 'Save' }}</button></div>
             </form>
         </div>
+        <AvatarEditor v-if="editingPhoto" :source="editingPhoto" @close="closeEditor" />
     </dialog>
 </template>
 
@@ -106,7 +105,10 @@ function removePhoto() {
 .close{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:38px;height:38px;border-radius:12px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}
 .hero{display:grid;justify-items:center;gap:4px;text-align:center}
 .photo{position:relative;width:96px;height:96px;border-radius:50%;background:#e3edd5;color:#214e3e;display:grid;place-items:center;font-size:32px;font-weight:800}
-.photo img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+/* Absolutely positioned so tall photos fill the circle instead of stretching the grid row. */
+.photo img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.photo-links{display:flex;gap:14px}
+.edit-link{color:#214e3e}
 .photo-edit{position:absolute;right:-2px;bottom:-2px;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#214e3e;color:#fff;border:3px solid #fff;cursor:pointer}
 .photo-edit.busy{opacity:.6;pointer-events:none}
 .hero h2{font-size:21px;font-weight:750;margin-top:8px}

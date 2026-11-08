@@ -53,3 +53,19 @@ Each scan is one Gemini request with one image (billed by tokens; a receipt is
 typically a fraction of a cent on Flash models). Scans are limited to 15 per
 minute per user. Photos are stored on the private disk and only sent to Google
 for reading; receipts stay visible only to trip members.
+
+## AI profile-photo styles
+
+The profile-photo editor (crop, rotate, filters) has an **AI styles** tab that
+sends the edited photo to a Gemini **image** model on Vertex AI
+(`POST /me/avatar/restyle`). It uses the same key and project settings as
+receipt scanning, plus the image model ID:
+
+```dotenv
+VERTEX_IMAGE_MODEL=gemini-2.5-flash-image   # copy the ID of a current Gemini image ("Nano Banana") model
+```
+
+The result is only a preview; nothing is saved until the traveller taps
+**Use this photo**. Requests are limited to 10 per minute per user. A wrong
+model ID answers with a message naming `VERTEX_IMAGE_MODEL`, and Google's exact
+error is logged as "Gemini photo restyle failed".

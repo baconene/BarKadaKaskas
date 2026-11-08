@@ -33,7 +33,7 @@ class GeminiReceiptReader
             throw new ReceiptReadException('Receipt scanning is not set up yet. You can still enter the expense by hand.', 503);
         }
 
-        $request = Http::timeout(60)->acceptJson();
+        $request = Http::connectTimeout(10)->timeout(120)->acceptJson();
         if ($credentials = $this->credentials()) {
             $request = $request->withToken($this->accessToken($credentials));
             $url = $this->endpoint($credentials['project_id']);

@@ -123,4 +123,11 @@ class ReceiptScanTest extends TestCase
         $this->assertNull($scan->fresh());
         Storage::disk('local')->assertMissing($scan->storage_path);
     }
+
+    public function test_a_slow_or_unreachable_reader_returns_a_clear_timeout(): void
+    {
+        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out'));
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))
+            ->assertStatus(504)->assertJsonPath('message', 'The receipt reader took too long to answer. Try again, or set a faster model (Flash or Flash Lite).');
+    }
 }

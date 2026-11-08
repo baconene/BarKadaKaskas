@@ -29,6 +29,15 @@ async function prepare(file: File): Promise<Blob> {
     return await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob ?? file), 'image/jpeg', 0.9));
 }
 
+/** A readable reason, including the HTTP status for errors that come from the web server rather than the app. */
+function failure(status: number, message?: string): string {
+    if (status === 419) return 'Your session expired. Refresh the page and try again.';
+    if (status === 413) return 'That photo is too large for the server. Try a smaller photo. (HTTP 413)';
+    if (status === 502 || status === 504) return message && status === 502 ? message : `The server took too long waiting for the receipt reader. Try again, or choose a faster model. (HTTP ${status})`;
+    if (message && message !== 'Server Error') return message;
+    return `The receipt could not be read (HTTP ${status}). Please try again; if it keeps happening, check the server log.`;
+}
+
 function xsrfToken(): string {
     const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
     return match ? decodeURIComponent(match[1]) : '';
@@ -44,7 +53,7 @@ async function scan(event: Event) {
         const response = await fetch(`/trips/${props.tripId}/receipt-scans`, { method: 'POST', body, credentials: 'same-origin', headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrfToken(), 'X-Requested-With': 'XMLHttpRequest' } });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) {
-            error.value = json.message && response.status !== 419 ? json.message : response.status === 419 ? 'Your session expired. Refresh the page and try again.' : 'The receipt could not be read. Please try again.';
+            error.value = failure(response.status, json.message);
             return;
         }
         warnings.value = json.data.warnings ?? [];

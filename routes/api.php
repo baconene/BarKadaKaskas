@@ -27,6 +27,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
         Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store']);
+        Route::delete('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'destroy']);
         Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update']);
         Route::patch('trips/{trip}/expenses/{expense}/status', [ExpenseController::class, 'status']);
         Route::post('trips/{trip}/expenses/{expense}/payments', [ExpenseController::class, 'payment']);

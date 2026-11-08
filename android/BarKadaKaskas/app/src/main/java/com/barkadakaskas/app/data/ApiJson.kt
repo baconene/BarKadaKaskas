@@ -91,6 +91,7 @@ internal object ApiJson {
             splitMethod = json.text("split_method"),
             shares = shares,
             payments = payments,
+            createdByMemberId = json.longOrNull("created_by_member_id"),
         )
     }
 

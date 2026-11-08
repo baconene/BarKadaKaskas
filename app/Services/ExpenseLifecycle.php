@@ -12,7 +12,9 @@ class ExpenseLifecycle
 {
     public function transition(Expense $expense, User $actor, ExpenseStatus $target, int $version, ?string $reason = null, bool $voidPayments = false): Expense
     {
-        Gate::forUser($actor)->authorize('update', $expense->trip);
+        // The organizer manages every expense; whoever recorded an expense may also cancel it.
+        $isCreator = $expense->created_by_member_id && $expense->trip->members()->whereKey($expense->created_by_member_id)->where('user_id', $actor->id)->exists();
+        if (! ($target === ExpenseStatus::Cancelled && $isCreator)) { Gate::forUser($actor)->authorize('update', $expense->trip); }
         return DB::transaction(function () use ($expense, $actor, $target, $version, $reason, $voidPayments) {
             $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
             $fail = fn ($message) => throw ValidationException::withMessages(['status' => $message]);

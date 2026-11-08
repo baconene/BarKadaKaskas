@@ -101,6 +101,38 @@ class ExpenseController extends Controller
         $lifecycle->transition($expense, $request->user(), ExpenseStatus::from($data['status']), (int) $data['version'], $data['reason'] ?? null, (bool) ($data['void_payments'] ?? false));
         return $this->respond($request, $expense);
     }
+    /**
+     * Removes an expense entered by mistake (duplicate, wrong scan). Only while no money has been recorded
+     * against it; otherwise it must be cancelled so balances keep the history. Organizer or the expense's creator.
+     */
+    public function destroy(Request $request, Trip $trip, Expense $expense)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        Gate::authorize('view', $trip);
+        $memberId = $trip->members()->where('user_id', $request->user()->id)->value('id');
+        abort_unless($trip->organizer_user_id === $request->user()->id || ($memberId && $expense->created_by_member_id === $memberId), 403, 'Only the organizer or the person who recorded this expense can delete it.');
+        DB::transaction(function () use ($expense, $request) {
+            $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            if ($expense->payments()->exists() || $expense->settlements()->exists()) {
+                throw ValidationException::withMessages(['expense' => 'Payments are already recorded for this expense, so it can’t be deleted. Cancel it instead; balances keep the history.']);
+            }
+            $snapshot = $expense->load(['items', 'allocations'])->toArray();
+            $paths = $expense->receipts()->pluck('storage_path')->all();
+            $receiptIds = $expense->receipts()->pluck('id');
+            \App\Models\ReceiptExtraction::whereIn('receipt_id', $receiptIds)->delete();
+            $expense->receipts()->delete();
+            \App\Models\ReceiptScan::where('expense_id', $expense->id)->delete();
+            $expense->allocations()->delete();
+            $expense->adjustments()->delete();
+            $expense->items()->delete();
+            \Illuminate\Support\Facades\DB::table('expense_allocation_proposals')->where('expense_id', $expense->id)->delete();
+            $expense->delete();
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'deleted', 'before' => $snapshot]);
+            DB::afterCommit(fn () => \Illuminate\Support\Facades\Storage::disk('local')->delete($paths));
+        });
+        return $request->is('api/*') ? response()->noContent() : back();
+    }
+
     public function sharePaid(Request $request, Trip $trip, Expense $expense, \App\Services\ExpenseShares $shares)
     {
         abort_unless($expense->trip_id === $trip->id, 404);

@@ -791,10 +791,16 @@ private data class LineState(val description: String, val amountMinor: Long, val
         Text("Paid to merchant", fontWeight = FontWeight.Bold)
         expense.payments.forEach { Text("${detail.members.find { m -> m.id == it.memberId }?.name ?: "Traveler"} · ${money(it.amountMinor, detail.trip.currency)}") }
         if (expense.payments.isEmpty()) Text("No merchant payment recorded.", color = Muted)
+        // The organizer manages every expense; whoever recorded one may cancel or delete it.
+        val canManage = detail.isOrganizer || (expense.createdByMemberId != null && expense.createdByMemberId == detail.currentMemberId)
+        val canDelete = canManage && expense.payments.isEmpty() && detail.settlements.none { it.expenseId == expense.id }
         if (detail.isOrganizer) {
             if (expense.status == "open") { OutlinedButton(onClick = { action = "payment" }, Modifier.fillMaxWidth()) { Text("Record merchant payment") }; Button(onClick = { action = "completed" }, Modifier.fillMaxWidth()) { Text("Complete merchant bill") } }
             if (expense.status == "completed") Button(onClick = { action = "closed" }, Modifier.fillMaxWidth()) { Text("Close expense") }
-            if (expense.status in listOf("open", "completed")) TextButton(onClick = { action = "cancelled" }) { Text("Cancel expense", color = MaterialTheme.colorScheme.error) }
+        }
+        if (canManage || canDelete) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (canManage && expense.status in listOf("open", "completed")) OutlinedButton(onClick = { action = "cancelled" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Block, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Cancel") }
+            if (canDelete) OutlinedButton(onClick = { action = "delete" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Delete") }
         }
         selectedShare?.let { share ->
             HorizontalDivider(); Text("Confirm payment for ${detail.members.find { it.id == share.memberId }?.name}", fontWeight = FontWeight.Bold)
@@ -806,6 +812,11 @@ private data class LineState(val description: String, val amountMinor: Long, val
         action?.let { target ->
             HorizontalDivider()
             when (target) {
+                "delete" -> {
+                    Text("Delete this expense? It is removed for everyone, including its shares and receipt photos. Use this for duplicates or mistakes.")
+                    Button(onClick = { vm.mutate(dismiss) { repo, current -> repo.deleteExpense(current.trip.id, expense.id) } }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Delete expense") }
+                    TextButton(onClick = { action = null }, modifier = Modifier.fillMaxWidth()) { Text("Keep expense") }
+                }
                 "payment" -> { Choice("Paid by", payer, detail.members.map { it.id.toString() to it.name }, { payer = it }); Field("Amount (${detail.trip.currency})", paymentAmount, { paymentAmount = it }, number = true); Submit("Record payment", vm.busy, amount(paymentAmount) != null) { vm.mutate({ action = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, payer.toLong(), amount(paymentAmount)!!) } } }
                 else -> {
                     Text(if (target == "closed") "Close this expense? Further expense edits will be locked." else if (target == "completed") "Confirm the merchant has been paid in full. Friends may still owe reimbursements." else "Cancel this expense? Its spending will be excluded from balances.")

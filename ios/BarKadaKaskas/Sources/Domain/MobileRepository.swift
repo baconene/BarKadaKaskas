@@ -14,6 +14,8 @@ import Foundation
     func trip(id: Int) async throws -> TripDetail
     func saveStop(tripID: Int, stopID: Int?, input: StopInput) async throws
     func createExpense(tripID: Int, input: ExpenseInput) async throws
+    /// Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator).
+    func deleteExpense(tripID: Int, expenseID: Int) async throws
     /// Reads a receipt photo (downscaled JPEG) into an expense draft.
     func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft
     func changeExpenseStatus(tripID: Int, expenseID: Int, version: Int, status: String, reason: String?, voidPayments: Bool) async throws

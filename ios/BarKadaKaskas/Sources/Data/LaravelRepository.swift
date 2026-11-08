@@ -93,6 +93,8 @@ struct APIError: LocalizedError {
         try await upload("/trips/\(tripID)/expenses/\(expenseID)/receipts", field: "receipt", data: data, fileName: fileName, mimeType: mimeType)
     }
 
+    func deleteExpense(tripID: Int, expenseID: Int) async throws { try await call("DELETE", "/trips/\(tripID)/expenses/\(expenseID)") }
+
     func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft {
         let body = try await upload("/trips/\(tripID)/receipt-scans", field: "receipt", data: jpeg, fileName: "receipt.jpg", mimeType: "image/jpeg")
         return try JSONDecoder().decode(DataBox<ReceiptDraft>.self, from: body).data

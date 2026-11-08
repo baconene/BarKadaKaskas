@@ -47,6 +47,8 @@ struct Allocation: Codable { let trip_member_id: Int; let amount_minor: Int }
 struct ExpenseReceipt: Codable, Identifiable { let id: Int; let processing_status: String }
 struct Expense: Codable, Identifiable {
     let id: Int
+    /// Trip member who recorded the expense; they may cancel or delete it.
+    let created_by_member_id: Int?
     let title: String
     let merchant: String?
     let status: String

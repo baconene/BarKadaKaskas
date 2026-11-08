@@ -9,7 +9,7 @@ data class Category(val id: Long, val name: String)
 data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null)
 data class Share(val memberId: Long, val amountMinor: Long, val coveredMinor: Long = 0, val remainingMinor: Long = amountMinor)
 data class Payment(val memberId: Long, val amountMinor: Long)
-data class Expense(val id: Long, val title: String, val merchant: String, val category: String, val categoryId: Long, val totalMinor: Long, val status: String, val version: Int, val incurredAt: String, val splitMethod: String, val shares: List<Share>, val payments: List<Payment>)
+data class Expense(val id: Long, val title: String, val merchant: String, val category: String, val categoryId: Long, val totalMinor: Long, val status: String, val version: Int, val incurredAt: String, val splitMethod: String, val shares: List<Share>, val payments: List<Payment>, val createdByMemberId: Long? = null)
 data class Balance(val memberId: Long, val name: String, val netMinor: Long)
 data class Settlement(val id: Long, val fromMemberId: Long, val toMemberId: Long, val amountMinor: Long, val method: String, val status: String, val expenseId: Long? = null)
 data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean)
@@ -38,6 +38,8 @@ interface TravelRepository {
     suspend fun trip(id: Long): TripDetail
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
+    /** Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator). */
+    suspend fun deleteExpense(tripId: Long, expenseId: Long)
     /** Reads a receipt photo (downscaled JPEG) into an expense draft. */
     suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft
     suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String? = null, voidPayments: Boolean = false)

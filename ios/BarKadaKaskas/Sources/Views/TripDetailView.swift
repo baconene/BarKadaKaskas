@@ -512,6 +512,8 @@ struct ExpenseDetailView: View {
     @State private var cancellationReason = ""
     @State private var voidPayments = false
     @State private var importing = false
+    @State private var confirmDelete = false
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
         Group {
             if let detail = store.detail, let expense = detail.trip.expenses?.first(where: { $0.id == expenseID }) {
@@ -543,17 +545,33 @@ struct ExpenseDetailView: View {
                         ForEach(expense.receipts ?? []) { receipt in Text("Receipt #\(receipt.id) · \(receipt.processing_status)") }
                         if expense.status != "closed" && expense.status != "cancelled" { Button("Attach receipt", systemImage: "paperclip") { importing = true } }
                     }
-                    if detail.is_organizer && expense.status != "closed" && expense.status != "cancelled" {
+                    // The organizer manages every expense; whoever recorded one may cancel or delete it.
+                    let canManage = detail.is_organizer || (expense.created_by_member_id != nil && expense.created_by_member_id == detail.current_member_id)
+                    let canDelete = canManage && (expense.payments ?? []).isEmpty && !(detail.trip.settlements ?? []).contains { $0.expense_id == expense.id }
+                    if canManage && expense.status != "closed" && expense.status != "cancelled" {
                         Section("Expense actions") {
-                            if expense.status == "open" { Button("Mark merchant bill completed") { confirmation = "completed" } }
-                            if expense.status == "completed" { Button("Close expense") { confirmation = "closed" } }
+                            if detail.is_organizer && expense.status == "open" { Button("Mark merchant bill completed") { confirmation = "completed" } }
+                            if detail.is_organizer && expense.status == "completed" { Button("Close expense") { confirmation = "closed" } }
                             TextField("Reason for cancelling", text: $cancellationReason)
                             if !(expense.payments ?? []).isEmpty { Toggle("Void merchant payments when cancelling", isOn: $voidPayments) }
                             Button("Cancel expense", role: .destructive) { confirmation = "cancelled" }.disabled(cancellationReason.isEmpty)
                         }
                     }
+                    if canDelete {
+                        Section {
+                            Button("Delete expense", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                        } footer: { Text("For duplicates or mistakes. Removes it for everyone, including shares and receipt photos.") }
+                    }
                 }
                 .navigationTitle(expense.title).navigationBarTitleDisplayMode(.inline)
+                .confirmationDialog("Delete this expense?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    Button("Delete expense", role: .destructive) {
+                        Task {
+                            let deleted = await store.mutate { try await store.repository.deleteExpense(tripID: tripID, expenseID: expenseID) }
+                            if deleted { dismiss() }
+                        }
+                    }
+                } message: { Text("It is removed for everyone, including its shares and receipt photos.") }
                 .confirmationDialog("Confirm expense change", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } })) {
                     Button("Confirm") {
                         guard let status = confirmation else { return }; confirmation = nil

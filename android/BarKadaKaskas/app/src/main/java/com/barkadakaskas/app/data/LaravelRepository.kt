@@ -56,6 +56,14 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     }
 
     override suspend fun createExpense(tripId: Long, draft: ExpenseDraft) { request("POST", "/trips/$tripId/expenses", ApiJson.expenseBody(draft)) }
+    override suspend fun updateProfile(draft: ProfileDraft) { request("PATCH", "/me/profile", ApiJson.profileBody(draft)) }
+    override suspend fun uploadAvatar(jpeg: ByteArray) { request("POST", "/me/avatar", raw = multipart("avatar", "avatar.jpg", "image/jpeg", jpeg)) }
+    override suspend fun removeAvatar() { request("DELETE", "/me/avatar") }
+    override suspend fun posts(tripId: Long, before: Long?): PostPage = ApiJson.postPage(request("GET", "/trips/$tripId/posts" + (before?.let { "?before=$it" } ?: "")) ?: JSONObject())
+    override suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>): Post =
+        ApiJson.post(data(request("POST", "/trips/$tripId/posts", raw = multipart(mapOf("caption" to caption.trim()), jpegs.mapIndexed { i, bytes -> FilePart("photos[]", "photo-${i + 1}.jpg", "image/jpeg", bytes) }))))
+    override suspend fun deletePost(tripId: Long, postId: Long) { request("DELETE", "/trips/$tripId/posts/$postId") }
+    override suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int> = data(request("POST", "/trips/$tripId/posts/$postId/like")).let { it.optBoolean("liked") to it.optInt("likes_count") }
     override suspend fun deleteExpense(tripId: Long, expenseId: Long) { request("DELETE", "/trips/$tripId/expenses/$expenseId") }
     override suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft = ApiJson.receiptDraft(data(request("POST", "/trips/$tripId/receipt-scans", raw = multipart("receipt", "receipt.jpg", "image/jpeg", jpeg))))
 
@@ -97,12 +105,24 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     private class Payload(val contentType: String, val bytes: ByteArray)
 
     /** multipart/form-data with a single file field. */
-    private fun multipart(field: String, fileName: String, mimeType: String, bytes: ByteArray): Payload {
+    /** One file in a multipart body. */
+    private class FilePart(val field: String, val fileName: String, val mimeType: String, val bytes: ByteArray)
+
+    /** multipart/form-data with text fields and files. */
+    private fun multipart(fields: Map<String, String>, files: List<FilePart>): Payload {
         val boundary = "BarKada" + java.util.UUID.randomUUID().toString().replace("-", "")
-        val head = "--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$fileName\"\r\nContent-Type: $mimeType\r\n\r\n".toByteArray(Charsets.UTF_8)
-        val tail = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        return Payload("multipart/form-data; boundary=$boundary", head + bytes + tail)
+        val out = java.io.ByteArrayOutputStream()
+        fields.forEach { (name, value) -> out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8)) }
+        files.forEach { part ->
+            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"${part.field}\"; filename=\"${part.fileName}\"\r\nContent-Type: ${part.mimeType}\r\n\r\n".toByteArray(Charsets.UTF_8))
+            out.write(part.bytes); out.write("\r\n".toByteArray(Charsets.UTF_8))
+        }
+        out.write("--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+        return Payload("multipart/form-data; boundary=$boundary", out.toByteArray())
     }
+
+    /** multipart/form-data with a single file field. */
+    private fun multipart(field: String, fileName: String, mimeType: String, bytes: ByteArray): Payload = multipart(emptyMap(), listOf(FilePart(field, fileName, mimeType, bytes)))
 
     private suspend fun request(method: String, path: String, body: JSONObject? = null, auth: Boolean = true, raw: Payload? = null): JSONObject? = withContext(Dispatchers.IO) {
         val base = store.serverUrl.ifBlank { throw ApiException("Enter your server address first.") }

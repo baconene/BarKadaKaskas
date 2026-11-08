@@ -42,7 +42,7 @@ internal object ApiJson {
         val shares = data.optJSONObject("expense_shares")
         return TripDetail(
             trip = trip(trip),
-            members = trip.optJSONArray("members").mapObjects { Member(it.getLong("id"), it.optJSONObject("user")?.text("name").orEmpty().ifBlank { "Traveler" }) },
+            members = trip.optJSONArray("members").mapObjects { member(it) },
             categories = data.optJSONArray("categories").mapObjects { Category(it.getLong("id"), it.text("name")) },
             stops = trip.optJSONArray("itinerary_items").mapObjects { stop(it) },
             expenses = trip.optJSONArray("expenses").mapObjects { expense(it, shares?.optJSONArray(it.getLong("id").toString())) },
@@ -52,6 +52,31 @@ internal object ApiJson {
             isOrganizer = data.optBoolean("is_organizer"),
         )
     }
+
+    fun member(json: JSONObject): Member {
+        val user = json.optJSONObject("user") ?: JSONObject()
+        return Member(json.getLong("id"), user.text("name").ifBlank { "Traveler" }, user.textOrNull("phone"), user.textOrNull("other_contact"), user.textOrNull("avatar_url"),
+            user.textOrNull("emergency_contact_name"), user.textOrNull("emergency_contact_relationship"), user.textOrNull("emergency_contact_phone"))
+    }
+
+    fun profileBody(draft: ProfileDraft) = JSONObject()
+        .put("phone", draft.phone.trim().ifBlank { null } ?: JSONObject.NULL)
+        .put("other_contact", draft.otherContact.trim().ifBlank { null } ?: JSONObject.NULL)
+        .put("emergency_contact_name", draft.emergencyName.trim().ifBlank { null } ?: JSONObject.NULL)
+        .put("emergency_contact_relationship", draft.emergencyRelationship.trim().ifBlank { null } ?: JSONObject.NULL)
+        .put("emergency_contact_phone", draft.emergencyPhone.trim().ifBlank { null } ?: JSONObject.NULL)
+
+    fun post(json: JSONObject): Post {
+        val author = json.optJSONObject("author") ?: JSONObject()
+        return Post(
+            id = json.getLong("id"), caption = json.textOrNull("caption"), createdAt = json.text("created_at"),
+            authorName = author.text("name").ifBlank { "Traveler" }, authorAvatarUrl = author.textOrNull("avatar_url"),
+            photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.text("url"), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt()) }.filter { it.url.isNotBlank() },
+            likesCount = json.optInt("likes_count"), liked = json.optBoolean("liked"), canDelete = json.optBoolean("can_delete"),
+        )
+    }
+
+    fun postPage(body: JSONObject) = PostPage(body.optJSONArray("data").mapObjects { post(it) }, body.longOrNull("next_before"))
 
     fun stop(json: JSONObject) = Stop(
         id = json.getLong("id"),

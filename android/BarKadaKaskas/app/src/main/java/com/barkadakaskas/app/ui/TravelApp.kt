@@ -186,9 +186,10 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
 }
-@Composable private fun Avatar(name: String, highlight: Boolean = false, size: Int = 40) {
+@Composable private fun Avatar(name: String, highlight: Boolean = false, size: Int = 40, url: String? = null) {
     Box(Modifier.size(size.dp).clip(CircleShape).background(if (highlight) Forest else Sage), contentAlignment = Alignment.Center) {
-        Text(initials(name), color = if (highlight) Color.White else Forest, fontWeight = FontWeight.Bold, fontSize = (size / 2.8).sp)
+        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        else Text(initials(name), color = if (highlight) Color.White else Forest, fontWeight = FontWeight.Bold, fontSize = (size / 2.8).sp)
     }
 }
 @Composable private fun Field(label: String, value: String, change: (String) -> Unit, password: Boolean = false, number: Boolean = false, email: Boolean = false, prefix: String? = null, leading: ImageVector? = null, singleLine: Boolean = true, supporting: String? = null, capitalize: Boolean = !password && !email) {
@@ -344,8 +345,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     var tab by rememberSaveable(detail.trip.id) { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
-    val labels = listOf("Itinerary", "Expenses", "Balances", "Group")
-    val icons = listOf(Icons.Default.Map, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.AccountBalanceWallet, Icons.Default.Groups)
+    val labels = listOf("Itinerary", "Expenses", "Photos", "Balances", "Group")
+    val icons = listOf(Icons.Default.Map, Icons.AutoMirrored.Filled.ReceiptLong, Icons.Default.PhotoLibrary, Icons.Default.AccountBalanceWallet, Icons.Default.Groups)
     var menu by remember { mutableStateOf(false) }
     var cancelling by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -378,7 +379,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             AnimatedContent(tab, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "tab") { current ->
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (detail.trip.cancelled) CancelledBanner(detail, vm)
-                    when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) }
+                    when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> PhotosTab(vm, detail); 3 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) }
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -592,15 +593,179 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 @Composable private fun GroupTab(vm: TravelViewModel, detail: TripDetail) {
-    Text("Your barkada", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Text("${detail.members.size} traveler${if (detail.members.size == 1) "" else "s"} · ${if (detail.isOrganizer) "You organize this trip" else "Trip member"}", color = Muted)
+    var viewing by remember { mutableStateOf<Long?>(null) }
+    var editMine by remember { mutableStateOf(false) }
+    val me = detail.members.find { it.id == detail.currentMemberId }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            Text("Your barkada", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("${detail.members.size} traveler${if (detail.members.size == 1) "" else "s"} · tap someone for their contact", color = Muted)
+        }
+        FilledTonalButton(onClick = { editMine = true; viewing = detail.currentMemberId }) { Text("My details") }
+    }
+    if (me != null && me.phone == null && me.emergencyPhone == null) Surface(onClick = { editMine = true; viewing = me.id }, shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF7F4), border = BorderStroke(1.dp, Color(0xFFE0A98F))) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Add your number and emergency contact", fontWeight = FontWeight.SemiBold, color = Color(0xFF7D3424))
+            Text("So your barkada can reach you, or someone close to you, if anything happens.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A5A4B))
+        }
+    }
     if (detail.isOrganizer) Submit("Invite friends", vm.busy, icon = Icons.Default.PersonAdd, click = vm::invite)
     InfoCard {
         detail.members.forEachIndexed { index, member ->
             if (index > 0) HorizontalDivider(color = Line)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(member.name, member.id == detail.currentMemberId); Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) { Text(member.name, fontWeight = FontWeight.SemiBold); Text(if (member.id == detail.currentMemberId) "You" else "Traveler", color = Moss, style = MaterialTheme.typography.bodySmall) }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { editMine = false; viewing = member.id }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Avatar(member.name, member.id == detail.currentMemberId, url = member.avatarUrl); Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(member.name, fontWeight = FontWeight.SemiBold)
+                    Text(listOfNotNull(if (member.id == detail.currentMemberId) "You" else null, member.phone ?: "No number yet").joinToString(" · "), color = Moss, style = MaterialTheme.typography.bodySmall)
+                }
+                if (member.emergencyPhone != null) Icon(Icons.Default.HealthAndSafety, "Has emergency contact", tint = Color(0xFFB0553F), modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted)
+            }
+        }
+    }
+    detail.members.find { it.id == viewing }?.let { TravelerSheet(vm, it, it.id == detail.currentMemberId, editMine) { viewing = null } }
+}
+
+/** A traveller's contact and emergency details; your own can be edited here, including your photo. */
+@Composable private fun TravelerSheet(vm: TravelViewModel, member: Member, isMe: Boolean, startEditing: Boolean, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var editing by remember { mutableStateOf(isMe && startEditing) }
+    var phone by rememberSaveable { mutableStateOf(member.phone.orEmpty()) }; var other by rememberSaveable { mutableStateOf(member.otherContact.orEmpty()) }
+    var emName by rememberSaveable { mutableStateOf(member.emergencyName.orEmpty()) }; var emRel by rememberSaveable { mutableStateOf(member.emergencyRelationship.orEmpty()) }; var emPhone by rememberSaveable { mutableStateOf(member.emergencyPhone.orEmpty()) }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch { Photos.jpeg(context, uri, maxSide = 800)?.let { vm.uploadAvatar(it) } ?: Toast.makeText(context, "That photo couldn't be opened.", Toast.LENGTH_LONG).show() }
+    }
+    fun dial(number: String) = runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + number.filter { it.isDigit() || it == '+' }))) }
+    FormSheet(member.name, vm, dismiss, if (isMe) "Your details · only people on your trips see these" else "Contact & emergency details") {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box {
+                Avatar(member.name, isMe, size = 96, url = member.avatarUrl)
+                if (isMe) SmallFloatingActionButton(onClick = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp), containerColor = Forest, contentColor = Color.White) { Icon(Icons.Default.PhotoCamera, "Change profile picture", Modifier.size(18.dp)) }
+            }
+        }
+        if (isMe && member.avatarUrl != null) TextButton(onClick = vm::removeAvatar, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Remove photo", color = Danger) }
+        if (!editing) {
+            Text("CONTACT", color = Moss, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            member.phone?.let { OutlinedButton(onClick = { dial(it) }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Call, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(it, Modifier.weight(1f)); Text("Call", color = Moss) } }
+            member.otherContact?.let { IconText(Icons.Default.Chat, it, Ink) }
+            if (member.phone == null && member.otherContact == null) Text(if (isMe) "Add a number so your barkada can reach you." else "No contact details yet.", color = Muted)
+            Text("EMERGENCY CONTACT", color = Danger, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            if (member.emergencyName != null || member.emergencyPhone != null) {
+                Text(listOfNotNull(member.emergencyName, member.emergencyRelationship).joinToString(" · "), fontWeight = FontWeight.SemiBold)
+                member.emergencyPhone?.let { Button(onClick = { dial(it) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Icon(Icons.Default.Call, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Call $it") } }
+            } else Text(if (isMe) "Add someone the group can call if something happens to you." else "Not added yet.", color = Muted)
+            if (isMe) Submit("Edit my details", vm.busy, icon = Icons.Default.Edit) { editing = true }
+        } else {
+            Field("Mobile number", phone, { phone = it }, leading = Icons.Default.Call, capitalize = false, supporting = "e.g. +63 917 123 4567")
+            Field("Other contact", other, { other = it }, leading = Icons.Default.Chat, supporting = "e.g. Messenger: @jamie, Viber")
+            Text("Emergency contact", fontWeight = FontWeight.Bold, color = Danger)
+            Field("Name", emName, { emName = it }, leading = Icons.Default.Person)
+            Field("Relationship", emRel, { emRel = it }, supporting = "e.g. Mother, Partner")
+            Field("Phone", emPhone, { emPhone = it }, leading = Icons.Default.Call, capitalize = false)
+            Submit("Save", vm.busy, icon = Icons.Default.Check) { vm.updateProfile(ProfileDraft(phone, other, emName, emRel, emPhone)) { editing = false } }
+            TextButton(onClick = { editing = false }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+        }
+    }
+}
+
+/** Tumblr-style photo feed for the trip. Everyone on the trip can post photos with a caption and leave hearts. */
+@Composable private fun PhotosTab(vm: TravelViewModel, detail: TripDetail) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var picked by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var viewing by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(detail.trip.id) { if (vm.postsLoadedFor != detail.trip.id) vm.loadPosts() }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) picked = uris }
+
+    Row(verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            Text("Photos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Moments shared by the barkada", color = Muted)
+        }
+    }
+    Submit("Post photos", vm.busy, icon = Icons.Default.AddPhotoAlternate) { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    if (vm.postsLoadedFor == detail.trip.id && vm.posts.isEmpty()) EmptyState(Icons.Default.PhotoCamera, "No photos yet", "Be the first to share a moment from the trip.")
+    if (vm.postsLoading && vm.posts.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+    vm.posts.forEach { post ->
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+            Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Avatar(post.authorName, url = post.authorAvatarUrl, size = 38); Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) { Text(post.authorName, fontWeight = FontWeight.SemiBold); Text(postTime(post.createdAt), color = Muted, style = MaterialTheme.typography.bodySmall) }
+                if (post.canDelete) IconButton(onClick = { vm.deletePost(post) }, enabled = !vm.busy) { Icon(Icons.Default.Delete, "Delete post", tint = Muted) }
+            }
+            PhotoGrid(post.photos) { viewing = it }
+            post.caption?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge) }
+            Row(Modifier.padding(start = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { vm.toggleLike(post) }) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (post.liked) "Remove heart" else "Add heart", tint = if (post.liked) Color(0xFFD0454C) else Muted) }
+                Text("${post.likesCount} ${if (post.likesCount == 1) "heart" else "hearts"}", color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    if (vm.postsNextBefore != null) OutlinedButton(onClick = { vm.loadPosts(more = true) }, enabled = !vm.postsLoading, modifier = Modifier.fillMaxWidth()) { Text(if (vm.postsLoading) "Loading…" else "Load more") }
+    if (picked.isNotEmpty()) PostComposer(vm, picked, { picked = it }) { picked = emptyList() }
+    viewing?.let { url ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { viewing = null }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.fillMaxSize().background(Color.Black).clickable { viewing = null }, contentAlignment = Alignment.Center) {
+                AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+private fun postTime(iso: String): String = runCatching {
+    val time = OffsetDateTime.parse(iso)
+    val minutes = java.time.Duration.between(time, OffsetDateTime.now()).toMinutes()
+    when { minutes < 1 -> "just now"; minutes < 60 -> "${minutes}m ago"; minutes < 1440 -> "${minutes / 60}h ago"; else -> time.atZoneSameInstant(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH)) }
+}.getOrDefault("")
+
+@Composable private fun PhotoGrid(photos: List<PostPhoto>, open: (String) -> Unit) {
+    val shown = photos.take(4)
+    when (shown.size) {
+        0 -> Unit
+        1 -> { val p = shown[0]; val ratio = if (p.width != null && p.height != null && p.height > 0) (p.width.toFloat() / p.height).coerceIn(0.6f, 1.9f) else 4f / 3f; PhotoTile(p, Modifier.fillMaxWidth().aspectRatio(ratio), 0, open) }
+        2 -> Row(Modifier.fillMaxWidth().aspectRatio(2f), horizontalArrangement = Arrangement.spacedBy(3.dp)) { shown.forEach { PhotoTile(it, Modifier.weight(1f).fillMaxHeight(), 0, open) } }
+        3 -> Row(Modifier.fillMaxWidth().aspectRatio(1.5f), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            PhotoTile(shown[0], Modifier.weight(2f).fillMaxHeight(), 0, open)
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(3.dp)) { PhotoTile(shown[1], Modifier.weight(1f).fillMaxWidth(), 0, open); PhotoTile(shown[2], Modifier.weight(1f).fillMaxWidth(), 0, open) }
+        }
+        else -> Column(Modifier.fillMaxWidth().aspectRatio(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            listOf(0, 2).forEach { start -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                PhotoTile(shown[start], Modifier.weight(1f).fillMaxHeight(), 0, open); PhotoTile(shown[start + 1], Modifier.weight(1f).fillMaxHeight(), if (start == 2) photos.size - 4 else 0, open)
+            } }
+        }
+    }
+}
+
+@Composable private fun PhotoTile(photo: PostPhoto, modifier: Modifier, extra: Int, open: (String) -> Unit) {
+    Box(modifier.background(Sage).clickable { open(photo.url) }) {
+        AsyncImage(model = photo.url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (extra > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) { Text("+$extra", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+    }
+}
+
+@Composable private fun PostComposer(vm: TravelViewModel, picked: List<Uri>, change: (List<Uri>) -> Unit, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var caption by rememberSaveable { mutableStateOf("") }
+    var preparing by remember { mutableStateOf(false) }
+    FormSheet("Post photos", vm, dismiss, "${picked.size} photo${if (picked.size == 1) "" else "s"} · everyone on the trip can see this") {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(picked, key = { _, uri -> uri.toString() }) { index, uri ->
+                Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp))) {
+                    AsyncImage(model = uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    Icon(Icons.Default.Close, "Remove photo", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).clickable { change(picked.filterIndexed { i, _ -> i != index }) }.padding(3.dp))
+                }
+            }
+        }
+        Field("Caption", caption, { caption = it }, singleLine = false, supporting = "Say something about these moments")
+        Submit(if (preparing) "Preparing photos…" else "Post ${picked.size} photo${if (picked.size == 1) "" else "s"}", vm.busy || preparing, picked.isNotEmpty(), Icons.AutoMirrored.Filled.Send) {
+            scope.launch {
+                preparing = true
+                val jpegs = picked.mapNotNull { Photos.jpeg(context, it, maxSide = 2000) }
+                preparing = false
+                if (jpegs.isEmpty()) Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show() else vm.createPost(caption, jpegs, dismiss)
             }
         }
     }

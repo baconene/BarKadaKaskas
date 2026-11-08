@@ -16,6 +16,15 @@ import Foundation
     func createExpense(tripID: Int, input: ExpenseInput) async throws
     /// Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator).
     func deleteExpense(tripID: Int, expenseID: Int) async throws
+    func updateProfile(_ input: ProfileInput) async throws
+    func uploadAvatar(jpeg: Data) async throws
+    func removeAvatar() async throws
+    func posts(tripID: Int, before: Int?) async throws -> PostPage
+    /// `jpegs` are downscaled photos (1 to 10).
+    func createPost(tripID: Int, caption: String, jpegs: [Data]) async throws -> TripPost
+    func deletePost(tripID: Int, postID: Int) async throws
+    /// Toggles the viewer's heart; returns whether it is now liked and the new count.
+    func toggleLike(tripID: Int, postID: Int) async throws -> (liked: Bool, count: Int)
     /// Reads a receipt photo (downscaled JPEG) into an expense draft.
     func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft
     func changeExpenseStatus(tripID: Int, expenseID: Int, version: Int, status: String, reason: String?, voidPayments: Bool) async throws

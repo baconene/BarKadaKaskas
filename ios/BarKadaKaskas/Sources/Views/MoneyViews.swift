@@ -298,20 +298,44 @@ struct GroupView: View {
     let detail: TripDetail
     @EnvironmentObject var store: AppStore
     @State private var invitation: URL?
+    @State private var viewing: TripMember?
+    @State private var editMine = false
+
+    private var me: TripMember? { detail.trip.members?.first { $0.id == detail.current_member_id } }
 
     var body: some View {
         List {
-            Section("Travelers") {
-                ForEach(detail.trip.members ?? []) { member in
-                    HStack(spacing: 12) {
-                        Text(initials(member.user.name))
-                            .font(.caption.bold()).frame(width: 36, height: 36)
-                            .background(Theme.forest.opacity(0.12), in: Circle())
-                        Text(member.user.name)
-                        if member.id == detail.current_member_id { Text("You").font(.caption).foregroundStyle(.secondary) }
-                    }
+            if let me, me.user.phone == nil, me.user.emergency_contact_phone == nil {
+                Section {
+                    Button { editMine = true; viewing = me } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Add your number and emergency contact").font(.subheadline.bold())
+                            Text("So your barkada can reach you, or someone close to you, if anything happens.").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.foregroundStyle(Color(red: 0.49, green: 0.20, blue: 0.14))
                 }
             }
+            Section {
+                ForEach(detail.trip.members ?? []) { member in
+                    Button { editMine = false; viewing = member } label: {
+                        HStack(spacing: 12) {
+                            AvatarView(name: member.user.name, url: member.user.avatar_url, size: 40)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(member.user.name).foregroundStyle(.primary)
+                                    if member.id == detail.current_member_id { Text("You").font(.caption).foregroundStyle(.secondary) }
+                                }
+                                Text(member.user.phone ?? "No number yet").font(.caption).foregroundStyle(Theme.moss)
+                            }
+                            Spacer()
+                            if member.user.emergency_contact_phone != nil { Image(systemName: "cross.case.fill").foregroundStyle(Color(red: 0.69, green: 0.33, blue: 0.25)).accessibilityLabel("Has emergency contact") }
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+            } header: {
+                HStack { Text("Travelers"); Spacer(); if let me { Button("My details") { editMine = true; viewing = me }.font(.caption.bold()).textCase(nil) } }
+            } footer: { Text("Tap someone for their contact and emergency details.") }
             if detail.canPlan {
                 Section {
                     if let invitation {
@@ -326,9 +350,127 @@ struct GroupView: View {
             }
         }
         .scrollContentBackground(.hidden).background(Theme.canvas)
+        .sheet(item: $viewing) { member in TravelerSheet(member: member, isMe: member.id == detail.current_member_id, startEditing: editMine) }
     }
 
     private func initials(_ name: String) -> String {
         name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+    }
+}
+
+/// A round profile picture, or initials when there is none.
+struct AvatarView: View {
+    let name: String; let url: String?; var size: CGFloat = 40
+    var body: some View {
+        ZStack {
+            Circle().fill(Theme.sage)
+            if let link = url.flatMap(URL.init(string:)) {
+                AsyncImage(url: link) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
+            } else {
+                Text(name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased())
+                    .font(.system(size: size * 0.36, weight: .bold)).foregroundStyle(Theme.forest)
+            }
+        }
+        .frame(width: size, height: size).clipShape(Circle())
+    }
+}
+
+/// A traveller's contact and emergency details; your own can be edited here, including your photo.
+struct TravelerSheet: View {
+    let member: TripMember; let isMe: Bool; let startEditing: Bool
+    @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+    @State private var phone = ""; @State private var other = ""
+    @State private var emName = ""; @State private var emRelationship = ""; @State private var emPhone = ""
+    @State private var photo: PhotosPickerItem?
+    @State private var uploading = false
+
+    /// The latest copy of this member after edits reload the trip.
+    private var current: MemberUser { store.detail?.trip.members?.first { $0.id == member.id }?.user ?? member.user }
+    private func tel(_ number: String) -> URL? { URL(string: "tel:" + number.filter { $0.isNumber || $0 == "+" }) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    VStack(spacing: 8) {
+                        ZStack(alignment: .bottomTrailing) {
+                            AvatarView(name: current.name, url: current.avatar_url, size: 96)
+                            if isMe {
+                                PhotosPicker(selection: $photo, matching: .images) {
+                                    Image(systemName: uploading ? "hourglass" : "camera.fill").font(.caption.bold()).foregroundStyle(.white)
+                                        .frame(width: 32, height: 32).background(Theme.forest, in: Circle()).overlay(Circle().stroke(.white, lineWidth: 3))
+                                }.disabled(uploading).accessibilityLabel("Change profile picture")
+                            }
+                        }
+                        Text(current.name).font(.title3.bold())
+                        if isMe && current.avatar_url != nil {
+                            Button("Remove photo", role: .destructive) { Task { _ = await store.mutate { try await store.repository.removeAvatar() } } }.font(.caption)
+                        }
+                    }.frame(maxWidth: .infinity)
+                }.listRowBackground(Color.clear)
+
+                if editing {
+                    Section("Contact") {
+                        TextField("Mobile number", text: $phone).keyboardType(.phonePad).textContentType(.telephoneNumber)
+                        TextField("Other contact (e.g. Messenger: @jamie)", text: $other)
+                    }
+                    Section("Emergency contact") {
+                        TextField("Name", text: $emName)
+                        TextField("Relationship (e.g. Mother)", text: $emRelationship)
+                        TextField("Phone", text: $emPhone).keyboardType(.phonePad)
+                    }
+                } else {
+                    Section("Contact") {
+                        if let number = current.phone, let url = tel(number) { Link(destination: url) { Label(number, systemImage: "phone.fill") } }
+                        if let handle = current.other_contact { Label(handle, systemImage: "message.fill") }
+                        if current.phone == nil && current.other_contact == nil { Text(isMe ? "Add a number so your barkada can reach you." : "No contact details yet.").foregroundStyle(.secondary) }
+                    }
+                    Section("Emergency contact") {
+                        if current.emergency_contact_name != nil || current.emergency_contact_phone != nil {
+                            Text([current.emergency_contact_name, current.emergency_contact_relationship].compactMap { $0 }.joined(separator: " · ")).font(.headline)
+                            if let number = current.emergency_contact_phone, let url = tel(number) {
+                                Link(destination: url) { Label("Call \(number)", systemImage: "phone.fill") }.foregroundStyle(.red)
+                            }
+                        } else {
+                            Text(isMe ? "Add someone the group can call if something happens to you." : "Not added yet.").foregroundStyle(.secondary)
+                        }
+                    }
+                    if isMe { Section { Button("Edit my details", systemImage: "pencil") { startEdit() } } footer: { Text("Only people on your trips can see these details.") } }
+                }
+            }
+            .navigationTitle(isMe ? "Your details" : "Traveler").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(editing ? "Cancel" : "Done") { if editing { editing = false } else { dismiss() } } }
+                if editing {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            Task {
+                                let clean: (String) -> String? = { value in let t = value.trimmingCharacters(in: .whitespaces); return t.isEmpty ? nil : t }
+                                let input = ProfileInput(phone: clean(phone), other_contact: clean(other), emergency_contact_name: clean(emName), emergency_contact_relationship: clean(emRelationship), emergency_contact_phone: clean(emPhone))
+                                if await store.mutate({ try await store.repository.updateProfile(input) }) { editing = false }
+                            }
+                        }.disabled(store.busy)
+                    }
+                }
+            }
+            .onAppear { if isMe && startEditing { startEdit() } }
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                Task {
+                    uploading = true
+                    defer { uploading = false; photo = nil }
+                    guard let data = try? await item.loadTransferable(type: Data.self), let jpeg = CoverPhoto.jpeg(from: data, maxSide: 800) else { store.error = "That photo couldn’t be opened."; return }
+                    _ = await store.mutate { try await store.repository.uploadAvatar(jpeg: jpeg) }
+                }
+            }
+        }
+    }
+
+    private func startEdit() {
+        phone = current.phone ?? ""; other = current.other_contact ?? ""
+        emName = current.emergency_contact_name ?? ""; emRelationship = current.emergency_contact_relationship ?? ""; emPhone = current.emergency_contact_phone ?? ""
+        editing = true
     }
 }

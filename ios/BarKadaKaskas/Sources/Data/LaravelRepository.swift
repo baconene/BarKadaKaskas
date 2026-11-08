@@ -93,6 +93,33 @@ struct APIError: LocalizedError {
         try await upload("/trips/\(tripID)/expenses/\(expenseID)/receipts", field: "receipt", data: data, fileName: fileName, mimeType: mimeType)
     }
 
+    // MARK: Profile and photos
+
+    func updateProfile(_ input: ProfileInput) async throws { try await call("PATCH", "/me/profile", json: input) }
+    func uploadAvatar(jpeg: Data) async throws { try await upload("/me/avatar", field: "avatar", data: jpeg, fileName: "avatar.jpg", mimeType: "image/jpeg") }
+    func removeAvatar() async throws { try await call("DELETE", "/me/avatar") }
+    func posts(tripID: Int, before: Int?) async throws -> PostPage {
+        let body = try await request("GET", "/trips/\(tripID)/posts" + (before.map { "?before=\($0)" } ?? ""))
+        return try JSONDecoder().decode(PostPage.self, from: body)
+    }
+    func createPost(tripID: Int, caption: String, jpegs: [Data]) async throws -> TripPost {
+        let boundary = "BarKadaKaskas-\(UUID().uuidString)"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n\(caption.trimmingCharacters(in: .whitespacesAndNewlines))\r\n".utf8))
+        for (index, jpeg) in jpegs.enumerated() {
+            body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"photos[]\"; filename=\"photo-\(index + 1).jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
+            body.append(jpeg); body.append(Data("\r\n".utf8))
+        }
+        body.append(Data("--\(boundary)--\r\n".utf8))
+        let response = try await request("POST", "/trips/\(tripID)/posts", body: body, contentType: "multipart/form-data; boundary=\(boundary)")
+        return try JSONDecoder().decode(DataBox<TripPost>.self, from: response).data
+    }
+    func deletePost(tripID: Int, postID: Int) async throws { try await call("DELETE", "/trips/\(tripID)/posts/\(postID)") }
+    func toggleLike(tripID: Int, postID: Int) async throws -> (liked: Bool, count: Int) {
+        let result = try await send(DataBox<LikeResult>.self, "POST", "/trips/\(tripID)/posts/\(postID)/like").data
+        return (result.liked, result.likes_count)
+    }
+
     func deleteExpense(tripID: Int, expenseID: Int) async throws { try await call("DELETE", "/trips/\(tripID)/expenses/\(expenseID)") }
 
     func scanReceipt(tripID: Int, jpeg: Data) async throws -> ReceiptDraft {
@@ -211,6 +238,7 @@ struct APIError: LocalizedError {
 
 private struct DataBox<T: Decodable>: Decodable { let data: T }
 private struct UserBox: Decodable { let user: AppUser }
+private struct LikeResult: Decodable { let liked: Bool; let likes_count: Int }
 private struct AuthResult: Decodable { let token: String; let user: AppUser }
 private struct InvitationLink: Decodable { let url: String }
 private struct JoinResult: Decodable { let trip_id: Int }

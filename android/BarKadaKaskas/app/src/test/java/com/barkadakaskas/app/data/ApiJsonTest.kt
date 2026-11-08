@@ -113,4 +113,12 @@ class ApiJsonTest {
         val draft = ApiJson.receiptDraft(JSONObject("""{"scan_id":5,"title":"Jollibee","merchant":"Jollibee","incurred_at":null,"category_id":2,"total_minor":50000,"lines":[{"description":"Chickenjoy","amount_minor":50000}],"warnings":["Check the total"]}"""))
         assertEquals(5L, draft.scanId); assertNull(draft.incurredAt); assertEquals(2L, draft.categoryId); assertEquals(1, draft.lines.size); assertEquals(listOf("Check the total"), draft.warnings)
     }
+
+    @Test fun memberContactsAndPostsParse() {
+        val member = ApiJson.member(JSONObject("""{"id":7,"user":{"name":"Jamie","phone":"0917","other_contact":null,"avatar_url":"https://x.test/avatars/a.jpg","emergency_contact_name":"Maria","emergency_contact_relationship":null,"emergency_contact_phone":"0918"}}"""))
+        assertEquals("0917", member.phone); assertNull(member.otherContact); assertEquals("0918", member.emergencyPhone); assertNull(member.emergencyRelationship)
+        val page = ApiJson.postPage(JSONObject("""{"data":[{"id":3,"caption":null,"created_at":"2026-11-08T01:00:00+00:00","author":{"member_id":7,"name":"Jamie","avatar_url":null},"photos":[{"url":"https://x.test/trip-photos/p.jpg","width":1200,"height":800}],"likes_count":2,"liked":true,"can_delete":false}],"next_before":3}"""))
+        assertEquals(3L, page.nextBefore); assertNull(page.posts[0].caption); assertEquals(1200, page.posts[0].photos[0].width); assertTrue(page.posts[0].liked)
+        assertTrue(ApiJson.profileBody(com.barkadakaskas.app.domain.ProfileDraft(" ", "", "Maria", "", "0918")).isNull("phone"))
+    }
 }

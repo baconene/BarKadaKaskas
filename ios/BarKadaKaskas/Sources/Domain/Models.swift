@@ -1,6 +1,39 @@
 import Foundation
 
-struct MemberUser: Codable, Hashable { let id: Int?; let name: String; let email: String? }
+/// A trip member's user, with the contact details they share with their trip-mates.
+struct MemberUser: Codable, Hashable {
+    let id: Int?; let name: String; let email: String?
+    var phone: String? = nil; var other_contact: String? = nil; var avatar_url: String? = nil
+    var emergency_contact_name: String? = nil; var emergency_contact_relationship: String? = nil; var emergency_contact_phone: String? = nil
+}
+
+/// Your own contact details. Empty fields are sent as null so they can be cleared.
+struct ProfileInput: Encodable {
+    let phone: String?; let other_contact: String?
+    let emergency_contact_name: String?; let emergency_contact_relationship: String?; let emergency_contact_phone: String?
+    enum CodingKeys: String, CodingKey { case phone, other_contact, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(phone, forKey: .phone); try c.encode(other_contact, forKey: .other_contact)
+        try c.encode(emergency_contact_name, forKey: .emergency_contact_name); try c.encode(emergency_contact_relationship, forKey: .emergency_contact_relationship)
+        try c.encode(emergency_contact_phone, forKey: .emergency_contact_phone)
+    }
+}
+
+/// A post in the trip's photo feed.
+struct TripPost: Decodable, Identifiable {
+    struct Author: Decodable { let member_id: Int; let name: String; let avatar_url: String? }
+    struct Photo: Decodable, Hashable { let url: String; let width: Int?; let height: Int? }
+    let id: Int
+    let caption: String?
+    let created_at: String
+    let author: Author
+    let photos: [Photo]
+    var likes_count: Int
+    var liked: Bool
+    let can_delete: Bool
+}
+struct PostPage: Decodable { let data: [TripPost]; let next_before: Int? }
 struct AppUser: Codable, Identifiable { let id: Int; let name: String; let email: String }
 struct TripMember: Codable, Identifiable { let id: Int; let status: String?; let user: MemberUser }
 struct ExpenseCategory: Codable, Identifiable, Hashable { let id: Int; let name: String }

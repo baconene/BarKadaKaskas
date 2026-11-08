@@ -42,7 +42,7 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     }
     fun refresh() = launch { detail?.let { detail = repository.trip(it.trip.id) } ?: run { trips = repository.trips() } }
     fun openTrip(trip: Trip) = launch { detail = repository.trip(trip.id) }
-    fun backToTrips() { if (!busy) detail = null }
+    fun backToTrips() { if (!busy) { detail = null; posts = emptyList(); postsLoadedFor = null; postsNextBefore = null } }
     fun signOut() = launch { repository.logout(); user = null; detail = null; trips = emptyList() }
     fun createTrip(draft: TripDraft, done: () -> Unit) = launch {
         val trip = repository.createTrip(draft); trips = repository.trips(); detail = repository.trip(trip.id); done()
@@ -53,6 +53,50 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = repository.trip(current.trip.id)
         done()
     }
+    // Trip photo feed, loaded when the Photos tab opens.
+    var posts by mutableStateOf<List<Post>>(emptyList()); private set
+    var postsNextBefore by mutableStateOf<Long?>(null); private set
+    var postsLoadedFor by mutableStateOf<Long?>(null); private set
+    var postsLoading by mutableStateOf(false); private set
+
+    fun loadPosts(more: Boolean = false) {
+        val id = detail?.trip?.id ?: return
+        if (postsLoading) return
+        postsLoading = true
+        viewModelScope.launch {
+            try {
+                val page = repository.posts(id, if (more) postsNextBefore else null)
+                posts = if (more) posts + page.posts else page.posts
+                postsNextBefore = page.nextBefore; postsLoadedFor = id
+            } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not load photos." }
+            finally { postsLoading = false }
+        }
+    }
+    fun createPost(caption: String, jpegs: List<ByteArray>, done: () -> Unit) = launch {
+        val id = detail?.trip?.id ?: return@launch
+        posts = listOf(repository.createPost(id, caption, jpegs)) + posts
+        done()
+    }
+    fun deletePost(post: Post) = launch {
+        val id = detail?.trip?.id ?: return@launch
+        repository.deletePost(id, post.id)
+        posts = posts.filterNot { it.id == post.id }
+    }
+    /** Hearts update instantly and reconcile with the server, without blocking the screen. */
+    fun toggleLike(post: Post) {
+        val id = detail?.trip?.id ?: return
+        fun replace(update: (Post) -> Post) { posts = posts.map { if (it.id == post.id) update(it) else it } }
+        replace { it.copy(liked = !it.liked, likesCount = it.likesCount + if (it.liked) -1 else 1) }
+        viewModelScope.launch {
+            try { val (liked, count) = repository.toggleLike(id, post.id); replace { it.copy(liked = liked, likesCount = count) } }
+            catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { replace { it.copy(liked = post.liked, likesCount = post.likesCount) } }
+        }
+    }
+
+    fun updateProfile(draft: ProfileDraft, done: () -> Unit) = editTrip(done) { repository.updateProfile(draft) }
+    fun uploadAvatar(jpeg: ByteArray) = editTrip { repository.uploadAvatar(jpeg) }
+    fun removeAvatar() = editTrip { repository.removeAvatar() }
+
     /** Reads a receipt photo; [done] receives the draft to fill the expense form with. */
     fun scanReceipt(jpeg: ByteArray, done: (ReceiptDraft) -> Unit) = launch {
         val id = detail?.trip?.id ?: return@launch

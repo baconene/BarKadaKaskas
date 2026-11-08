@@ -29,6 +29,7 @@ struct TripDetailView: View {
                 TabView(selection: $tab) {
                     ItineraryView(detail: detail).tabItem { Label("Itinerary", systemImage: "map") }.tag(0)
                     ExpensesView(detail: detail).tabItem { Label("Expenses", systemImage: "receipt") }.tag(1)
+                    PhotosView(detail: detail).tabItem { Label("Photos", systemImage: "photo.on.rectangle.angled") }.tag(4)
                     BalancesView(detail: detail).tabItem { Label("Balances", systemImage: "arrow.left.arrow.right") }.tag(2)
                     GroupView(detail: detail).tabItem { Label("Group", systemImage: "person.2") }.tag(3)
                 }

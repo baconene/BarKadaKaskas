@@ -4,7 +4,13 @@ data class User(val id: Long, val name: String, val email: String)
 data class Trip(val id: Long, val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val memberCount: Int = 0, val status: String = "planning", val cancellationReason: String? = null, val hidden: Boolean = false, val description: String = "", val coverUrl: String? = null) {
     val cancelled: Boolean get() = status == "cancelled"
 }
-data class Member(val id: Long, val name: String)
+/** A trip member, with the contact details they chose to share with their trip-mates. */
+data class Member(val id: Long, val name: String, val phone: String? = null, val otherContact: String? = null, val avatarUrl: String? = null,
+                  val emergencyName: String? = null, val emergencyRelationship: String? = null, val emergencyPhone: String? = null)
+data class ProfileDraft(val phone: String, val otherContact: String, val emergencyName: String, val emergencyRelationship: String, val emergencyPhone: String)
+data class PostPhoto(val url: String, val width: Int?, val height: Int?)
+data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean)
+data class PostPage(val posts: List<Post>, val nextBefore: Long?)
 data class Category(val id: Long, val name: String)
 data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null)
 data class Share(val memberId: Long, val amountMinor: Long, val coveredMinor: Long = 0, val remainingMinor: Long = amountMinor)
@@ -38,6 +44,15 @@ interface TravelRepository {
     suspend fun trip(id: Long): TripDetail
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
+    suspend fun updateProfile(draft: ProfileDraft)
+    suspend fun uploadAvatar(jpeg: ByteArray)
+    suspend fun removeAvatar()
+    suspend fun posts(tripId: Long, before: Long? = null): PostPage
+    /** [jpegs] are downscaled photos (1 to 10). */
+    suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>): Post
+    suspend fun deletePost(tripId: Long, postId: Long)
+    /** Toggles the viewer's heart; returns (liked, likesCount). */
+    suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>
     /** Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator). */
     suspend fun deleteExpense(tripId: Long, expenseId: Long)
     /** Reads a receipt photo (downscaled JPEG) into an expense draft. */

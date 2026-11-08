@@ -6,6 +6,7 @@ import TravelLayout from '@/layouts/TravelLayout.vue';
 import { calculateShares } from '@/lib/splits';
 import TripItinerary from '@/components/TripItinerary.vue';
 import TripGroup from '@/components/trip/TripGroup.vue';
+import TripPhotos from '@/components/trip/TripPhotos.vue';
 import TripHeader from '@/components/trip/TripHeader.vue';
 import TripCancelDialog from '@/components/trip/TripCancelDialog.vue';
 import TripEditDialog from '@/components/trip/TripEditDialog.vue';
@@ -17,7 +18,7 @@ type Expense={id:number;created_by_member_id?:number|null;title:string;merchant:
 const props=defineProps<{trip:{id:number;organizer_user_id?:number;status?:string;cancellation_reason?:string|null;cancelled_at?:string|null;hidden_at?:string|null;cover_url?:string|null;name:string;destination:string;description:string;starts_on:string;ends_on:string;timezone:string;currency_code:string;members:Member[];expenses:Expense[];itinerary_items:ItineraryStop[];settlements:{id:number;expense_id:number|null;from_member_id:number;to_member_id:number;amount_minor:number;status:string;payment_method:string;paid_at:string|null;confirmed_at:string|null}[]};googleMaps:{browserKey:string;mapId:string};categories:{id:number;name:string}[];balances:{member_id:number;name:string;net_minor:number}[];isOrganizer:boolean;currentMemberId:number;invitationUrl:string|null;expenseShares:Record<number,{member_id:number;share_minor:number;covered_minor:number;remaining_minor:number}[]>}>();
 // Which trip screen is shown. Kept in the URL hash (so Back works) and per browser tab (so it survives saves).
 type PlanScreen='today'|'itinerary'|'map';
-const screens:TripScreen[]=['today','itinerary','map','expenses','group'];
+const screens:TripScreen[]=['today','itinerary','map','expenses','photos','group'];
 const SCREEN_KEY=`barkada.trip.${props.trip.id}.screen`;
 const fromHash=()=>{const h=location.hash.slice(1) as TripScreen;return screens.includes(h)?h:null;};
 const readScreen=():TripScreen=>{try{return fromHash()??(sessionStorage.getItem(SCREEN_KEY) as TripScreen|null)??'today';}catch{return fromHash()??'today';}};
@@ -201,6 +202,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
  <button type="button" v-if="!cancelled" class="fab" aria-label="Add expense" @click="newExpense"><Plus :size="24"/></button>
  </section>
 
+ <TripPhotos v-if="screen==='photos'" :trip-id="trip.id" :trip-name="trip.name"/>
  <TripGroup v-if="screen==='group'" :trip-id="trip.id" :trip-name="trip.name" :organizer-user-id="trip.organizer_user_id" :currency="trip.currency_code" :timezone="trip.timezone" :members="trip.members" :balances="balances" :settlements="trip.settlements" :expenses="trip.expenses" :current-member-id="currentMemberId" :is-organizer="isOrganizer" :invitation-url="invitationUrl"/>
 </TravelLayout>
 </template>

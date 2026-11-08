@@ -3,8 +3,9 @@ import { computed, ref } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { ArrowRight, Check, Copy, HandCoins, Share2, UserPlus } from 'lucide-vue-next';
 import PaymentHistoryEntry from '@/components/PaymentHistoryEntry.vue';
+import TravelerDialog, { type TravelerUser } from '@/components/trip/TravelerDialog.vue';
 
-type Member = { id: number; user_id?: number; status?: string; user: { id?: number; name: string } };
+type Member = { id: number; user_id?: number; status?: string; user: TravelerUser };
 type Settlement = { id: number; expense_id: number | null; from_member_id: number; to_member_id: number; amount_minor: number; status: string; payment_method: string; paid_at: string | null; confirmed_at: string | null };
 const props = defineProps<{
     tripId: number; tripName: string; organizerUserId?: number; currency: string; timezone: string;
@@ -16,6 +17,14 @@ const money = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'curre
 const name = (id: number) => props.members.find(m => m.id === id)?.user.name ?? 'Traveler';
 const initials = (full: string) => full.split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]!.toUpperCase()).join('');
 const minor = (value: string | number) => { const s = String(value).trim(); if (!/^\d+(\.\d{1,2})?$/.test(s)) return -1; const [whole, fraction = ''] = s.split('.'); return Number(whole) * 100 + Number(fraction.padEnd(2, '0')); };
+// Traveller details sheet (tap a traveller); opening your own lets you edit it.
+const viewing = ref<number | null>(null);
+const editingMine = ref(false);
+const viewed = computed(() => props.members.find(m => m.id === viewing.value) ?? null);
+const me = computed(() => props.members.find(m => m.id === props.currentMemberId));
+const missingMine = computed(() => !!me.value && !me.value.user.phone && !me.value.user.emergency_contact_phone);
+const isOrganizerMember = (m: Member) => !!props.organizerUserId && (m.user_id ?? m.user.id) === props.organizerUserId;
+function openTraveler(id: number, edit = false) { editingMine.value = edit; viewing.value = id; }
 const balanceOf = (memberId: number) => props.balances.find(b => b.member_id === memberId)?.net_minor ?? 0;
 
 // Suggested settlements: a display-only plan that pays off every balance in the fewest transfers (greedy).
@@ -58,10 +67,12 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 <template>
     <div class="group">
         <section class="card group-card" aria-labelledby="travelers-title">
-            <div class="row spread"><h2 id="travelers-title">Travelers <span class="count">{{ members.length }}</span></h2></div>
+            <div class="row spread"><h2 id="travelers-title">Travelers <span class="count">{{ members.length }}</span></h2><button type="button" class="btn secondary small-btn" @click="openTraveler(currentMemberId, true)">My details</button></div>
+            <button v-if="missingMine" type="button" class="nudge" @click="openTraveler(currentMemberId, true)"><strong>Add your number and emergency contact</strong><span>So your barkada can reach you, or someone close to you, if anything happens.</span></button>
             <ul class="travelers">
-                <li v-for="member in members" :key="member.id" class="traveler">
-                    <span class="avatar" aria-hidden="true">{{ initials(member.user.name) }}</span>
+                <li v-for="member in members" :key="member.id" class="traveler tappable" role="button" tabindex="0" :aria-label="`${member.user.name}: contact and emergency details`" @click="openTraveler(member.id)" @keydown.enter.prevent="openTraveler(member.id)" @keydown.space.prevent="openTraveler(member.id)">
+                    <img v-if="member.user.avatar_url" :src="member.user.avatar_url" alt="" class="avatar photo" />
+                    <span v-else class="avatar" aria-hidden="true">{{ initials(member.user.name) }}</span>
                     <span class="traveler-body">
                         <strong>{{ member.user.name }}<span v-if="member.id === currentMemberId" class="tag">You</span><span v-if="organizerUserId && (member.user_id ?? member.user.id) === organizerUserId" class="tag organizer">Organizer</span></strong>
                         <span class="muted">{{ member.status && member.status !== 'active' ? member.status : 'Joined' }}</span>
@@ -112,10 +123,15 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
             <h2 id="history-title">Payment history <span v-if="pendingForMe" class="count warn">{{ pendingForMe }} to confirm</span></h2>
             <PaymentHistoryEntry v-for="s in settlements" :key="s.id" :sender="name(s.from_member_id)" :recipient="name(s.to_member_id)" :amount="money(s.amount_minor)" :method="s.payment_method" :status="s.status" :paid-at="s.paid_at" :confirmed-at="s.confirmed_at" :timezone="timezone" :expense="expenses.find(e => e.id === s.expense_id)" :can-confirm="s.status === 'pending' && s.to_member_id === currentMemberId" @confirm="router.post(`/trips/${tripId}/settlements/${s.id}/confirm`, {}, { preserveScroll: true, preserveState: true })" />
         </section>
+        <TravelerDialog v-if="viewed" :key="viewed.id" :user="viewed.user" :is-me="viewed.id === currentMemberId" :is-organizer="isOrganizerMember(viewed)" :start-editing="editingMine" @close="viewing = null" />
     </div>
 </template>
 
 <style scoped>
+.tappable{cursor:pointer;border-radius:12px;transition:background .15s}.tappable:hover{background:#f5f8f0}.tappable:focus-visible{outline:3px solid #9cb865;outline-offset:2px}
+.avatar.photo{object-fit:cover;padding:0}
+.small-btn{padding:8px 12px;font-size:13px;min-height:38px}
+.nudge{display:grid;gap:2px;text-align:left;width:100%;margin-top:12px;padding:12px 14px;border-radius:14px;border:1px dashed #e0a98f;background:#fff7f4;color:#7d3424;font:inherit;cursor:pointer}.nudge span{font-size:12px;color:#8a5a4b}
 .group{display:grid;gap:14px}
 .group-card{display:grid;gap:12px}
 .travel-app .group h2{font-size:18px;letter-spacing:-.4px;display:flex;align-items:center;gap:8px}

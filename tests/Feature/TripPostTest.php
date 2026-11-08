@@ -32,7 +32,7 @@ class TripPostTest extends TestCase
         return ['Authorization' => 'Bearer '.$user->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
     }
 
-    private function post(User $user, int $photos = 2, string $caption = 'Cambugahay Falls!'): array
+    private function sharePhotos(User $user, int $photos = 2, string $caption = 'Cambugahay Falls!'): array
     {
         $files = array_map(fn ($i) => UploadedFile::fake()->image("p{$i}.jpg", 1200, 800), range(1, $photos));
         return $this->postJson("/api/v1/trips/{$this->trip->id}/posts", ['caption' => $caption, 'photos' => $files], $this->headers($user))->assertCreated()->json('data');
@@ -40,12 +40,12 @@ class TripPostTest extends TestCase
 
     public function test_members_post_photos_and_see_the_feed_newest_first(): void
     {
-        $first = $this->post($this->friend, 2);
+        $first = $this->sharePhotos($this->friend, 2);
         $this->assertSame('Cambugahay Falls!', $first['caption']);
         $this->assertCount(2, $first['photos']);
         $this->assertSame(1200, $first['photos'][0]['width']);
         $this->assertTrue($first['can_delete']);
-        $second = $this->post($this->other, 1, '');
+        $second = $this->sharePhotos($this->other, 1, '');
 
         $feed = $this->getJson("/api/v1/trips/{$this->trip->id}/posts", $this->headers($this->owner))->assertOk();
         $this->assertSame([$second['id'], $first['id']], array_column($feed->json('data'), 'id'));
@@ -66,7 +66,7 @@ class TripPostTest extends TestCase
 
     public function test_likes_toggle_and_count(): void
     {
-        $post = $this->post($this->friend, 1);
+        $post = $this->sharePhotos($this->friend, 1);
         $this->postJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}/like", [], $this->headers($this->owner))->assertOk()->assertJsonPath('data.liked', true)->assertJsonPath('data.likes_count', 1);
         $this->postJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}/like", [], $this->headers($this->other))->assertJsonPath('data.likes_count', 2);
         $this->postJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}/like", [], $this->headers($this->owner))->assertJsonPath('data.liked', false)->assertJsonPath('data.likes_count', 1);
@@ -75,7 +75,7 @@ class TripPostTest extends TestCase
 
     public function test_only_the_author_or_organizer_deletes_and_files_are_removed(): void
     {
-        $post = $this->post($this->friend, 1);
+        $post = $this->sharePhotos($this->friend, 1);
         $path = TripPost::find($post['id'])->photos()->first()->path;
         $this->deleteJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}", [], $this->headers($this->other))->assertForbidden();
         $this->deleteJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}", [], $this->headers($this->owner))->assertNoContent();

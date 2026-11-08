@@ -1,0 +1,206 @@
+<script setup lang="ts">
+import { Camera, Heart, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { appFetch, shrinkImage } from '@/lib/uploads';
+
+/** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
+type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean };
+const props = defineProps<{ tripId: number; tripName: string; readOnly?: boolean }>();
+
+const posts = ref<Post[]>([]);
+const nextBefore = ref<number | null>(null);
+const loading = ref(false);
+const loaded = ref(false);
+const error = ref('');
+
+async function load(more = false) {
+    if (loading.value) return;
+    loading.value = true; error.value = '';
+    try {
+        const page = await appFetch<{ data: Post[]; next_before: number | null }>(`/trips/${props.tripId}/posts${more && nextBefore.value ? `?before=${nextBefore.value}` : ''}`);
+        posts.value = more ? [...posts.value, ...page.data] : page.data;
+        nextBefore.value = page.next_before;
+        loaded.value = true;
+    } catch (e) { error.value = e instanceof Error ? e.message : 'Could not load photos.'; }
+    finally { loading.value = false; }
+}
+onMounted(() => load());
+
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
+const when = (iso: string) => {
+    const seconds = (Date.now() - Date.parse(iso)) / 1000;
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+};
+
+async function toggleLike(post: Post) {
+    // Optimistic: flip now, reconcile with the server's count.
+    post.liked = !post.liked; post.likes_count += post.liked ? 1 : -1;
+    try {
+        const { data } = await appFetch<{ data: { liked: boolean; likes_count: number } }>(`/trips/${props.tripId}/posts/${post.id}/like`, { method: 'POST' });
+        post.liked = data.liked; post.likes_count = data.likes_count;
+    } catch { post.liked = !post.liked; post.likes_count += post.liked ? 1 : -1; }
+}
+async function remove(post: Post) {
+    if (!confirm('Delete this post and its photos for everyone?')) return;
+    try { await appFetch(`/trips/${props.tripId}/posts/${post.id}`, { method: 'DELETE' }); posts.value = posts.value.filter(p => p.id !== post.id); }
+    catch (e) { error.value = e instanceof Error ? e.message : 'Could not delete the post.'; }
+}
+
+// Composer
+const composing = ref(false);
+const dialog = ref<HTMLDialogElement | null>(null);
+const picked = ref<{ file: File; url: string }[]>([]);
+const caption = ref('');
+const posting = ref(false);
+const postError = ref('');
+const fileInput = ref<HTMLInputElement | null>(null);
+async function openComposer(pick = true) {
+    composing.value = true; postError.value = '';
+    await nextTick(); dialog.value?.showModal();
+    if (pick && !picked.value.length) fileInput.value?.click();
+}
+function closeComposer() { dialog.value?.close(); }
+function onClosed() { composing.value = false; if (!posting.value) { picked.value.forEach(p => URL.revokeObjectURL(p.url)); picked.value = []; caption.value = ''; } }
+function addFiles(event: Event) {
+    const files = Array.from((event.target as HTMLInputElement).files ?? []).filter(f => f.type.startsWith('image/'));
+    const room = 10 - picked.value.length;
+    if (files.length > room) postError.value = 'You can post up to 10 photos at a time.';
+    picked.value = [...picked.value, ...files.slice(0, room).map(file => ({ file, url: URL.createObjectURL(file) }))];
+    if (fileInput.value) fileInput.value.value = '';
+}
+function removePicked(index: number) { URL.revokeObjectURL(picked.value[index].url); picked.value.splice(index, 1); }
+async function publish() {
+    if (!picked.value.length || posting.value) return;
+    posting.value = true; postError.value = '';
+    try {
+        const body = new FormData();
+        body.append('caption', caption.value.trim());
+        for (const [i, p] of picked.value.entries()) body.append('photos[]', await shrinkImage(p.file), `photo-${i + 1}.jpg`);
+        const { data } = await appFetch<{ data: Post }>(`/trips/${props.tripId}/posts`, { method: 'POST', body });
+        posts.value = [data, ...posts.value];
+        picked.value.forEach(p => URL.revokeObjectURL(p.url)); picked.value = []; caption.value = '';
+        posting.value = false;
+        closeComposer();
+    } catch (e) { postError.value = e instanceof Error ? e.message : 'Could not post your photos.'; posting.value = false; }
+}
+onBeforeUnmount(() => picked.value.forEach(p => URL.revokeObjectURL(p.url)));
+
+// Full-size viewer
+const viewing = ref<string | null>(null);
+const gridClass = (count: number) => (count === 1 ? 'one' : count === 2 ? 'two' : count === 3 ? 'three' : 'many');
+const empty = computed(() => loaded.value && !posts.value.length);
+</script>
+
+<template>
+    <section class="photos" aria-labelledby="photos-title">
+        <div class="photos-head">
+            <div><h2 id="photos-title">Photos</h2><p class="muted">Moments from {{ tripName }}, shared by the barkada.</p></div>
+            <button v-if="!readOnly" type="button" class="btn post-desktop" @click="openComposer()"><ImagePlus :size="16" aria-hidden="true" /> Post photos</button>
+        </div>
+        <p v-if="error" class="error-box" role="alert">{{ error }} <button type="button" class="link" @click="load()">Try again</button></p>
+
+        <div v-if="empty" class="card empty-feed">
+            <Camera :size="34" aria-hidden="true" />
+            <h3>No photos yet</h3>
+            <p class="muted">Be the first to share a moment from the trip.</p>
+            <button v-if="!readOnly" type="button" class="btn" @click="openComposer()"><ImagePlus :size="16" aria-hidden="true" /> Post photos</button>
+        </div>
+
+        <article v-for="post in posts" :key="post.id" class="post card">
+            <header class="post-head">
+                <img v-if="post.author.avatar_url" :src="post.author.avatar_url" alt="" class="avatar" />
+                <span v-else class="avatar initials" aria-hidden="true">{{ initials(post.author.name) }}</span>
+                <span class="who"><strong>{{ post.author.name }}</strong><time :datetime="post.created_at">{{ when(post.created_at) }}</time></span>
+                <button v-if="post.can_delete" type="button" class="icon-btn" :aria-label="'Delete post by ' + post.author.name" @click="remove(post)"><Trash2 :size="16" /></button>
+            </header>
+            <div class="post-photos" :class="gridClass(post.photos.length)">
+                <button v-for="(photo, i) in post.photos.slice(0, post.photos.length > 4 ? 4 : post.photos.length)" :key="photo.url" type="button" class="photo" :style="post.photos.length === 1 && photo.width && photo.height ? { aspectRatio: `${photo.width} / ${photo.height}` } : undefined" @click="viewing = photo.url">
+                    <img :src="photo.url" :alt="post.caption ? `Photo ${i + 1}: ${post.caption}` : `Photo ${i + 1} by ${post.author.name}`" loading="lazy" />
+                    <span v-if="i === 3 && post.photos.length > 4" class="more">+{{ post.photos.length - 4 }}</span>
+                </button>
+            </div>
+            <p v-if="post.caption" class="caption">{{ post.caption }}</p>
+            <footer class="post-foot">
+                <button type="button" class="heart" :class="{ on: post.liked }" :aria-pressed="post.liked" :aria-label="post.liked ? 'Remove heart' : 'Add heart'" @click="toggleLike(post)"><Heart :size="20" :fill="post.liked ? 'currentColor' : 'none'" /></button>
+                <span class="muted">{{ post.likes_count }} {{ post.likes_count === 1 ? 'heart' : 'hearts' }}</span>
+            </footer>
+        </article>
+
+        <button v-if="nextBefore" type="button" class="btn secondary load-more" :disabled="loading" @click="load(true)">{{ loading ? 'Loading…' : 'Load more' }}</button>
+        <p v-else-if="loading && !loaded" class="muted center"><LoaderCircle :size="18" class="spin" aria-hidden="true" /> Loading photos…</p>
+
+        <button v-if="!readOnly" type="button" class="post-fab" @click="openComposer()"><ImagePlus :size="20" aria-hidden="true" /> Post photos</button>
+
+        <dialog v-if="composing" ref="dialog" class="composer" aria-labelledby="composer-title" @close="onClosed">
+            <form @submit.prevent="publish">
+                <header><h2 id="composer-title">Post photos</h2><button type="button" class="icon-btn" aria-label="Close" @click="closeComposer"><X :size="18" /></button></header>
+                <div class="picked">
+                    <div v-for="(p, i) in picked" :key="p.url" class="thumb"><img :src="p.url" alt="" /><button type="button" :aria-label="`Remove photo ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button></div>
+                    <label v-if="picked.length < 10" class="add-thumb"><ImagePlus :size="22" aria-hidden="true" /><span>{{ picked.length ? 'Add more' : 'Choose photos' }}</span><input ref="fileInput" type="file" accept="image/*" multiple class="sr-only" @change="addFiles" /></label>
+                </div>
+                <label class="field">Caption<textarea v-model="caption" rows="3" maxlength="2000" placeholder="Say something about these moments…" /></label>
+                <p v-if="postError" class="error" role="alert">{{ postError }}</p>
+                <div class="actions"><button type="button" class="btn secondary" :disabled="posting" @click="closeComposer">Cancel</button><button type="submit" class="btn" :disabled="posting || !picked.length">{{ posting ? 'Posting…' : `Post${picked.length ? ` ${picked.length} photo${picked.length === 1 ? '' : 's'}` : ''}` }}</button></div>
+            </form>
+        </dialog>
+
+        <div v-if="viewing" class="viewer" role="dialog" aria-label="Photo" @click="viewing = null"><img :src="viewing" alt="" /><button type="button" class="icon-btn" aria-label="Close photo"><X :size="20" /></button></div>
+    </section>
+</template>
+
+<style scoped>
+.photos{display:grid;gap:16px;max-width:640px;margin:0 auto;padding-bottom:90px}
+.photos-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.photos-head h2{font-size:24px;font-weight:750;letter-spacing:-.5px}
+.post{padding:0;overflow:hidden}
+.post-head{display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.initials{display:grid;place-items:center;background:#e3edd5;color:#214e3e;font-weight:800;font-size:14px}
+.who{display:grid;flex:1;min-width:0}
+.who strong{font-size:14px}
+.who time{font-size:12px;color:#738178}
+.icon-btn{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;border:0;background:transparent;color:#738178;cursor:pointer}
+.icon-btn:hover{background:#f2f6ec;color:#9c3e2d}
+.post-photos{display:grid;gap:3px;background:#eef2e9}
+.post-photos.two{grid-template-columns:1fr 1fr}
+.post-photos.three{grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr}
+.post-photos.three .photo:first-child{grid-row:span 2}
+.post-photos.many{grid-template-columns:1fr 1fr}
+.photo{position:relative;display:block;padding:0;border:0;background:#dfe6d9;cursor:zoom-in;aspect-ratio:1}
+.post-photos.one .photo{aspect-ratio:4/3;max-height:640px}
+.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.more{position:absolute;inset:0;display:grid;place-items:center;background:#172f2a99;color:#fff;font-size:26px;font-weight:800}
+.caption{padding:12px 16px 0;font-size:15px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+.post-foot{display:flex;align-items:center;gap:6px;padding:8px 10px 12px}
+.heart{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;border:0;background:transparent;color:#6c7c72;cursor:pointer;transition:transform .15s}
+.heart:active{transform:scale(.85)}
+.heart.on{color:#d0454c}
+.empty-feed{display:grid;justify-items:center;gap:8px;padding:40px 20px;text-align:center;color:#507044}
+.load-more{justify-self:center}
+.center{display:flex;gap:8px;justify-content:center;align-items:center}
+.link{border:0;background:none;color:inherit;text-decoration:underline;font:inherit;cursor:pointer}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.post-fab{position:fixed;z-index:39;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;padding:14px 20px;border:0;border-radius:999px;background:#214e3e;color:#fff;font:inherit;font-weight:700;box-shadow:0 8px 20px #214e3e55;cursor:pointer}
+.post-desktop{display:none}
+.composer{border:0;border-radius:20px;padding:0;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-shadow:0 24px 60px #172f2a40;color:#172f2a}
+.composer::backdrop{background:#172f2a66}
+.composer form{display:grid;gap:14px;padding:20px}
+.composer header{display:flex;justify-content:space-between;align-items:center}
+.composer h2{font-size:20px;font-weight:750}
+.picked{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.thumb,.add-thumb{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb button{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:0;background:#172f2acc;color:#fff;cursor:pointer}
+.add-thumb{display:grid;place-content:center;justify-items:center;gap:4px;border:2px dashed #b9c9a6;background:#f5f9ef;color:#507044;font-size:12px;font-weight:650;cursor:pointer}
+.composer textarea{border:1px solid #d6dfd5;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical}
+.error{color:#9c3e2d;font-size:13px}
+.actions{display:flex;justify-content:flex-end;gap:10px}
+.viewer{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:#0b1512ee;cursor:zoom-out}
+.viewer img{max-width:100vw;max-height:100dvh;object-fit:contain}
+.viewer .icon-btn{position:absolute;top:16px;right:16px;color:#fff}
+@media(min-width:1024px){.post-fab{display:none}.post-desktop{display:inline-flex}.photos{padding-bottom:24px}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}.heart{transition:none}}
+</style>

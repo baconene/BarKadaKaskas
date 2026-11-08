@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { CalendarDays, Map as MapIcon, ReceiptText, Sun, UsersRound } from 'lucide-vue-next';
+import { CalendarDays, Images, Map as MapIcon, ReceiptText, Sun, UsersRound } from 'lucide-vue-next';
 
-export type TripScreen = 'today' | 'itinerary' | 'map' | 'expenses' | 'group';
+export type TripScreen = 'today' | 'itinerary' | 'map' | 'expenses' | 'photos' | 'group';
 const screen = defineModel<TripScreen>({ required: true });
 defineProps<{ badges?: Partial<Record<TripScreen, number>> }>();
 const items: { key: TripScreen; label: string; icon: unknown }[] = [
@@ -9,6 +9,7 @@ const items: { key: TripScreen; label: string; icon: unknown }[] = [
     { key: 'itinerary', label: 'Itinerary', icon: CalendarDays },
     { key: 'map', label: 'Map', icon: MapIcon },
     { key: 'expenses', label: 'Expenses', icon: ReceiptText },
+    { key: 'photos', label: 'Photos', icon: Images },
     { key: 'group', label: 'Group', icon: UsersRound },
 ];
 </script>
@@ -23,9 +24,9 @@ const items: { key: TripScreen; label: string; icon: unknown }[] = [
 </template>
 
 <style scoped>
-.trip-nav{position:fixed;z-index:40;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(5,1fr);background:#fffefbf2;backdrop-filter:blur(10px);border-top:1px solid #e1e8dc;padding:4px max(6px,env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-right))}
+.trip-nav{position:fixed;z-index:40;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(6,1fr);background:#fffefbf2;backdrop-filter:blur(10px);border-top:1px solid #e1e8dc;padding:4px max(6px,env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-right))}
 .trip-nav-item{display:grid;justify-items:center;align-content:center;gap:2px;min-height:56px;border:0;background:transparent;color:#6c7c72;font:inherit;cursor:pointer;border-radius:12px;-webkit-tap-highlight-color:transparent}
-.icon-wrap{position:relative;display:grid;place-items:center;width:52px;height:30px;border-radius:999px;transition:background .15s}
+.icon-wrap{position:relative;display:grid;place-items:center;width:46px;height:30px;border-radius:999px;transition:background .15s}
 .label{font-size:11px;font-weight:650;letter-spacing:.1px}
 .trip-nav-item[aria-current="page"]{color:#214e3e}
 .trip-nav-item[aria-current="page"] .icon-wrap{background:#e3edd5}

@@ -20,6 +20,14 @@ struct ProfileInput: Encodable {
     }
 }
 
+/// Image links (photos, covers, avatars) as loadable URLs. App Transport Security blocks cleartext, so an
+/// http:// link from a misconfigured proxy is upgraded to https instead of silently failing to load.
+func imageURL(_ link: String?) -> URL? {
+    guard var link, !link.isEmpty else { return nil }
+    if link.hasPrefix("http://") { link = "https://" + link.dropFirst("http://".count) }
+    return URL(string: link)
+}
+
 /// A post in the trip's photo feed.
 struct TripPost: Decodable, Identifiable {
     struct Author: Decodable { let member_id: Int; let name: String; let avatar_url: String? }
@@ -74,6 +82,8 @@ struct ItineraryStop: Codable, Identifiable {
     let cost_min_minor: Int?
     let cost_max_minor: Int?
     let cost_note: String?
+    /// When someone on the trip ticked this activity off; shared by everyone.
+    let completed_at: String?
 }
 struct MerchantPayment: Codable { let trip_member_id: Int; let amount_minor: Int }
 struct Allocation: Codable { let trip_member_id: Int; let amount_minor: Int }

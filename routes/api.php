@@ -25,6 +25,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('invitations/{token}/join', [TripController::class, 'join']);
         Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary']);
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
+        Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
         Route::get('trips/{trip}/posts', [TripPostController::class, 'index']);
         Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1');

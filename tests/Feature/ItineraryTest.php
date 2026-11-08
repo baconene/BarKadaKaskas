@@ -91,4 +91,38 @@ class ItineraryTest extends TestCase
         $this->post("/trips/{$trip->id}/itinerary", array_replace($this->stop(), ['latitude' => 9.3]))->assertSessionHasErrors('longitude');
         $this->assertDatabaseCount('itinerary_items', 0);
     }
+
+    public function test_any_traveller_can_mark_an_activity_done_and_everyone_sees_it(): void
+    {
+        $this->withoutVite();
+        $owner = User::factory()->create(); $trip = $this->trip($owner);
+        $this->actingAs($owner)->post("/trips/{$trip->id}/itinerary", $this->stop())->assertSessionHasNoErrors();
+        $item = $trip->itineraryItems()->firstOrFail();
+        $member = User::factory()->create();
+        $trip->members()->create(['user_id' => $member->id, 'status' => 'active']);
+
+        // A member (not the organizer) ticks it off from the web page.
+        $this->actingAs($member)->patchJson("/trips/{$trip->id}/itinerary/{$item->id}/done", ['done' => true])->assertOk()->assertJsonPath('data.completed_by_user_id', $member->id);
+        $this->assertNotNull($item->fresh()->completed_at);
+        $this->actingAs($owner)->get("/trips/{$trip->id}")->assertInertia(fn (Assert $page) => $page->where('trip.itinerary_items.0.completed_by_user_id', $member->id));
+
+        // The mobile API sees the same state and can undo it.
+        $this->app['auth']->forgetGuards();
+        $headers = ['Authorization' => 'Bearer '.$owner->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
+        $this->getJson("/api/v1/trips/{$trip->id}", $headers)->assertOk()->assertJsonPath('data.trip.itinerary_items.0.completed_by_user_id', $member->id);
+        $this->patchJson("/api/v1/trips/{$trip->id}/itinerary/{$item->id}/done", ['done' => false], $headers)->assertOk()->assertJsonPath('data.completed_at', null);
+        $this->assertNull($item->fresh()->completed_at);
+    }
+
+    public function test_marking_done_needs_trip_membership_and_a_matching_trip(): void
+    {
+        $owner = User::factory()->create(); $trip = $this->trip($owner);
+        $this->actingAs($owner)->post("/trips/{$trip->id}/itinerary", $this->stop())->assertSessionHasNoErrors();
+        $item = $trip->itineraryItems()->firstOrFail();
+        $this->patchJson("/trips/{$trip->id}/itinerary/{$item->id}/done", [])->assertJsonValidationErrors('done');
+        $otherTrip = $this->trip($owner);
+        $this->patchJson("/trips/{$otherTrip->id}/itinerary/{$item->id}/done", ['done' => true])->assertNotFound();
+        $this->actingAs(User::factory()->create())->patchJson("/trips/{$trip->id}/itinerary/{$item->id}/done", ['done' => true])->assertForbidden();
+        $this->assertNull($item->fresh()->completed_at);
+    }
 }

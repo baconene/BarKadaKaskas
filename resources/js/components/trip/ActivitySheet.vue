@@ -5,7 +5,7 @@ import type { LegResult } from '@/components/ItineraryRouteMap.vue';
 import { costRange, dayKey, transport, type ItineraryStop } from '@/lib/itinerary';
 import { googleMapsUrl } from '@/lib/maps';
 
-const props = defineProps<{ item: ItineraryStop | null; previous: ItineraryStop | null; leg: LegResult | null; timezone: string; isOrganizer: boolean; done: boolean }>();
+const props = defineProps<{ item: ItineraryStop | null; previous: ItineraryStop | null; leg: LegResult | null; timezone: string; isOrganizer: boolean; done: boolean; doneError?: string }>();
 const emit = defineEmits<{ close: []; edit: [item: ItineraryStop]; toggleDone: [id: number]; showOnMap: [id: number] }>();
 const dialog = ref<HTMLDialogElement>();
 
@@ -62,7 +62,8 @@ const navigateUrl = computed(() => {
                 <div v-if="costRange(item.cost_min_minor, item.cost_max_minor)"><dt><Wallet :size="13" aria-hidden="true" /> Estimated cost</dt><dd><strong>{{ costRange(item.cost_min_minor, item.cost_max_minor) }}</strong> per person<span v-if="item.cost_note" class="cost-note">{{ item.cost_note }}</span></dd></div>
             </dl>
             <div v-if="item.description" class="sheet-notes"><h3>Notes</h3><p>{{ item.description }}</p></div>
-            <p class="sheet-done-note">“Done” is saved on this device only.</p>
+            <p v-if="doneError" class="sheet-done-error" role="alert">{{ doneError }}</p>
+            <p v-else class="sheet-done-note">Everyone on the trip sees what’s done.</p>
 
             <button v-if="isOrganizer" type="button" class="btn secondary sheet-edit" @click="emit('edit', item)"><Pencil :size="15" aria-hidden="true" /> Edit activity</button>
         </div>
@@ -91,6 +92,7 @@ const navigateUrl = computed(() => {
 .sheet-notes h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#76846e}
 .sheet-notes p{margin-top:6px;white-space:pre-wrap;font-size:14px;line-height:1.7;color:#33463d}
 .sheet-done-note{font-size:11px;color:#8a978f}
+.sheet-done-error{font-size:12px;color:#b42318}
 .sheet-edit{min-height:44px}
 @keyframes sheet-up{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
 @media(min-width:768px){.activity-sheet{margin:auto;border-radius:22px}.grabber{display:none}.sheet-body{padding-top:20px}}

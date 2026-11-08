@@ -75,6 +75,10 @@ struct APIError: LocalizedError {
         if let stopID { try await call("PATCH", "/trips/\(tripID)/itinerary/\(stopID)", json: input) }
         else { try await call("POST", "/trips/\(tripID)/itinerary", json: input) }
     }
+    func setStopDone(tripID: Int, stopID: Int, done: Bool) async throws {
+        struct DoneInput: Encodable { let done: Bool }
+        try await call("PATCH", "/trips/\(tripID)/itinerary/\(stopID)/done", json: DoneInput(done: done))
+    }
 
     // MARK: Money
 

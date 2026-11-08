@@ -88,7 +88,7 @@ private struct EditTripView: View {
                 Section {
                     ZStack(alignment: .bottomTrailing) {
                         Group {
-                            if let url = trip.cover_url.flatMap(URL.init(string:)) {
+                            if let url = imageURL(trip.cover_url) {
                                 AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
                             } else {
                                 VStack(spacing: 6) {
@@ -228,7 +228,27 @@ struct ItineraryView: View {
     @State private var editing: ItineraryStop?
     @State private var selectedDay: String?
     @State private var guesses: [Int: CLLocationCoordinate2D] = [:]
+    /// Taps on "done" that are still saving; they show at once and roll back if the save fails.
+    @State private var doneChanges: [Int: Bool] = [:]
     private var trip: Trip { detail.trip }
+    private func isDone(_ stop: ItineraryStop) -> Bool { doneChanges[stop.id] ?? (stop.completed_at != nil) }
+    private func toggleDone(_ stop: ItineraryStop) {
+        let done = !isDone(stop)
+        let tripID = trip.id
+        doneChanges[stop.id] = done
+        Task {
+            do {
+                try await store.repository.setStopDone(tripID: tripID, stopID: stop.id, done: done)
+                if store.detail?.trip.id == tripID, let fresh = try? await store.repository.trip(id: tripID) {
+                    store.detail = fresh
+                    if doneChanges[stop.id] == done { doneChanges[stop.id] = nil }
+                }
+            } catch {
+                if doneChanges[stop.id] == done { doneChanges[stop.id] = nil }
+                store.error = (error as? LocalizedError)?.errorDescription ?? "Could not save. Please try again."
+            }
+        }
+    }
     private var days: [ItineraryLogic.Day] { ItineraryLogic.days(trip.itinerary_items ?? [], timezone: trip.timezone) }
     private var day: ItineraryLogic.Day? {
         let all = days
@@ -256,7 +276,7 @@ struct ItineraryView: View {
                     mapCard(day)
                     VStack(spacing: 0) {
                         ForEach(Array(day.stops.enumerated()), id: \.element.id) { index, stop in
-                            TimelineRow(stop: stop, previous: index > 0 ? day.stops[index - 1] : nil, isLast: index == day.stops.count - 1, trip: trip, canEdit: detail.canPlan, guesses: guesses) { editing = stop; form = true }
+                            TimelineRow(stop: stop, previous: index > 0 ? day.stops[index - 1] : nil, isLast: index == day.stops.count - 1, trip: trip, canEdit: detail.canPlan, guesses: guesses, done: isDone(stop), toggleDone: { toggleDone(stop) }) { editing = stop; form = true }
                         }
                     }
                 }
@@ -359,6 +379,8 @@ struct ItineraryView: View {
 private struct TimelineRow: View {
     let stop: ItineraryStop; let previous: ItineraryStop?; let isLast: Bool; let trip: Trip; let canEdit: Bool
     let guesses: [Int: CLLocationCoordinate2D]
+    let done: Bool
+    let toggleDone: () -> Void
     let edit: () -> Void
     @Environment(\.openURL) private var openURL
     @State private var expanded = false
@@ -369,8 +391,8 @@ private struct TimelineRow: View {
                 Text(ItineraryLogic.clock(stop.starts_at, timezone: trip.timezone)).font(.caption.bold())
                 Text(ItineraryLogic.clock(stop.ends_at, timezone: trip.timezone)).font(.caption2).foregroundStyle(.secondary)
             }.frame(width: 58, alignment: .trailing).padding(.top, 14)
-            Image(systemName: ItineraryLogic.symbol(for: stop.title)).font(.caption).foregroundStyle(Theme.forest)
-                .frame(width: 30, height: 30).background(Theme.sage, in: Circle()).padding(.top, 10)
+            Image(systemName: done ? "checkmark" : ItineraryLogic.symbol(for: stop.title)).font(.caption.weight(done ? .bold : .regular)).foregroundStyle(done ? Color.white : Theme.forest)
+                .frame(width: 30, height: 30).background(done ? Theme.forest : Theme.sage, in: Circle()).padding(.top, 10)
             card.padding(.bottom, 12)
         }
         // The rail is a background so it stretches to the row's full height.
@@ -382,7 +404,12 @@ private struct TimelineRow: View {
     private var card: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top) {
-                Text(stop.title).font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .leading)
+                Text(stop.title).font(.subheadline.bold()).strikethrough(done).foregroundStyle(done ? Color.secondary : Color.primary).frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: toggleDone) {
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(done ? Theme.forest : Color.secondary).frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(done ? "\(stop.title) is done. Tap to undo" : "Mark \(stop.title) done")
                 if canEdit { Button(action: edit) { Image(systemName: "pencil").font(.caption.bold()).frame(width: 30, height: 30).background(Theme.sage.opacity(0.6), in: Circle()) }.accessibilityLabel("Edit \(stop.title)") }
             }
             // Tapping the place starts navigation from where you are now.

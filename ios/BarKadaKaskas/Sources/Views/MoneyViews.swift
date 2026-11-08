@@ -364,7 +364,7 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(Theme.sage)
-            if let link = url.flatMap(URL.init(string:)) {
+            if let link = imageURL(url) {
                 AsyncImage(url: link) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
             } else {
                 Text(name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased())

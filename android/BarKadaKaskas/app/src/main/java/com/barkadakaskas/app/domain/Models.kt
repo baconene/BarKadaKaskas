@@ -12,7 +12,9 @@ data class PostPhoto(val url: String, val width: Int?, val height: Int?)
 data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean)
 data class PostPage(val posts: List<Post>, val nextBefore: Long?)
 data class Category(val id: Long, val name: String)
-data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null)
+data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null, val completedAt: String? = null) {
+    val done: Boolean get() = completedAt != null
+}
 data class Share(val memberId: Long, val amountMinor: Long, val coveredMinor: Long = 0, val remainingMinor: Long = amountMinor)
 data class Payment(val memberId: Long, val amountMinor: Long)
 data class Expense(val id: Long, val title: String, val merchant: String, val category: String, val categoryId: Long, val totalMinor: Long, val status: String, val version: Int, val incurredAt: String, val splitMethod: String, val shares: List<Share>, val payments: List<Payment>, val createdByMemberId: Long? = null)
@@ -43,6 +45,8 @@ interface TravelRepository {
     suspend fun createTrip(draft: TripDraft): Trip
     suspend fun trip(id: Long): TripDetail
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
+    /** Ticks an activity off for everyone on the trip, or undoes it. Any traveller on the trip may do this. */
+    suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
     suspend fun updateProfile(draft: ProfileDraft)
     suspend fun uploadAvatar(jpeg: ByteArray)

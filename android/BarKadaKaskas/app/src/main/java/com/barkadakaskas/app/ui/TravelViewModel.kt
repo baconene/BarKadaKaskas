@@ -53,6 +53,18 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = repository.trip(current.trip.id)
         done()
     }
+    /** "Done" shows at once and is saved for everyone on the trip; it rolls back if the save fails. */
+    fun toggleStopDone(stop: Stop) {
+        val tripId = detail?.trip?.id ?: return
+        val done = !stop.done
+        fun replace(value: String?) { detail = detail?.let { d -> d.copy(stops = d.stops.map { if (it.id == stop.id) it.copy(completedAt = value) else it }) } }
+        replace(if (done) java.time.Instant.now().toString() else null)
+        viewModelScope.launch {
+            try { repository.setStopDone(tripId, stop.id, done) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { replace(stop.completedAt); error = failure.message ?: "Could not save. Please try again." }
+        }
+    }
     // Trip photo feed, loaded when the Photos tab opens.
     var posts by mutableStateOf<List<Post>>(emptyList()); private set
     var postsNextBefore by mutableStateOf<Long?>(null); private set

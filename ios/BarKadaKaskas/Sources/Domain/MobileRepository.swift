@@ -13,6 +13,8 @@ import Foundation
     func createTrip(_ input: TripInput) async throws -> Trip
     func trip(id: Int) async throws -> TripDetail
     func saveStop(tripID: Int, stopID: Int?, input: StopInput) async throws
+    /// Ticks an activity off for everyone on the trip, or undoes it. Any traveller on the trip may do this.
+    func setStopDone(tripID: Int, stopID: Int, done: Bool) async throws
     func createExpense(tripID: Int, input: ExpenseInput) async throws
     /// Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator).
     func deleteExpense(tripID: Int, expenseID: Int) async throws

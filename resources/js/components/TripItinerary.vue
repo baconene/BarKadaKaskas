@@ -8,6 +8,7 @@ import DaySelector from '@/components/trip/DaySelector.vue';
 import DayTimeline from '@/components/trip/DayTimeline.vue';
 import StopFormSheet from '@/components/trip/StopFormSheet.vue';
 import { costRange, dayKey, directionsUrl, orderedStops, totalCost, transport, type ItineraryStop } from '@/lib/itinerary';
+import { appFetch } from '@/lib/uploads';
 
 export type PlanView = 'today' | 'itinerary' | 'map';
 const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
@@ -97,14 +98,36 @@ watch(selectedLeg, id => { if (id && props.view === 'map') sheetOpen.value = fal
 // ---- Activity details, done state and the form -----------------------------------------------
 const openItem = ref<ItineraryStop | null>(null);
 const openIndex = computed(() => stops.value.findIndex(stop => stop.id === openItem.value?.id));
-const DONE_KEY = `barkada.trip.${props.tripId}.done`;
-const readDone = () => { try { return new Set<number>(JSON.parse(localStorage.getItem(DONE_KEY) ?? '[]')); } catch { return new Set<number>(); } };
-const done = ref(readDone());
-function toggleDone(id: number) {
-    const next = new Set(done.value);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    done.value = next;
-    try { localStorage.setItem(DONE_KEY, JSON.stringify([...next])); } catch { /* storage unavailable */ }
+// "Done" is saved on the server so everyone on the trip sees the same ticks. A tap shows at once and
+// rolls back if the save fails; fresh page data replaces these local changes.
+const doneError = ref('');
+const doneChanges = ref(new Map<number, boolean>());
+watch(() => props.items, () => { doneChanges.value = new Map(); });
+const done = computed(() => {
+    const ids = new Set(props.items.filter(item => item.completed_at).map(item => item.id));
+    doneChanges.value.forEach((value, id) => { if (value) ids.add(id); else ids.delete(id); });
+    return ids;
+});
+async function toggleDone(id: number) {
+    const value = !done.value.has(id);
+    const previous = doneChanges.value.get(id) ?? null;
+    const setChange = (next: boolean | null) => {
+        const changes = new Map(doneChanges.value);
+        if (next === null) changes.delete(id); else changes.set(id, next);
+        doneChanges.value = changes;
+    };
+    setChange(value);
+    doneError.value = '';
+    const body = new FormData();
+    body.append('_method', 'PATCH');
+    body.append('done', value ? '1' : '0');
+    try {
+        const { data } = await appFetch<{ data: ItineraryStop }>(`/trips/${props.tripId}/itinerary/${id}/done`, { method: 'POST', body });
+        setChange(!!data.completed_at);
+    } catch (e) {
+        setChange(previous);
+        doneError.value = e instanceof Error ? e.message : 'Could not save. Try again.';
+    }
 }
 const formOpen = ref<ItineraryStop | 'new' | null>(null);
 function editFromSheet(item: ItineraryStop) { openItem.value = null; formOpen.value = item; }
@@ -219,7 +242,8 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
             </div>
         </section>
 
-        <ActivitySheet :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer" :done="!!openItem && done.has(openItem.id)" @close="openItem = null" @edit="editFromSheet" @toggle-done="toggleDone" @show-on-map="showOnMap" />
+        <ActivitySheet :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer"
+            :done="!!openItem && done.has(openItem.id)" :done-error="doneError" @close="openItem = null" @edit="editFromSheet" @toggle-done="toggleDone" @show-on-map="showOnMap" />
         <StopFormSheet v-if="isOrganizer" :open="formOpen" :trip-id="tripId" :timezone="timezone" :browser-key="googleMaps.browserKey" :default-day="view === 'itinerary' ? selectedDay : today?.day.key ?? null" @close="formOpen = null" />
     </div>
 </template>

@@ -29,6 +29,7 @@ Route::middleware('auth')->group(function () {
     Route::post('join/{token}', [TripController::class, 'join'])->middleware('throttle:10,1')->name('invitations.join');
     Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary'])->name('itinerary.store');
     Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary'])->name('itinerary.update');
+    Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone'])->name('itinerary.done');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');
     Route::get('trips/{trip}/posts', [TripPostController::class, 'index'])->name('posts.index');
     Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1')->name('posts.store');

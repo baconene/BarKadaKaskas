@@ -162,6 +162,19 @@ class TripController extends Controller
         return $request->is('api/*') ? response()->json(['data' => $item->fresh()]) : back();
     }
 
+    /** Any traveller on the trip can tick an activity off (or undo it); everyone sees the same state. */
+    public function itineraryDone(Request $request, Trip $trip, \App\Models\ItineraryItem $item)
+    {
+        Gate::authorize('view', $trip);
+        abort_unless($item->trip_id === $trip->id, 404);
+        $request->validate(['done' => 'required|boolean']);
+        $done = $request->boolean('done');
+        if ($done !== ($item->completed_at !== null)) {
+            $item->update($done ? ['completed_at' => now(), 'completed_by_user_id' => $request->user()->id] : ['completed_at' => null, 'completed_by_user_id' => null]);
+        }
+        return $request->is('api/*') || $request->expectsJson() ? response()->json(['data' => $item->fresh()]) : back();
+    }
+
     private function itineraryData(Request $request, Trip $trip): array
     {
         $data = $request->validate(['title' => 'required|string|max:200', 'location' => 'nullable|string|max:200', 'description' => 'nullable|string|max:4000', 'transport_mode' => 'nullable|in:car,van,taxi,motorcycle,tricycle,walking,bicycle,transit,ferry,flight,other', 'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude', 'cost_min_minor' => 'nullable|integer|min:0|max:100000000|required_with:cost_max_minor', 'cost_max_minor' => 'nullable|integer|min:0|max:100000000|required_with:cost_min_minor|gte:cost_min_minor', 'cost_note' => 'nullable|string|max:255', 'starts_at' => 'required|date', 'ends_at' => 'required|date|after_or_equal:starts_at']);

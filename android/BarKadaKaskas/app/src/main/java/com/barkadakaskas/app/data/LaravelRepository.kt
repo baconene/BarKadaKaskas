@@ -54,6 +54,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         if (stopId == null) request("POST", "/trips/$tripId/itinerary", ApiJson.stopBody(draft))
         else request("PATCH", "/trips/$tripId/itinerary/$stopId", ApiJson.stopBody(draft))
     }
+    override suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean) { request("PATCH", "/trips/$tripId/itinerary/$stopId/done", JSONObject().put("done", done)) }
 
     override suspend fun createExpense(tripId: Long, draft: ExpenseDraft) { request("POST", "/trips/$tripId/expenses", ApiJson.expenseBody(draft)) }
     override suspend fun updateProfile(draft: ProfileDraft) { request("PATCH", "/me/profile", ApiJson.profileBody(draft)) }

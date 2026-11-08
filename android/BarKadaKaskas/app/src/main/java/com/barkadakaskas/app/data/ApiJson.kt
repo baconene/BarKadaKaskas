@@ -11,6 +11,8 @@ import org.json.JSONObject
 internal object ApiJson {
     private fun JSONObject.text(name: String): String = if (!has(name) || isNull(name)) "" else optString(name)
     private fun JSONObject.textOrNull(name: String): String? = text(name).ifBlank { null }
+    /** Image links must be https: the app blocks cleartext, so an http:// link from a misconfigured proxy would never load. */
+    private fun JSONObject.imageUrl(name: String): String? = textOrNull(name)?.let { if (it.startsWith("http://")) "https://" + it.removePrefix("http://") else it }
     private fun JSONObject.longOrNull(name: String): Long? = if (!has(name) || isNull(name)) null else optLong(name)
     private fun JSONObject.doubleOrNull(name: String): Double? = if (!has(name) || isNull(name)) null else optDouble(name).takeUnless { it.isNaN() }
     private inline fun <T> JSONArray?.mapObjects(transform: (JSONObject) -> T): List<T> =
@@ -31,7 +33,7 @@ internal object ApiJson {
         cancellationReason = json.textOrNull("cancellation_reason"),
         hidden = json.textOrNull("hidden_at") != null,
         description = json.text("description"),
-        coverUrl = json.textOrNull("cover_url"),
+        coverUrl = json.imageUrl("cover_url"),
     )
 
     fun trips(data: JSONArray?): List<Trip> = data.mapObjects(::trip)
@@ -55,7 +57,7 @@ internal object ApiJson {
 
     fun member(json: JSONObject): Member {
         val user = json.optJSONObject("user") ?: JSONObject()
-        return Member(json.getLong("id"), user.text("name").ifBlank { "Traveler" }, user.textOrNull("phone"), user.textOrNull("other_contact"), user.textOrNull("avatar_url"),
+        return Member(json.getLong("id"), user.text("name").ifBlank { "Traveler" }, user.textOrNull("phone"), user.textOrNull("other_contact"), user.imageUrl("avatar_url"),
             user.textOrNull("emergency_contact_name"), user.textOrNull("emergency_contact_relationship"), user.textOrNull("emergency_contact_phone"))
     }
 
@@ -70,8 +72,8 @@ internal object ApiJson {
         val author = json.optJSONObject("author") ?: JSONObject()
         return Post(
             id = json.getLong("id"), caption = json.textOrNull("caption"), createdAt = json.text("created_at"),
-            authorName = author.text("name").ifBlank { "Traveler" }, authorAvatarUrl = author.textOrNull("avatar_url"),
-            photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.text("url"), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt()) }.filter { it.url.isNotBlank() },
+            authorName = author.text("name").ifBlank { "Traveler" }, authorAvatarUrl = author.imageUrl("avatar_url"),
+            photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.imageUrl("url").orEmpty(), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt()) }.filter { it.url.isNotBlank() },
             likesCount = json.optInt("likes_count"), liked = json.optBoolean("liked"), canDelete = json.optBoolean("can_delete"),
         )
     }
@@ -91,6 +93,7 @@ internal object ApiJson {
         costMinMinor = json.longOrNull("cost_min_minor"),
         costMaxMinor = json.longOrNull("cost_max_minor"),
         costNote = json.textOrNull("cost_note"),
+        completedAt = json.textOrNull("completed_at"),
     )
 
     fun expense(json: JSONObject, shareRows: JSONArray?): Expense {

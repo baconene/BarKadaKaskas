@@ -458,13 +458,13 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
     Column {
         current.stops.forEachIndexed { index, stop ->
-            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { url -> startNavigation(context, url) }) { editing = stop; form = true }
+            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { url -> startNavigation(context, url) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }
 }
 
-@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (String) -> Unit, edit: () -> Unit) {
+@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (String) -> Unit, toggleDone: () -> Unit, edit: () -> Unit) {
     var expanded by rememberSaveable(stop.id) { mutableStateOf(false) }
     val located = guessed?.takeIf { !Itinerary.hasPin(stop) }?.let { stop.copy(latitude = it.first, longitude = it.second) } ?: stop
     val previousLocated = previous
@@ -475,13 +475,16 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
         Column(Modifier.width(44.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(10.dp))
-            Box(Modifier.size(30.dp).clip(CircleShape).background(Sage), contentAlignment = Alignment.Center) { Icon(kindIcon(Itinerary.kind(stop.title)), null, tint = Forest, modifier = Modifier.size(16.dp)) }
+            Box(Modifier.size(30.dp).clip(CircleShape).background(if (stop.done) Forest else Sage), contentAlignment = Alignment.Center) {
+                if (stop.done) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp)) else Icon(kindIcon(Itinerary.kind(stop.title)), null, tint = Forest, modifier = Modifier.size(16.dp))
+            }
             if (!last) Box(Modifier.width(2.dp).weight(1f).background(Line))
         }
         Card(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f).padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
-                    Text(stop.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text(stop.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall, color = if (stop.done) Muted else Color.Unspecified, textDecoration = if (stop.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+                    Icon(if (stop.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked, if (stop.done) "Done. Tap to undo" else "Mark done", tint = if (stop.done) Forest else Muted, modifier = Modifier.size(32.dp).clip(CircleShape).clickable(onClick = toggleDone).padding(6.dp))
                     if (canEdit) Icon(Icons.Default.Edit, "Edit stop", tint = Muted, modifier = Modifier.size(32.dp).clip(CircleShape).clickable(onClick = edit).padding(7.dp))
                 }
                 // Tapping the place starts navigation from where you are now.

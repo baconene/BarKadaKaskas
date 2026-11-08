@@ -59,6 +59,7 @@ receive, negative owe). `expense_shares` is an object keyed by expense ID:
 
 POST `/trips/{trip}/itinerary` → 201 `{data:ItineraryItem}`.
 PATCH `/trips/{trip}/itinerary/{item}` → 200 `{data:ItineraryItem}`.
+PATCH `/trips/{trip}/itinerary/{item}/done` `{done:boolean}` → 200 `{data:ItineraryItem}`. Any active member may tick an activity off or undo it; `completed_at` and `completed_by_user_id` are shared by everyone on the trip.
 Organizer only. Both take a full form:
 
 ```json

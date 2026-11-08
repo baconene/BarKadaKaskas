@@ -115,7 +115,7 @@ private struct HeroTripCard: View {
         .background(alignment: .bottomTrailing) {
             ZStack(alignment: .bottomTrailing) {
                 LinearGradient(colors: [Theme.forest, Color(red: 0.18, green: 0.42, blue: 0.32)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                if let url = trip.cover_url.flatMap(URL.init(string:)) {
+                if let url = imageURL(trip.cover_url) {
                     AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
                     // Darkens the photo so the white text stays readable.
                     LinearGradient(colors: [.black.opacity(0.2), .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
@@ -207,7 +207,7 @@ struct CoverThumbnail: View {
     var body: some View {
         ZStack {
             background
-            if let link = url.flatMap(URL.init(string:)) {
+            if let link = imageURL(url) {
                 AsyncImage(url: link) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() }
             } else {
                 Image(systemName: "mappin.and.ellipse").font(.title2).foregroundStyle(tint)

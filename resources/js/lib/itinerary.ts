@@ -3,6 +3,7 @@ export type ItineraryStop = {
     starts_at: string; ends_at: string; transport_mode: string | null;
     latitude?: number | null; longitude?: number | null;
     cost_min_minor?: number | null; cost_max_minor?: number | null; cost_note?: string | null;
+    completed_at?: string | null; completed_by_user_id?: number | null;
 };
 
 export const transportOptions = [

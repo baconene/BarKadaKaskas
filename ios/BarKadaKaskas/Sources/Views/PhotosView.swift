@@ -94,7 +94,7 @@ private struct PhotoViewer: View {
             Color.black.ignoresSafeArea()
             TabView(selection: $page) {
                 ForEach(Array(gallery.urls.enumerated()), id: \.offset) { index, url in
-                    AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
+                    AsyncImage(url: imageURL(url)) { image in image.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
                         .accessibilityLabel("Photo \(index + 1) of \(gallery.urls.count)")
                         .tag(index)
                 }
@@ -208,7 +208,7 @@ private struct PhotoGrid: View {
     private func tile(_ photo: TripPost.Photo, extra: Int = 0) -> some View {
         Button { onOpen(photo.url) } label: {
             Theme.sage
-                .overlay { AsyncImage(url: URL(string: photo.url)) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() } }
+                .overlay { AsyncImage(url: imageURL(photo.url)) { image in image.resizable().scaledToFill() } placeholder: { ProgressView() } }
                 .overlay { if extra > 0 { ZStack { Color.black.opacity(0.45); Text("+\(extra)").font(.title.bold()).foregroundStyle(.white) } } }
                 .clipped()
         }

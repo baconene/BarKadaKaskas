@@ -121,4 +121,17 @@ class ApiJsonTest {
         assertEquals(3L, page.nextBefore); assertNull(page.posts[0].caption); assertEquals(1200, page.posts[0].photos[0].width); assertTrue(page.posts[0].liked)
         assertTrue(ApiJson.profileBody(com.barkadakaskas.app.domain.ProfileDraft(" ", "", "Maria", "", "0918")).isNull("phone"))
     }
+
+    @Test fun stopDoneStateParses() {
+        val base = """"id":5,"title":"Falls","location":"Cambugahay","description":null,"starts_at":"2026-11-11T00:00:00Z","ends_at":"2026-11-11T01:00:00Z","transport_mode":null"""
+        assertTrue(ApiJson.stop(JSONObject("{$base,\"completed_at\":\"2026-11-11T02:00:00Z\"}")).done)
+        assertTrue(!ApiJson.stop(JSONObject("{$base,\"completed_at\":null}")).done)
+        assertTrue(!ApiJson.stop(JSONObject("{$base}")).done)
+    }
+
+    @Test fun cleartextImageLinksAreUpgradedToHttps() {
+        val page = ApiJson.postPage(JSONObject("""{"data":[{"id":3,"author":{"name":"Jamie","avatar_url":"http://x.test/avatars/a.jpg"},"photos":[{"url":"http://x.test/trip-photos/p.jpg"}]}],"next_before":null}"""))
+        assertEquals("https://x.test/trip-photos/p.jpg", page.posts[0].photos[0].url)
+        assertEquals("https://x.test/avatars/a.jpg", page.posts[0].authorAvatarUrl)
+    }
 }

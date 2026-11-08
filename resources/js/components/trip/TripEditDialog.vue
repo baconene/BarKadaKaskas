@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { router, useForm } from '@inertiajs/vue3';
-import { ImagePlus, Trash2, X } from 'lucide-vue-next';
+import { ImagePlus, Sparkles, Trash2, X } from 'lucide-vue-next';
+import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, onMounted, ref } from 'vue';
 
 /** Organizer-only editor for the trip's details and cover photo. */
@@ -26,31 +27,22 @@ const fileInput = ref<HTMLInputElement | null>(null);
 
 onMounted(() => dialog.value?.showModal());
 
-/** Shrinks large photos in the browser (longest side 1600px, JPEG) so uploads stay fast on mobile data. */
-async function shrink(file: File): Promise<Blob> {
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
-    const bitmap = await createImageBitmap(file).catch(() => null);
-    if (!bitmap) return file;
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1 && file.size < 1_500_000) return file;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob ?? file), 'image/jpeg', 0.85));
+// New covers (and "Edit & AI styles" on the current one) open the built-in editor with a wide 16:9 crop.
+const editingCover = ref<string | null>(null);
+function pickCover(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) { coverError.value = ''; editingCover.value = URL.createObjectURL(file); }
 }
-
-async function pickCover(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    coverError.value = '';
+function closeEditor() { if (editingCover.value?.startsWith('blob:')) URL.revokeObjectURL(editingCover.value); editingCover.value = null; }
+function uploadCover(photo: Blob) {
     uploading.value = true;
-    const blob = await shrink(file);
-    const local = URL.createObjectURL(blob);
-    preview.value = local;
-    router.post(`/trips/${props.trip.id}/cover`, { cover: new File([blob], blob === file ? file.name : 'cover.jpg', { type: blob.type || file.type }) }, {
+    preview.value = URL.createObjectURL(photo);
+    router.post(`/trips/${props.trip.id}/cover`, { cover: new File([photo], 'cover.jpg', { type: 'image/jpeg' }) }, {
         forceFormData: true, preserveScroll: true, preserveState: true,
         onError: errors => { coverError.value = Object.values(errors).join(' '); preview.value = props.trip.cover_url ?? null; },
-        onFinish: () => { uploading.value = false; if (fileInput.value) fileInput.value.value = ''; },
+        onFinish: () => { uploading.value = false; },
     });
 }
 
@@ -77,9 +69,10 @@ function save() {
                 <div v-else class="placeholder"><ImagePlus :size="28" aria-hidden="true" /><span>Add a cover photo</span><small>Shown on everyone's trip card</small></div>
                 <div class="cover-actions">
                     <label class="btn secondary small" :class="{ disabled: uploading }">
-                        <ImagePlus :size="15" aria-hidden="true" /> {{ uploading ? 'Uploading…' : preview ? 'Change photo' : 'Upload photo' }}
+                        <ImagePlus :size="15" aria-hidden="true" /> {{ uploading ? 'Uploading…' : preview ? 'New photo' : 'Upload photo' }}
                         <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" :disabled="uploading" @change="pickCover" />
                     </label>
+                    <button v-if="preview && trip.cover_url" type="button" class="btn secondary small" :disabled="uploading" @click="editingCover = trip.cover_url ?? null"><Sparkles :size="15" aria-hidden="true" /> Edit</button>
                     <button v-if="preview" type="button" class="btn secondary small" :disabled="uploading" aria-label="Remove cover photo" @click="removeCover"><Trash2 :size="15" /></button>
                 </div>
             </div>
@@ -104,6 +97,7 @@ function save() {
                 <button type="submit" class="btn" :disabled="form.processing || !form.isDirty">{{ form.processing ? 'Saving…' : 'Save changes' }}</button>
             </div>
         </form>
+        <PhotoEditor v-if="editingCover" :source="editingCover" :aspect="16 / 9" :output-size="1600" subject="photo" title="Edit cover photo" confirm-label="Use as cover" @done="uploadCover" @close="closeEditor" />
     </dialog>
 </template>
 

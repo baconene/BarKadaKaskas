@@ -3,7 +3,8 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { Camera, HeartPulse, Phone, Sparkles, Trash2 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import AccountLayout from '@/layouts/AccountLayout.vue';
-import AvatarEditor from '@/components/account/AvatarEditor.vue';
+import PhotoEditor from '@/components/PhotoEditor.vue';
+import { saveAvatar } from '@/lib/uploads';
 import { type SharedData } from '@/types';
 
 type ProfileUser = {
@@ -109,7 +110,7 @@ function deleteAccount() {
                 <div class="row"><button class="btn danger" :disabled="removal.processing">Delete account</button><button type="button" class="btn secondary" @click="deleting = false; removal.reset(); removal.clearErrors()">Cancel</button></div>
             </form>
         </section>
-        <AvatarEditor v-if="editing" :source="editing" @close="closeEditor" />
+        <PhotoEditor v-if="editing" :source="editing" :aspect="1" round :output-size="800" subject="portrait" title="Edit profile picture" @done="photo => saveAvatar(photo, message => (photoError = message))" @close="closeEditor" />
     </AccountLayout>
 </template>
 

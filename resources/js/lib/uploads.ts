@@ -27,3 +27,12 @@ export async function appFetch<T = unknown>(url: string, options: { method?: str
     }
     return json as T;
 }
+
+/** Saves an edited JPEG as the signed-in traveller's profile picture (Inertia reloads the page props). */
+export async function saveAvatar(photo: Blob, onError?: (message: string) => void): Promise<void> {
+    const { router } = await import('@inertiajs/vue3');
+    router.post('/me/avatar', { avatar: new File([photo], 'avatar.jpg', { type: 'image/jpeg' }) }, {
+        forceFormData: true, preserveScroll: true, preserveState: true,
+        onError: errors => onError?.(Object.values(errors).join(' ')),
+    });
+}

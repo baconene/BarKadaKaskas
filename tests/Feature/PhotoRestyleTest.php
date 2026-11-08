@@ -70,4 +70,11 @@ class PhotoRestyleTest extends TestCase
         $this->assertStringContainsString('/v1/projects/1019187888243/locations/global/', $urls[1]);
         $this->assertStringContainsString('/v1/projects/1019187888243/locations/global/', $urls[2]); // remembered, no extra attempt
     }
+
+    public function test_trip_photos_use_a_scene_prompt(): void
+    {
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['inlineData' => ['mimeType' => 'image/png', 'data' => 'AAAA']]]]]]])]);
+        $this->postJson('/api/v1/photos/restyle', ['photo' => UploadedFile::fake()->image('falls.jpg', 1600, 900), 'style' => 'golden-hour', 'subject' => 'photo'], $this->headers(User::factory()->create()))->assertOk();
+        Http::assertSent(fn ($request) => str_contains($request['contents'][0]['parts'][1]['text'], 'travel photo') && str_contains($request['contents'][0]['parts'][1]['text'], 'golden-hour'));
+    }
 }

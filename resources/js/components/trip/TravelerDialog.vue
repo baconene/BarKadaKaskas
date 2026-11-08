@@ -2,7 +2,8 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { Camera, HeartPulse, MessageCircle, Phone, Sparkles, Trash2, UserRound, X } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
-import AvatarEditor from '@/components/account/AvatarEditor.vue';
+import PhotoEditor from '@/components/PhotoEditor.vue';
+import { saveAvatar } from '@/lib/uploads';
 
 /** A traveller's contact details and emergency contact; your own can be edited here, including your photo. */
 export type TravelerUser = {
@@ -94,7 +95,7 @@ function removePhoto() {
                 <div class="actions"><button type="button" class="btn secondary" :disabled="form.processing" @click="editing = false">Cancel</button><button class="btn" :disabled="form.processing || !form.isDirty">{{ form.processing ? 'Saving…' : 'Save' }}</button></div>
             </form>
         </div>
-        <AvatarEditor v-if="editingPhoto" :source="editingPhoto" @close="closeEditor" />
+        <PhotoEditor v-if="editingPhoto" :source="editingPhoto" :aspect="1" round :output-size="800" subject="portrait" title="Edit profile picture" @done="photo => saveAvatar(photo, message => (photoError = message))" @close="closeEditor" />
     </dialog>
 </template>
 

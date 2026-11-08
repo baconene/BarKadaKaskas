@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, LoaderCircle, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, LoaderCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
+import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { appFetch, shrinkImage } from '@/lib/uploads';
 
@@ -72,6 +73,15 @@ function addFiles(event: Event) {
     if (fileInput.value) fileInput.value.value = '';
 }
 function removePicked(index: number) { URL.revokeObjectURL(picked.value[index].url); picked.value.splice(index, 1); }
+// Per-photo editing before posting: crop, filters and AI styles; the edited JPEG replaces the picked file.
+const editingIndex = ref<number | null>(null);
+function applyEdit(photo: Blob) {
+    const index = editingIndex.value;
+    if (index === null) return;
+    URL.revokeObjectURL(picked.value[index].url);
+    const file = new File([photo], `photo-${index + 1}.jpg`, { type: 'image/jpeg' });
+    picked.value[index] = { file, url: URL.createObjectURL(file) };
+}
 async function publish() {
     if (!picked.value.length || posting.value) return;
     posting.value = true; postError.value = '';
@@ -159,13 +169,14 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <form @submit.prevent="publish">
                 <header><h2 id="composer-title">Post photos</h2><button type="button" class="icon-btn" aria-label="Close" @click="closeComposer"><X :size="18" /></button></header>
                 <div class="picked">
-                    <div v-for="(p, i) in picked" :key="p.url" class="thumb"><img :src="p.url" alt="" /><button type="button" :aria-label="`Remove photo ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button></div>
+                    <div v-for="(p, i) in picked" :key="p.url" class="thumb"><img :src="p.url" alt="" /><button type="button" :aria-label="`Remove photo ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button><button type="button" class="edit-thumb" :aria-label="`Edit photo ${i + 1}`" @click="editingIndex = i"><Sparkles :size="13" aria-hidden="true" /> Edit</button></div>
                     <label v-if="picked.length < 10" class="add-thumb"><ImagePlus :size="22" aria-hidden="true" /><span>{{ picked.length ? 'Add more' : 'Choose photos' }}</span><input ref="fileInput" type="file" accept="image/*" multiple class="sr-only" @change="addFiles" /></label>
                 </div>
                 <label class="field">Caption<textarea v-model="caption" rows="3" maxlength="2000" placeholder="Say something about these moments…" /></label>
                 <p v-if="postError" class="error" role="alert">{{ postError }}</p>
                 <div class="actions"><button type="button" class="btn secondary" :disabled="posting" @click="closeComposer">Cancel</button><button type="submit" class="btn" :disabled="posting || !picked.length">{{ posting ? 'Posting…' : `Post${picked.length ? ` ${picked.length} photo${picked.length === 1 ? '' : 's'}` : ''}` }}</button></div>
             </form>
+            <PhotoEditor v-if="editingIndex !== null && picked[editingIndex]" :source="picked[editingIndex].url" aspect="original" :output-size="2000" subject="photo" :title="`Edit photo ${editingIndex + 1}`" confirm-label="Done" @done="applyEdit" @close="editingIndex = null" />
         </dialog>
 
         <div v-if="viewing" class="viewer" role="dialog" aria-modal="true" :aria-label="`Photo ${viewing.index + 1} of ${viewing.photos.length}`">
@@ -223,7 +234,8 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .picked{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .thumb,.add-thumb{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover}
-.thumb button{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:0;background:#172f2acc;color:#fff;cursor:pointer}
+.edit-thumb{position:absolute;left:4px;bottom:4px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:0;border-radius:999px;background:#ffffffe6;color:#214e3e;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.thumb button:not(.edit-thumb){position:absolute;top:4px;right:4px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:0;background:#172f2acc;color:#fff;cursor:pointer}
 .add-thumb{display:grid;place-content:center;justify-items:center;gap:4px;border:2px dashed #b9c9a6;background:#f5f9ef;color:#507044;font-size:12px;font-weight:650;cursor:pointer}
 .composer textarea{border:1px solid #d6dfd5;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical}
 .error{color:#9c3e2d;font-size:13px}

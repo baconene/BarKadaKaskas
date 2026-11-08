@@ -47,18 +47,22 @@ class TravelerProfileController extends Controller
         return $request->is('api/*') ? response()->json(['data' => $this->profile($user->fresh())]) : back();
     }
 
-    /** Previews an AI-restyled version of a photo; the traveller saves it with storeAvatar if they like it. */
+    /**
+     * Previews an AI-restyled version of a photo (profile picture, trip cover or trip photo). Nothing is stored;
+     * the traveller uploads the result where they want it.
+     */
     public function restyle(Request $request, \App\Services\Vertex\PhotoRestyler $restyler)
     {
         $request->validate([
             'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
             'style' => ['nullable', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Services\Vertex\PhotoRestyler::STYLES))],
             'prompt' => 'nullable|string|max:200|required_without:style',
+            'subject' => 'nullable|in:portrait,photo',
         ]);
         @set_time_limit(150);
         $file = $request->file('photo');
         try {
-            $image = $restyler->restyle((string) file_get_contents($file->getRealPath()), $file->getMimeType() ?: 'image/jpeg', $request->input('style'), $request->input('prompt'));
+            $image = $restyler->restyle((string) file_get_contents($file->getRealPath()), $file->getMimeType() ?: 'image/jpeg', $request->input('style'), $request->input('prompt'), $request->input('subject', 'portrait'));
         } catch (\Illuminate\Http\Client\ConnectionException) {
             return response()->json(['message' => 'The AI took too long to answer. Please try again.'], 504);
         } catch (\RuntimeException $e) {

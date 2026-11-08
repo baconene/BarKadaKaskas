@@ -21,6 +21,14 @@ class PhotoRestyler
         'sketch' => 'a detailed pencil sketch with gentle shading',
         'headshot' => 'a professional studio headshot with flattering soft lighting and a plain neutral background',
         'beach' => 'a natural photo with a sunny tropical beach behind them, as if on a barkada trip',
+        'golden-hour' => 'a warm golden-hour photograph with soft sunset light and gentle glow',
+        'postcard' => 'a vintage travel postcard with faded film colours and a nostalgic feel',
+    ];
+
+    /** Styles offered for each kind of photo. */
+    public const SUBJECT_STYLES = [
+        'portrait' => ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'headshot', 'beach'],
+        'photo' => ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'golden-hour', 'postcard'],
     ];
 
     public function __construct(private readonly VertexClient $vertex) {}
@@ -31,11 +39,14 @@ class PhotoRestyler
     }
 
     /** @return array{mime: string, data: string} base64 image */
-    public function restyle(string $bytes, string $mimeType, ?string $style, ?string $custom): array
+    /** [subject] "portrait" keeps the person recognisable for a profile picture; "photo" restyles a trip photo or cover. */
+    public function restyle(string $bytes, string $mimeType, ?string $style, ?string $custom, string $subject = 'portrait'): array
     {
         $look = $custom ? trim($custom) : (self::STYLES[$style] ?? self::STYLES['cartoon']);
-        $prompt = "Restyle this profile photo as {$look}. Keep the same person clearly recognisable: same face, hair, skin tone, expression and pose. "
-            .'Make it a square, centred head-and-shoulders portrait that works as a small round profile picture. No text, captions, borders or watermarks.';
+        $prompt = $subject === 'photo'
+            ? "Restyle this travel photo as {$look}. Keep the same scene, people, landmarks and composition, at the same aspect ratio. Keep any people recognisable. No text, captions, borders or watermarks."
+            : "Restyle this profile photo as {$look}. Keep the same person clearly recognisable: same face, hair, skin tone, expression and pose. "
+                .'Make it a square, centred head-and-shoulders portrait that works as a small round profile picture. No text, captions, borders or watermarks.';
         try {
             $response = $this->vertex->generate($this->model(), [
                 'contents' => [['role' => 'user', 'parts' => [

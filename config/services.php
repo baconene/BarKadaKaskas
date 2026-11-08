@@ -14,6 +14,8 @@ return [
         'project' => env('VERTEX_PROJECT_ID'),
         'location' => env('VERTEX_LOCATION') ?: 'global',
         'model' => env('VERTEX_GEMINI_MODEL') ?: 'gemini-2.5-flash',
+        // Image model for AI profile-photo styles (a Gemini "Nano Banana" image model from Model Garden).
+        'image_model' => env('VERTEX_IMAGE_MODEL') ?: 'gemini-2.5-flash-image',
     ],
 
     // The landing page's "Download for Android" button. GitHub serves the newest release's APK at this

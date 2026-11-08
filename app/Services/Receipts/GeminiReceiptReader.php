@@ -16,9 +16,11 @@ class GeminiReceiptReader
 {
     public const PROVIDER = 'gemini-vertex';
 
+    public function __construct(private readonly \App\Services\Vertex\VertexClient $vertex) {}
+
     public function configured(): bool
     {
-        return $this->apiKey() !== null || $this->credentials() !== null;
+        return $this->vertex->configured();
     }
 
     public function model(): string
@@ -31,18 +33,6 @@ class GeminiReceiptReader
     {
         if (! $this->configured()) {
             throw new ReceiptReadException('Receipt scanning is not set up yet. You can still enter the expense by hand.', 503);
-        }
-
-        $request = Http::connectTimeout(10)->timeout(120)->acceptJson();
-        if ($credentials = $this->credentials()) {
-            $request = $request->withToken($this->accessToken($credentials));
-            $url = $this->endpoint($credentials['project_id']);
-        } elseif ($project = config('services.gemini.project')) {
-            // API key aimed at a project and location; newer models are often only served from "global".
-            $url = $this->endpoint((string) $project).'?key='.urlencode((string) $this->apiKey());
-        } else {
-            // Express mode without a project: Google picks the region (us-central1), where not every model is offered.
-            $url = 'https://aiplatform.googleapis.com/v1/publishers/google/models/'.$this->model().':generateContent?key='.urlencode((string) $this->apiKey());
         }
 
         $body = [
@@ -62,14 +52,18 @@ class GeminiReceiptReader
         // without it, and remembered so later scans skip the failed attempt.
         $rejectsThinking = 'gemini-rejects-thinking:'.$this->model();
         $response = null;
+        try {
         if (! Cache::get($rejectsThinking)) {
-            $response = $request->post($url, array_merge_recursive($body, ['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => 0]]]));
+            $response = $this->vertex->generate($this->model(), array_merge_recursive($body, ['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => 0]]]));
             if ($response->status() === 400 && str_contains(strtolower((string) $response->json('error.message')), 'think')) {
                 Cache::forever($rejectsThinking, true);
                 $response = null;
             }
         }
-        $response ??= $request->post($url, $body);
+        $response ??= $this->vertex->generate($this->model(), $body);
+        } catch (\App\Services\Vertex\VertexException $e) {
+            throw new ReceiptReadException('Receipt scanning is misconfigured. Ask the app admin to check the Vertex AI key.', 503, $e->detail);
+        }
 
         if ($response->failed()) {
             $detail = $response->json('error.status').': '.$response->json('error.message');
@@ -134,51 +128,5 @@ class GeminiReceiptReader
             ],
             'required' => ['is_receipt', 'items', 'total', 'category'],
         ];
-    }
-
-    private function endpoint(string $project): string
-    {
-        $location = (string) (config('services.gemini.location') ?: 'global');
-        $host = $location === 'global' ? 'aiplatform.googleapis.com' : "{$location}-aiplatform.googleapis.com";
-        return "https://{$host}/v1/projects/".rawurlencode($project)."/locations/{$location}/publishers/google/models/".$this->model().':generateContent';
-    }
-
-    private function apiKey(): ?string
-    {
-        return config('services.gemini.api_key') ?: null;
-    }
-
-    /** @return array{client_email: string, private_key: string, project_id: string, token_uri: string}|null */
-    private function credentials(): ?array
-    {
-        $value = trim((string) config('services.gemini.credentials'));
-        if ($value === '') { return null; }
-        $json = str_starts_with($value, '{') ? $value : (is_file($value) ? (string) file_get_contents($value) : (string) base64_decode($value, true));
-        $key = json_decode($json, true);
-        $project = config('services.gemini.project') ?: ($key['project_id'] ?? null);
-        if (! is_array($key) || empty($key['client_email']) || empty($key['private_key']) || ! $project) {
-            Log::warning('VERTEX_CREDENTIALS is not a usable service-account key.');
-            return null;
-        }
-        return ['client_email' => $key['client_email'], 'private_key' => $key['private_key'], 'project_id' => $project, 'token_uri' => $key['token_uri'] ?? 'https://oauth2.googleapis.com/token'];
-    }
-
-    /** OAuth access token for the service account (JWT bearer grant), cached until shortly before it expires. */
-    private function accessToken(array $credentials): string
-    {
-        return Cache::remember('vertex-token:'.sha1($credentials['client_email']), now()->addMinutes(50), function () use ($credentials) {
-            $now = time();
-            $encode = fn (array $part) => rtrim(strtr(base64_encode(json_encode($part)), '+/', '-_'), '=');
-            $unsigned = $encode(['alg' => 'RS256', 'typ' => 'JWT']).'.'.$encode(['iss' => $credentials['client_email'], 'scope' => 'https://www.googleapis.com/auth/cloud-platform', 'aud' => $credentials['token_uri'], 'iat' => $now, 'exp' => $now + 3600]);
-            if (! openssl_sign($unsigned, $signature, $credentials['private_key'], OPENSSL_ALGO_SHA256)) {
-                throw new ReceiptReadException('Receipt scanning is misconfigured. Ask the app admin to check the Vertex AI key.', 503, 'openssl_sign failed');
-            }
-            $response = Http::asForm()->timeout(20)->post($credentials['token_uri'], ['grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => $unsigned.'.'.rtrim(strtr(base64_encode($signature), '+/', '-_'), '=')]);
-            if ($response->failed() || ! $response->json('access_token')) {
-                Log::warning('Vertex AI token exchange failed', ['status' => $response->status(), 'error' => $response->json('error_description') ?? $response->json('error')]);
-                throw new ReceiptReadException('Receipt scanning is misconfigured. Ask the app admin to check the Vertex AI key.', 503, (string) $response->json('error'));
-            }
-            return $response->json('access_token');
-        });
     }
 }

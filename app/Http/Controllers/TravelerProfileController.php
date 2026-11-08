@@ -47,6 +47,26 @@ class TravelerProfileController extends Controller
         return $request->is('api/*') ? response()->json(['data' => $this->profile($user->fresh())]) : back();
     }
 
+    /** Previews an AI-restyled version of a photo; the traveller saves it with storeAvatar if they like it. */
+    public function restyle(Request $request, \App\Services\Vertex\PhotoRestyler $restyler)
+    {
+        $request->validate([
+            'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
+            'style' => ['nullable', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Services\Vertex\PhotoRestyler::STYLES))],
+            'prompt' => 'nullable|string|max:200|required_without:style',
+        ]);
+        @set_time_limit(150);
+        $file = $request->file('photo');
+        try {
+            $image = $restyler->restyle((string) file_get_contents($file->getRealPath()), $file->getMimeType() ?: 'image/jpeg', $request->input('style'), $request->input('prompt'));
+        } catch (\Illuminate\Http\Client\ConnectionException) {
+            return response()->json(['message' => 'The AI took too long to answer. Please try again.'], 504);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], in_array($e->getCode(), [422, 502, 503], true) ? $e->getCode() : 502);
+        }
+        return response()->json(['data' => ['image' => 'data:'.$image['mime'].';base64,'.$image['data']]]);
+    }
+
     public function avatar(string $file)
     {
         return PublicImages::serve('avatars', $file);

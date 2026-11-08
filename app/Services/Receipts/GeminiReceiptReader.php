@@ -37,7 +37,11 @@ class GeminiReceiptReader
         if ($credentials = $this->credentials()) {
             $request = $request->withToken($this->accessToken($credentials));
             $url = $this->endpoint($credentials['project_id']);
+        } elseif ($project = config('services.gemini.project')) {
+            // API key aimed at a project and location; newer models are often only served from "global".
+            $url = $this->endpoint((string) $project).'?key='.urlencode((string) $this->apiKey());
         } else {
+            // Express mode without a project: Google picks the region (us-central1), where not every model is offered.
             $url = 'https://aiplatform.googleapis.com/v1/publishers/google/models/'.$this->model().':generateContent?key='.urlencode((string) $this->apiKey());
         }
 
@@ -70,6 +74,9 @@ class GeminiReceiptReader
         if ($response->failed()) {
             $detail = $response->json('error.status').': '.$response->json('error.message');
             Log::warning('Gemini receipt scan failed', ['status' => $response->status(), 'error' => $detail]);
+            if ($response->status() === 404) {
+                throw new ReceiptReadException('The receipt reader model "'.$this->model().'" is not available for this Google Cloud project or region. Ask the app admin to check VERTEX_GEMINI_MODEL, VERTEX_PROJECT_ID and VERTEX_LOCATION.', 502, $detail);
+            }
             throw new ReceiptReadException('The receipt reader is unavailable right now. Please try again, or enter the expense by hand.', 502, $detail);
         }
 

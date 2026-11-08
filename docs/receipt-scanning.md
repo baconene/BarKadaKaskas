@@ -36,7 +36,10 @@ receipt (`processing_status: extracted`) and records the reading in
    ```
 
    `VERTEX_PROJECT_ID` is read from the key; set it only to use another project.
-   Alternatively, use a Vertex AI **express mode** API key: `VERTEX_API_KEY=...`.
+   Alternatively, use an API key: `VERTEX_API_KEY=...`. Also set
+   `VERTEX_PROJECT_ID` (the project ID or number) so requests go to
+   `VERTEX_LOCATION` (default `global`); without it Google routes to
+   `us-central1`, where newer models may not exist (404 NOT_FOUND).
 4. Deploy, run `php artisan migrate --force` and `php artisan config:cache`,
    and make sure the scheduler runs (`* * * * * php artisan schedule:run`).
 

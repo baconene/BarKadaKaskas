@@ -144,4 +144,19 @@ class ReceiptScanTest extends TestCase
         $sent = Http::recorded()->map(fn ($pair) => isset($pair[0]['generationConfig']['thinkingConfig']))->all();
         $this->assertSame([true, false, false], $sent); // the second scan remembers and skips the rejected setting
     }
+
+    public function test_api_key_with_a_project_uses_the_global_location(): void
+    {
+        config(['services.gemini.project' => '1019187888243', 'services.gemini.location' => 'global', 'services.gemini.model' => 'gemini-4-argon']);
+        $this->fakeGemini(['is_receipt' => true, 'category' => 'food', 'items' => [], 'total' => 100]);
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertCreated();
+        Http::assertSent(fn ($request) => str_starts_with($request->url(), 'https://aiplatform.googleapis.com/v1/projects/1019187888243/locations/global/publishers/google/models/gemini-4-argon:generateContent?key=test-key'));
+    }
+
+    public function test_unavailable_model_explains_what_to_check(): void
+    {
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['error' => ['status' => 'NOT_FOUND', 'message' => 'Publisher model was not found']], 404)]);
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))
+            ->assertStatus(502)->assertJsonPath('message', fn ($m) => str_contains($m, 'VERTEX_LOCATION'));
+    }
 }

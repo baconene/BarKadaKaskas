@@ -33,7 +33,7 @@ async function prepare(file: File): Promise<Blob> {
 function failure(status: number, message?: string): string {
     if (status === 419) return 'Your session expired. Refresh the page and try again.';
     if (status === 413) return 'That photo is too large for the server. Try a smaller photo. (HTTP 413)';
-    if (status === 502 || status === 504) return message && status === 502 ? message : `The server took too long waiting for the receipt reader. Try again, or choose a faster model. (HTTP ${status})`;
+    if (status === 502 || status === 504) return message || `The server stopped waiting for the receipt reader. Try again in a moment; if it keeps happening, raise the server's PHP time limit or use a faster model. (HTTP ${status})`;
     if (message && message !== 'Server Error') return message;
     return `The receipt could not be read (HTTP ${status}). Please try again; if it keeps happening, check the server log.`;
 }

@@ -130,4 +130,18 @@ class ReceiptScanTest extends TestCase
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))
             ->assertStatus(504)->assertJsonPath('message', 'The receipt reader took too long to answer. Try again, or set a faster model (Flash or Flash Lite).');
     }
+
+    public function test_minimal_thinking_is_requested_and_dropped_when_a_model_rejects_it(): void
+    {
+        $ok = ['candidates' => [['content' => ['parts' => [['text' => json_encode(['is_receipt' => true, 'category' => 'food', 'items' => [], 'total' => 100])]]]]]];
+        Http::fake(['aiplatform.googleapis.com/*' => Http::sequence()
+            ->push(['error' => ['status' => 'INVALID_ARGUMENT', 'message' => 'Thinking budget is not supported for this model.']], 400)
+            ->push($ok)->push($ok)]);
+
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertCreated();
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertCreated();
+
+        $sent = Http::recorded()->map(fn ($pair) => isset($pair[0]['generationConfig']['thinkingConfig']))->all();
+        $this->assertSame([true, false, false], $sent); // the second scan remembers and skips the rejected setting
+    }
 }

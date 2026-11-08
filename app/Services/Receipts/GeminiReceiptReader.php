@@ -41,7 +41,7 @@ class GeminiReceiptReader
             $url = 'https://aiplatform.googleapis.com/v1/publishers/google/models/'.$this->model().':generateContent?key='.urlencode((string) $this->apiKey());
         }
 
-        $response = $request->post($url, [
+        $body = [
             'contents' => [['role' => 'user', 'parts' => [
                 ['inlineData' => ['mimeType' => $mimeType, 'data' => base64_encode($bytes)]],
                 ['text' => $this->prompt($tripCurrency)],
@@ -50,9 +50,22 @@ class GeminiReceiptReader
                 'temperature' => 0,
                 'responseMimeType' => 'application/json',
                 'responseSchema' => $this->schema(),
-                // No thinkingConfig: its format differs between Gemini generations, and some models reject it.
             ],
-        ]);
+        ];
+
+        // Reading a receipt needs no long reasoning, and "thinking" models can otherwise take over a minute,
+        // which web servers cut off. Ask for minimal thinking; a model that rejects the setting is retried
+        // without it, and remembered so later scans skip the failed attempt.
+        $rejectsThinking = 'gemini-rejects-thinking:'.$this->model();
+        $response = null;
+        if (! Cache::get($rejectsThinking)) {
+            $response = $request->post($url, array_merge_recursive($body, ['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => 0]]]));
+            if ($response->status() === 400 && str_contains(strtolower((string) $response->json('error.message')), 'think')) {
+                Cache::forever($rejectsThinking, true);
+                $response = null;
+            }
+        }
+        $response ??= $request->post($url, $body);
 
         if ($response->failed()) {
             $detail = $response->json('error.status').': '.$response->json('error.message');

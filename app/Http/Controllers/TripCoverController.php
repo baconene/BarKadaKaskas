@@ -20,9 +20,7 @@ class TripCoverController extends Controller
     {
         Gate::authorize('plan', $trip);
         $request->validate(['cover' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192|dimensions:min_width=200,min_height=120']);
-        $file = $request->file('cover');
-        $extension = match ($file->getMimeType()) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
-        $path = $file->storeAs(self::DIRECTORY, Str::random(40).'.'.$extension, 'local');
+        $path = \App\Support\PublicImages::store($request->file('cover'), self::DIRECTORY);
         $previous = $trip->cover_path;
         $trip->update(['cover_path' => $path]);
         if ($previous) { Storage::disk('local')->delete($previous); }
@@ -39,9 +37,6 @@ class TripCoverController extends Controller
 
     public function show(string $file)
     {
-        abort_unless(preg_match('/^[A-Za-z0-9]{40}\.(jpg|png|webp)$/', $file) === 1, 404);
-        $path = self::DIRECTORY.'/'.$file;
-        abort_unless(Storage::disk('local')->exists($path), 404);
-        return Storage::disk('local')->response($path, null, ['Cache-Control' => 'public, max-age=31536000, immutable', 'X-Content-Type-Options' => 'nosniff']);
+        return \App\Support\PublicImages::serve(self::DIRECTORY, $file);
     }
 }

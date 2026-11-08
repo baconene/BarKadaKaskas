@@ -38,7 +38,7 @@ class TripController extends Controller
         $shareRows = $trip->expenses->mapWithKeys(fn ($expense) => [$expense->id => app(\App\Services\ExpenseShares::class)->rows($expense)]);
         if ($request->is('api/*')) {
             return response()->json(['data' => [
-                'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
+                'trip' => $trip->load(['members.user:id,name,phone,other_contact,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,avatar_path', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
                 'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
                 'balances' => $balances->calculate($trip), 'expense_shares' => (object) $shareRows->all(),
                 'current_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'),
@@ -46,7 +46,7 @@ class TripController extends Controller
             ]]);
         }
         return Inertia::render('Trips/Show', [
-            'trip' => $trip->load(['members.user:id,name', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
+            'trip' => $trip->load(['members.user:id,name,phone,other_contact,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,avatar_path', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
             'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
             'balances' => $balances->calculate($trip), 'isOrganizer' => $trip->organizer_user_id === $request->user()->id,
             'expenseShares' => $shareRows,

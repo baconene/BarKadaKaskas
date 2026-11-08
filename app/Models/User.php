@@ -22,7 +22,16 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'phone',
+        'other_contact',
+        'emergency_contact_name',
+        'emergency_contact_relationship',
+        'emergency_contact_phone',
+        'avatar_path',
     ];
+
+    /** Profile picture URL (see App\Support\PublicImages). */
+    protected $appends = ['avatar_url'];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -32,6 +41,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'avatar_path',
     ];
 
     /**
@@ -45,5 +55,10 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function getAvatarUrlAttribute(): ?string
+    {
+        return \App\Support\PublicImages::url($this->avatar_path);
     }
 }

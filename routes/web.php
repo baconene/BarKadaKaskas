@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TripController, TripCoverController};
+use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -9,6 +9,8 @@ Route::get('/', function () {
 })->name('home');
 
 // Cover photos are served by an unguessable name so the mobile apps can load them without a session.
+Route::get('avatars/{file}', [TravelerProfileController::class, 'avatar'])->middleware('throttle:600,1')->name('avatars.show');
+Route::get('trip-photos/{file}', [TripPostController::class, 'photo'])->middleware('throttle:600,1')->name('trip-photos.show');
 Route::get('trip-covers/{file}', [TripCoverController::class, 'show'])->middleware('throttle:240,1')->name('trip-covers.show');
 
 Route::get('join/{token}', [TripController::class, 'invitation'])->middleware('throttle:60,1')->name('invitations.show');
@@ -28,6 +30,14 @@ Route::middleware('auth')->group(function () {
     Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary'])->name('itinerary.store');
     Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary'])->name('itinerary.update');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');
+    Route::get('trips/{trip}/posts', [TripPostController::class, 'index'])->name('posts.index');
+    Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1')->name('posts.store');
+    Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy'])->name('posts.destroy');
+    Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1')->name('posts.like');
+    Route::get('me/profile', [TravelerProfileController::class, 'show'])->name('traveler-profile.show');
+    Route::patch('me/profile', [TravelerProfileController::class, 'update'])->name('traveler-profile.update');
+    Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1')->name('avatar.store');
+    Route::delete('me/avatar', [TravelerProfileController::class, 'destroyAvatar'])->name('avatar.destroy');
     Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store'])->name('expenses.store');
     Route::delete('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'destroy'])->name('expenses.destroy');
     Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update'])->name('expenses.update');

@@ -13,11 +13,12 @@ class Trip extends Model
     protected $appends = ['cover_url'];
     protected function casts(): array { return ['starts_on' => 'date:Y-m-d', 'ends_on' => 'date:Y-m-d', 'cancelled_at' => 'datetime', 'hidden_at' => 'datetime']; }
     /** Public URL of the organizer's cover photo, or null. */
-    public function getCoverUrlAttribute(): ?string { return $this->cover_path ? route('trip-covers.show', basename($this->cover_path)) : null; }
+    public function getCoverUrlAttribute(): ?string { return \App\Support\PublicImages::url($this->cover_path); }
     public function isCancelled(): bool { return $this->status === 'cancelled'; }
     public function organizer(): BelongsTo { return $this->belongsTo(User::class, 'organizer_user_id'); }
     public function members(): HasMany { return $this->hasMany(TripMember::class); }
     public function expenses(): HasMany { return $this->hasMany(Expense::class); }
     public function itineraryItems(): HasMany { return $this->hasMany(ItineraryItem::class); }
     public function settlements(): HasMany { return $this->hasMany(Settlement::class); }
+    public function posts(): HasMany { return $this->hasMany(TripPost::class); }
 }

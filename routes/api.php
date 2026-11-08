@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TripController, TripCoverController};
+use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +26,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary']);
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
+        Route::get('trips/{trip}/posts', [TripPostController::class, 'index']);
+        Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1');
+        Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy']);
+        Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1');
+        Route::get('me/profile', [TravelerProfileController::class, 'show']);
+        Route::patch('me/profile', [TravelerProfileController::class, 'update']);
+        Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1');
+        Route::delete('me/avatar', [TravelerProfileController::class, 'destroyAvatar']);
         Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store']);
         Route::delete('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'destroy']);
         Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update']);

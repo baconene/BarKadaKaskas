@@ -2,6 +2,7 @@
 import { router, useForm } from '@inertiajs/vue3';
 import { ImagePlus, Sparkles, Trash2, X } from 'lucide-vue-next';
 import PhotoEditor from '@/components/PhotoEditor.vue';
+import { CURRENCIES } from '@/lib/regions';
 import { computed, onMounted, ref } from 'vue';
 
 /** Organizer-only editor for the trip's details and cover photo. */
@@ -84,7 +85,7 @@ function save() {
                 <label class="field">Starts<input v-model="form.starts_on" type="date" required /></label>
                 <label class="field">Ends<input v-model="form.ends_on" type="date" :min="form.starts_on" required /></label>
                 <label class="field">Currency
-                    <select v-model="form.currency_code" :disabled="hasExpenses"><option v-for="c in ['PHP','USD','EUR','GBP','SGD','AUD','CAD']" :key="c">{{ c }}</option></select>
+                    <select v-model="form.currency_code" :disabled="hasExpenses"><option v-for="c in CURRENCIES" :key="c">{{ c }}</option></select>
                     <small v-if="hasExpenses" class="hint">Locked after expenses are recorded.</small>
                 </label>
                 <label class="field">Time zone<select v-model="form.timezone"><option v-for="z in timezones" :key="z" :value="z">{{ z.replace('_', ' ') }}</option></select></label>

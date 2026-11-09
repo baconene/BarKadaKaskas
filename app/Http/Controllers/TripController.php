@@ -19,11 +19,13 @@ class TripController extends Controller
         $trips = $mine->when($showHidden, fn ($q) => $q->whereNotNull('hidden_at'), fn ($q) => $q->whereNull('hidden_at'))->withCount('members')->latest()->get();
         return $request->is('api/*')
             ? response()->json(['data' => $trips, 'meta' => ['hidden_count' => $hiddenCount]])
-            : Inertia::render('Trips/Index', ['trips' => $trips, 'hiddenCount' => $hiddenCount, 'showingHidden' => $showHidden]);
+            : Inertia::render('Trips/Index', ['trips' => $trips, 'hiddenCount' => $hiddenCount, 'showingHidden' => $showHidden,
+                // For the plan-a-trip flow: destination suggestions (Google Places) and the optional AI planner.
+                'mapsKey' => config('services.google_maps.browser_key'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured()]);
     }
     public function store(Request $request)
     {
-        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => 'required|in:PHP,USD,EUR,GBP,SGD,AUD,CAD', 'ai_prompt' => 'nullable|string|max:2000']);
+        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => ['required', \Illuminate\Validation\Rule::in(Trip::CURRENCIES)], 'ai_prompt' => 'nullable|string|max:2000']);
         // An optional "plan it with AI" request from the create form opens the AI planner on the new trip.
         $aiPrompt = trim((string) ($data['ai_prompt'] ?? '')); unset($data['ai_prompt']);
         $trip = DB::transaction(function () use ($data, $request) {
@@ -63,7 +65,7 @@ class TripController extends Controller
     public function update(Request $request, Trip $trip)
     {
         Gate::authorize('plan', $trip);
-        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => 'required|in:PHP,USD,EUR,GBP,SGD,AUD,CAD']);
+        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => ['required', \Illuminate\Validation\Rule::in(Trip::CURRENCIES)]]);
         if ($data['currency_code'] !== $trip->currency_code && $trip->expenses()->exists()) {
             throw \Illuminate\Validation\ValidationException::withMessages(['currency_code' => 'The currency cannot change after expenses have been recorded.']);
         }

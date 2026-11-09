@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import PlanTripWizard from '@/components/trip/PlanTripWizard.vue';
 import { onBeforeUnmount, ref } from 'vue';
 import LoadingImage from '@/components/LoadingImage.vue';
 import { MapPin, Plus, ArrowUpRight, Users, CalendarDays, EyeOff } from 'lucide-vue-next';
 import TravelLayout from '@/layouts/TravelLayout.vue';
-defineProps<{trips: {id:number;name:string;destination:string;starts_on:string;ends_on:string;members_count:number;status:string;cover_url?:string|null}[]; hiddenCount?: number; showingHidden?: boolean}>();
+defineProps<{mapsKey?: string | null; aiPlanner?: boolean; trips: {id:number;name:string;destination:string;starts_on:string;ends_on:string;members_count:number;status:string;cover_url?:string|null}[]; hiddenCount?: number; showingHidden?: boolean}>();
 const creating = ref(false);
 // The card being opened: on slow connections it shows "Opening…" until the trip page arrives.
 const opening = ref<number | null>(null);
 const stopListening = router.on('finish', () => { opening.value = null; });
 onBeforeUnmount(stopListening);
-const form = useForm({name:'',destination:'',description:'',starts_on:'',ends_on:'',timezone:'Asia/Manila',currency_code:'PHP',ai_prompt:''});
 </script>
 <template>
  <Head title="My trips" /><TravelLayout>
-  <div class="page-heading"><div><p class="eyebrow">Your next story starts here</p><h1>Adventures, together.</h1><p class="muted" style="margin-top:12px">The plans, the people, and every shared peso. All in one place.</p></div><button class="btn" @click="creating = !creating"><Plus :size="17" /> Plan a trip</button></div>
-  <form v-if="creating" class="card form-grid" style="margin-bottom:28px" @submit.prevent="form.post('/trips')"><h2 class="full">Where are we going?</h2><label class="field">Trip name<input v-model="form.name" required placeholder="The barkada goes to Palawan" maxlength="120" /></label><label class="field">Destination<input v-model="form.destination" required placeholder="El Nido, Philippines" /></label><label class="field">Start date<input v-model="form.starts_on" type="date" required /></label><label class="field">End date<input v-model="form.ends_on" type="date" :min="form.starts_on" required /></label><label class="field">Trip currency<select v-model="form.currency_code"><option v-for="currency in ['PHP','USD','EUR','GBP','SGD','AUD','CAD']" :key="currency">{{ currency }}</option></select></label><label class="field">Time zone<input v-model="form.timezone" required placeholder="Asia/Manila" /></label><label class="field full">About this trip<textarea v-model="form.description" rows="2" /></label><label class="field full">Plan it with AI (optional)<textarea v-model="form.ai_prompt" rows="3" maxlength="2000" placeholder="Describe the trip and AI will suggest an itinerary for you to approve, e.g. beaches and waterfalls, budget-friendly, local food" /><small class="muted">Leave blank to add activities yourself.</small></label><div class="row full"><button class="btn" :disabled="form.processing">Create trip</button><button type="button" class="btn secondary" @click="creating=false">Cancel</button></div></form>
+  <div class="page-heading"><div><p class="eyebrow">Your next story starts here</p><h1>Adventures, together.</h1><p class="muted" style="margin-top:12px">The plans, the people, and every shared peso. All in one place.</p></div><button class="btn" @click="creating = true"><Plus :size="17" /> Plan a trip</button></div>
+  <PlanTripWizard v-if="creating" :maps-key="mapsKey" :ai-planner="aiPlanner" @close="creating = false" />
   <div class="row spread" style="margin:32px 0 18px"><h2>{{ showingHidden ? 'Hidden trips' : 'Your trips' }} <span class="muted">({{ trips.length }})</span></h2><Link v-if="showingHidden" href="/dashboard" class="hidden-link">← Back to your trips</Link><Link v-else-if="hiddenCount" href="/dashboard?hidden=1" class="hidden-link"><EyeOff :size="15" /> {{ hiddenCount }} hidden trip{{ hiddenCount === 1 ? '' : 's' }}</Link><span v-else class="muted">A little planning. A lot of memories.</span></div>
   <p v-if="showingHidden" class="muted" style="margin:-8px 0 18px">Cancelled trips the organizer hid. Open one to reopen it or show it again.</p>
   <div v-if="!trips.length && showingHidden" class="card empty"><h2>No hidden trips.</h2></div>

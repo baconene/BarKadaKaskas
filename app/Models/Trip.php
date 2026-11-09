@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Trip extends Model
 {
+    /** Currencies a trip can use (the web plan-a-trip flow mirrors this in resources/js/lib/regions.ts). */
+    public const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'JPY', 'KRW', 'THB', 'VND', 'IDR', 'MYR', 'HKD', 'TWD', 'CNY', 'AED', 'NZD', 'CHF'];
+
     protected $fillable = ['organizer_user_id', 'name', 'description', 'destination', 'starts_on', 'ends_on', 'timezone', 'currency_code', 'status', 'cancelled_at', 'cancellation_reason', 'hidden_at', 'cover_path'];
     protected $hidden = ['cover_path'];
     protected $appends = ['cover_url'];

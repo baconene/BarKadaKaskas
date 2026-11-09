@@ -93,4 +93,14 @@ class TripDetailsTest extends TestCase
         $this->actingAs($this->owner)->from(route('trips.show', $this->trip))->patch(route('trips.update', $this->trip), $this->details())->assertRedirect(route('trips.show', $this->trip));
         $this->assertSame('LANY: a beautiful blur', $this->trip->fresh()->name);
     }
+
+    public function test_trips_accept_destination_currencies_and_the_list_offers_planning_settings(): void
+    {
+        $this->withoutVite();
+        config(['services.google_maps.browser_key' => 'browser-key']);
+        $this->actingAs($this->owner)->post('/trips', ['name' => 'Tokyo food trip', 'destination' => 'Tokyo, Japan', 'starts_on' => '2026-12-01', 'ends_on' => '2026-12-05', 'timezone' => 'Asia/Tokyo', 'currency_code' => 'JPY'])->assertRedirect();
+        $this->assertDatabaseHas('trips', ['name' => 'Tokyo food trip', 'currency_code' => 'JPY', 'timezone' => 'Asia/Tokyo']);
+        $this->actingAs($this->owner)->post('/trips', ['name' => 'Bad', 'destination' => 'X', 'starts_on' => '2026-12-01', 'ends_on' => '2026-12-05', 'timezone' => 'Asia/Tokyo', 'currency_code' => 'XYZ'])->assertSessionHasErrors('currency_code');
+        $this->actingAs($this->owner)->get('/dashboard')->assertInertia(fn ($page) => $page->component('Trips/Index')->where('mapsKey', 'browser-key')->has('aiPlanner'));
+    }
 }

@@ -2,37 +2,78 @@ package com.barkadakaskas.app.nav
 
 import android.Manifest
 import android.app.AlertDialog
-import android.location.Geocoder
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.location.Geocoder
 import android.os.Bundle
-import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.Toast
-import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.google.android.libraries.navigation.NavigationApi
 import com.google.android.libraries.navigation.NavigationView
 import com.google.android.libraries.navigation.Navigator
 import com.google.android.libraries.navigation.RoutingOptions
 import com.google.android.libraries.navigation.Waypoint
+import java.util.Locale
+
+private val Forest = Color(0xFF214E3E)
+private val Moss = Color(0xFF698448)
+private val Sage = Color(0xFFE7EFDD)
+private val Cream = Color(0xFFFBFCF8)
+private val Ink = Color(0xFF172F2A)
+private val Muted = Color(0xFF6C7C72)
+private val Line = Color(0xFFE0E7DC)
+private val Danger = Color(0xFFA6573E)
 
 /**
- * Turn-by-turn navigation inside the app with Google's Navigation SDK, from the traveller's location to one stop.
- * Shows Google's terms the first time. Anything that stops navigation from starting (SDK not enabled for the key,
- * terms declined, no location permission, no route) hands the trip to Google Maps instead.
+ * Turn-by-turn navigation inside the app with Google's Navigation SDK. Google's map and guidance fill the top;
+ * below it, in the app's own style, a panel shows where you're heading (with End) and the day's itinerary, so the
+ * next stop is one tap away. Shows Google's terms the first time. If navigation can't start (SDK not enabled for
+ * the key, terms declined, no location permission, no route) the trip is handed to Google Maps instead.
  */
 class NavigationActivity : ComponentActivity() {
     private lateinit var navigationView: NavigationView
     private var navigator: Navigator? = null
     private var handedOff = false
+    private var started = false
+
+    private lateinit var stops: List<InAppNavigation.NavStop>
+    private var current by mutableIntStateOf(0)
+    private var arrived by mutableStateOf(false)
+    private var routing by mutableStateOf(true)
+
     private val arrivalListener = Navigator.ArrivalListener {
-        Toast.makeText(this, "You've arrived at ${intent.getStringExtra(InAppNavigation.EXTRA_TITLE) ?: "your stop"}", Toast.LENGTH_LONG).show()
+        arrived = true
         navigator?.stopGuidance()
     }
     private val askLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -41,27 +82,94 @@ class NavigationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        stops = InAppNavigation.decode(intent.getStringExtra(InAppNavigation.EXTRA_ROUTE)).ifEmpty {
+            // Opened for a single stop: show just that one.
+            listOf(InAppNavigation.NavStop(intent.getStringExtra(InAppNavigation.EXTRA_TITLE) ?: "Destination", intent.getStringExtra(InAppNavigation.EXTRA_QUERY),
+                intent.getDoubleExtra(InAppNavigation.EXTRA_LAT, Double.NaN).takeUnless { it.isNaN() }, intent.getDoubleExtra(InAppNavigation.EXTRA_LNG, Double.NaN).takeUnless { it.isNaN() },
+                null, "", intent.getStringExtra(InAppNavigation.EXTRA_FALLBACK) ?: ""))
+        }
+        current = intent.getIntExtra(InAppNavigation.EXTRA_INDEX, 0).coerceIn(0, stops.lastIndex)
+
         navigationView = NavigationView(this)
         navigationView.onCreate(savedInstanceState)
         // Live traffic on the navigation map (the route itself is already coloured by traffic).
         navigationView.getMapAsync { map -> map.isTrafficEnabled = true }
-        val density = resources.displayMetrics.density
-        val end = Button(this).apply {
-            text = "End"
-            setTextColor(Color.WHITE)
-            isAllCaps = false
-            background = GradientDrawable().apply { cornerRadius = 24 * density; setColor(Color.parseColor("#A6573E")) }
-            setOnClickListener { finish() }
-        }
-        setContentView(FrameLayout(this).apply {
-            addView(navigationView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            addView(end, FrameLayout.LayoutParams((96 * density).toInt(), (48 * density).toInt(), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, (16 * density).toInt(), (120 * density).toInt()) })
+        val panel = ComposeView(this).apply { setContent { MaterialTheme { Panel() } } }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(navigationView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(panel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         })
         if (savedInstanceState == null) {
             if (hasLocationPermission()) acceptTermsThenNavigate()
             else askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
     }
+
+    // ---- Panel under the map ------------------------------------------------------------------------------
+
+    @Composable private fun Panel() {
+        var expanded by remember { mutableStateOf(stops.size > 1) }
+        val stop = stops[current]
+        val next = stops.drop(current + 1).firstOrNull { !it.done }?.let { stops.indexOf(it) }
+        Surface(color = Cream, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp).padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.align(Alignment.CenterHorizontally).size(width = 40.dp, height = 4.dp).clip(CircleShape).background(Line))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(when { arrived -> "YOU'VE ARRIVED"; routing -> "FINDING ROUTE…"; else -> "HEADING TO" }, color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text(stop.title, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        stop.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Button(onClick = { finish() }, colors = ButtonDefaults.buttonColors(containerColor = Danger), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
+                        Icon(Icons.Default.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("End", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (arrived && next != null) Button(onClick = { switchTo(next) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) {
+                    Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Next: ${stops[next].title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (stops.size > 1) {
+                    HorizontalDivider(color = Line)
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Today's itinerary", Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text("${current + 1} of ${stops.size}", color = Muted, style = MaterialTheme.typography.labelMedium)
+                        Icon(if (expanded) Icons.Default.ExpandMore else Icons.Default.ExpandLess, if (expanded) "Hide itinerary" else "Show itinerary", tint = Muted)
+                    }
+                    AnimatedVisibility(expanded) {
+                        val list = rememberLazyListState(initialFirstVisibleItemIndex = (current - 1).coerceAtLeast(0))
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp), state = list) {
+                            itemsIndexed(stops) { index, item -> StopRow(index, item, index == current) { switchTo(index) } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable private fun StopRow(index: Int, stop: InAppNavigation.NavStop, active: Boolean, open: () -> Unit) {
+        val inApp = InAppNavigation.mode(stop.transport) != null && (stop.latitude != null || !stop.location.isNullOrBlank())
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (active) Sage else Color.Transparent).clickable(enabled = !active, onClick = open).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stop.time, Modifier.width(62.dp), color = if (active) Forest else Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Box(Modifier.size(26.dp).clip(CircleShape).background(if (active || stop.done) Forest else Color.White).border(1.dp, if (active || stop.done) Forest else Line, CircleShape), contentAlignment = Alignment.Center) {
+                when {
+                    stop.done -> Icon(Icons.Default.Check, "Done", tint = Color.White, modifier = Modifier.size(14.dp))
+                    index == stops.lastIndex -> Icon(Icons.Default.Flag, null, tint = if (active) Color.White else Moss, modifier = Modifier.size(14.dp))
+                    else -> Text("${index + 1}", color = if (active) Color.White else Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stop.title, color = if (stop.done && !active) Muted else Ink, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                stop.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            if (active) Text("Now", color = Forest, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            else if (inApp) Icon(Icons.Default.Navigation, "Navigate here", tint = Forest, modifier = Modifier.size(18.dp))
+            else Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open in Google Maps", tint = Muted, modifier = Modifier.size(18.dp))
+        }
+    }
+
+    // ---- Navigation ---------------------------------------------------------------------------------------
 
     private fun hasLocationPermission() =
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -78,7 +186,9 @@ class NavigationActivity : ComponentActivity() {
         NavigationApi.getNavigator(this, object : NavigationApi.NavigatorListener {
             override fun onNavigatorReady(ready: Navigator) {
                 navigator = ready
-                route(ready)
+                ready.setAudioGuidance(Navigator.AudioGuidance.VOICE_ALERTS_AND_GUIDANCE)
+                ready.addArrivalListener(arrivalListener)
+                route(current)
             }
 
             override fun onError(@NavigationApi.ErrorCode errorCode: Int) {
@@ -93,51 +203,71 @@ class NavigationActivity : ComponentActivity() {
         })
     }
 
-    private fun route(navigator: Navigator) {
-        val latitude = intent.getDoubleExtra(InAppNavigation.EXTRA_LAT, Double.NaN)
-        val longitude = intent.getDoubleExtra(InAppNavigation.EXTRA_LNG, Double.NaN)
-        if (latitude.isNaN() || longitude.isNaN()) { geocodeThenRoute(navigator); return }
-        routeTo(navigator, latitude, longitude)
+    /** Switches guidance to another stop of the day; stops the SDK can't route open in Google Maps instead. */
+    private fun switchTo(index: Int) {
+        val stop = stops.getOrNull(index) ?: return
+        if (InAppNavigation.mode(stop.transport) == null || (stop.latitude == null && stop.location.isNullOrBlank())) {
+            Toast.makeText(this, "Opening ${stop.title} in Google Maps.", Toast.LENGTH_SHORT).show()
+            InAppNavigation.openGoogleMaps(this, stop.fallbackUrl)
+            return
+        }
+        current = index
+        route(index)
+    }
+
+    private fun route(index: Int) {
+        val stop = stops[index]
+        arrived = false; routing = true
+        if (stop.latitude != null && stop.longitude != null) { routeTo(index, stop.latitude, stop.longitude); return }
+        geocodeThenRoute(index)
     }
 
     /** Stops typed as an address have no pin: look the address up on the device first. */
     @Suppress("DEPRECATION") // The listener variant is API 33+; this runs on a background thread.
-    private fun geocodeThenRoute(navigator: Navigator) {
-        val query = intent.getStringExtra(InAppNavigation.EXTRA_QUERY)
-        if (query.isNullOrBlank() || !Geocoder.isPresent()) { handOff("This stop has no map location."); return }
+    private fun geocodeThenRoute(index: Int) {
+        val query = stops[index].location
+        if (query.isNullOrBlank() || !Geocoder.isPresent()) { routeFailed("${stops[index].title} has no map location."); return }
         Thread {
             val found = runCatching { Geocoder(this, Locale.getDefault()).getFromLocationName(query, 1)?.firstOrNull() }.getOrNull()
             runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-                if (found == null) handOff("Couldn't find “$query” on the map.") else routeTo(navigator, found.latitude, found.longitude)
+                if (isFinishing || current != index) return@runOnUiThread
+                if (found == null) routeFailed("Couldn't find “$query” on the map.") else routeTo(index, found.latitude, found.longitude)
             }
         }.start()
     }
 
-    private fun routeTo(navigator: Navigator, latitude: Double, longitude: Double) {
-        val destination = Waypoint.builder().setLatLng(latitude, longitude).setTitle(intent.getStringExtra(InAppNavigation.EXTRA_TITLE) ?: "Destination").build()
-        val travelMode = when (runCatching { InAppNavigation.Mode.valueOf(intent.getStringExtra(InAppNavigation.EXTRA_MODE) ?: "") }.getOrNull()) {
+    private fun routeTo(index: Int, latitude: Double, longitude: Double) {
+        val navigator = navigator ?: return
+        val stop = stops[index]
+        val travelMode = when (InAppNavigation.mode(stop.transport) ?: runCatching { InAppNavigation.Mode.valueOf(intent.getStringExtra(InAppNavigation.EXTRA_MODE) ?: "") }.getOrNull()) {
             InAppNavigation.Mode.TWO_WHEELER -> RoutingOptions.TravelMode.TWO_WHEELER
             InAppNavigation.Mode.CYCLING -> RoutingOptions.TravelMode.CYCLING
             InAppNavigation.Mode.WALKING -> RoutingOptions.TravelMode.WALKING
             else -> RoutingOptions.TravelMode.DRIVING
         }
-        navigator.setAudioGuidance(Navigator.AudioGuidance.VOICE_ALERTS_AND_GUIDANCE)
+        val destination = Waypoint.builder().setLatLng(latitude, longitude).setTitle(stop.title).build()
         navigator.setDestination(destination, RoutingOptions().travelMode(travelMode)).setOnResultListener { status ->
+            if (current != index) return@setOnResultListener
             if (status == Navigator.RouteStatus.OK) {
-                navigator.addArrivalListener(arrivalListener)
+                routing = false; started = true
                 navigator.startGuidance()
             } else {
-                handOff(if (status == Navigator.RouteStatus.NO_ROUTE_FOUND) "No route found in the app." else "In-app navigation couldn't find a route.")
+                routeFailed(if (status == Navigator.RouteStatus.NO_ROUTE_FOUND) "No route found to ${stop.title} in the app." else "In-app navigation couldn't find a route to ${stop.title}.")
             }
         }
+    }
+
+    /** The first route failing hands the trip to Google Maps; a later stop failing just says so. */
+    private fun routeFailed(reason: String) {
+        routing = false
+        if (!started) handOff(reason) else Toast.makeText(this, reason, Toast.LENGTH_LONG).show()
     }
 
     /** Says why in-app navigation can't start, then opens the trip in Google Maps (or closes) and leaves this screen. */
     private fun handOff(reason: String) {
         if (handedOff || isFinishing) return
         handedOff = true
-        val fallback = intent.getStringExtra(InAppNavigation.EXTRA_FALLBACK)
+        val fallback = stops.getOrNull(current)?.fallbackUrl?.ifBlank { null } ?: intent.getStringExtra(InAppNavigation.EXTRA_FALLBACK)
         AlertDialog.Builder(this)
             .setTitle("In-app navigation unavailable")
             .setMessage(reason)

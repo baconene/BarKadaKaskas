@@ -110,10 +110,14 @@ private fun initials(name: String) = name.split(' ').filter { it.isNotBlank() }.
 /** Hands a Google Maps navigation link to the Google Maps app (turn-by-turn from the current location), else the browser. */
 private fun startNavigation(context: Context, url: String) = com.barkadakaskas.app.nav.InAppNavigation.openGoogleMaps(context, url)
 
-/** Turn-by-turn to [stop] from where you are: inside the app when the Navigation SDK can route it, else Google Maps. */
-private fun navigateTo(context: Context, stop: Stop) {
+/**
+ * Turn-by-turn to [stop] from where you are: inside the app when the Navigation SDK can route it, else Google Maps.
+ * [day] (that day's stops, with any looked-up coordinates) is listed under the navigation map.
+ */
+private fun navigateTo(context: Context, stop: Stop, day: List<Stop> = listOf(stop), timezone: String = "UTC") {
     val url = Itinerary.navigateUrl(stop) ?: return
-    com.barkadakaskas.app.nav.InAppNavigation.navigate(context, stop.latitude, stop.longitude, stop.title, stop.transport, url, stop.location.ifBlank { null })
+    val stops = day.map { s -> com.barkadakaskas.app.nav.InAppNavigation.NavStop(s.title, s.location.ifBlank { null }, s.latitude, s.longitude, s.transport, Itinerary.clock(s.startsAt, timezone), Itinerary.navigateUrl(s) ?: Itinerary.searchUrl(s), s.done) }
+    com.barkadakaskas.app.nav.InAppNavigation.navigate(context, stop.latitude, stop.longitude, stop.title, stop.transport, url, stop.location.ifBlank { null }, stops, day.indexOfFirst { it.id == stop.id })
 }
 
 private fun openUrl(context: Context, url: String) {
@@ -479,6 +483,9 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     val current = day ?: return
+    // A stop with any coordinates found on the device; the day's stops this way go to the navigation screen's list.
+    fun locate(s: Stop): Stop = geocoded[s.id]?.takeIf { !Itinerary.hasPin(s) }?.let { s.copy(latitude = it.first, longitude = it.second) } ?: s
+    val dayStops = current.stops.map(::locate)
     // Journeys across the whole trip (each stop after the first is reached from the one before it). Stepping to a
     // journey on another day switches the day shown; picking another day by hand closes the journey card.
     val allStops = remember(days) { days.flatMap { it.stops } }
@@ -496,10 +503,10 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Icon(Icons.Default.LocationOff, null, tint = Muted, modifier = Modifier.size(32.dp)); Spacer(Modifier.height(8.dp))
                 Text(if (current.stops.any { it.location.isNotBlank() }) "Finding places on the map…" else "Add locations to see this day on the map", color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             } else TripMap(pins, Modifier.fillMaxSize(), Forest, focus = focusedIndex?.let { listOf(allStops[it - 1].id, allStops[it].id) } ?: emptyList()) { pin ->
-                current.stops.find { it.id == pin.id }?.let { stop -> navigateTo(context, stop.copy(latitude = pin.latitude, longitude = pin.longitude)) }
+                current.stops.find { it.id == pin.id }?.let { stop -> navigateTo(context, stop.copy(latitude = pin.latitude, longitude = pin.longitude), dayStops, trip.timezone) }
             }
         }
-        if (focusedIndex != null) JourneyCard(allStops[focusedIndex - 1], allStops[focusedIndex], focusedIndex, allStops.size - 1, { focusJourney(focusedIndex - 1) }, { focusJourney(focusedIndex + 1) }, { focusedId = null }, { url -> openUrl(context, url) }) { allStops[focusedIndex].let { s -> navigateTo(context, geocoded[s.id]?.takeIf { !Itinerary.hasPin(s) }?.let { s.copy(latitude = it.first, longitude = it.second) } ?: s) } }
+        if (focusedIndex != null) JourneyCard(allStops[focusedIndex - 1], allStops[focusedIndex], focusedIndex, allStops.size - 1, { focusJourney(focusedIndex - 1) }, { focusJourney(focusedIndex + 1) }, { focusedId = null }, { url -> openUrl(context, url) }) { allStops[focusedIndex].let { s -> navigateTo(context, locate(s), dayStops, trip.timezone) } }
         else Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Route for ${Itinerary.dayLabel(current.key)}", fontWeight = FontWeight.Bold)
@@ -516,7 +523,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
     Column {
         current.stops.forEachIndexed { index, stop ->
-            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
+            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }

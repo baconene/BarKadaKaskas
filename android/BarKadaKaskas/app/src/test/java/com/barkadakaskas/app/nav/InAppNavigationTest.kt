@@ -14,4 +14,13 @@ class InAppNavigationTest {
         // Only Google Maps routes these.
         assertNull(InAppNavigation.mode("ferry")); assertNull(InAppNavigation.mode("transit")); assertNull(InAppNavigation.mode("flight"))
     }
+
+    @Test fun dayStopsRoundTripToTheNavigationScreen() {
+        val stops = listOf(
+            InAppNavigation.NavStop("Siquijor Port", "Siquijor Port, Siquijor", 9.21, 123.51, null, "3:00 PM", "https://maps/1", done = true),
+            InAppNavigation.NavStop("Isla Cove", null, null, null, "tricycle", "4:00 PM", "https://maps/2"),
+        )
+        assertEquals(stops, InAppNavigation.decode(InAppNavigation.encode(stops)))
+        assertEquals(emptyList<InAppNavigation.NavStop>(), InAppNavigation.decode("not json"))
+    }
 }

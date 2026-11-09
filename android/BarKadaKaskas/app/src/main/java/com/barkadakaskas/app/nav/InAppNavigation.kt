@@ -12,7 +12,23 @@ import com.barkadakaskas.app.BuildConfig
  * Public transport, ferries and flights still go to Google Maps.
  */
 object InAppNavigation {
-    const val EXTRA_LAT = "lat"; const val EXTRA_LNG = "lng"; const val EXTRA_TITLE = "title"; const val EXTRA_MODE = "mode"; const val EXTRA_FALLBACK = "fallback"; const val EXTRA_QUERY = "query"
+    const val EXTRA_LAT = "lat"; const val EXTRA_LNG = "lng"; const val EXTRA_TITLE = "title"; const val EXTRA_MODE = "mode"; const val EXTRA_FALLBACK = "fallback"; const val EXTRA_QUERY = "query"; const val EXTRA_ROUTE = "route"; const val EXTRA_INDEX = "index"
+
+    /** A stop of the day shown under the navigation map; [fallbackUrl] opens it in Google Maps. */
+    data class NavStop(val title: String, val location: String?, val latitude: Double?, val longitude: Double?, val transport: String?, val time: String, val fallbackUrl: String, val done: Boolean = false)
+
+    fun encode(stops: List<NavStop>): String = org.json.JSONArray().apply {
+        stops.forEach { s -> put(org.json.JSONObject().put("title", s.title).put("location", s.location ?: "").put("lat", s.latitude ?: org.json.JSONObject.NULL).put("lng", s.longitude ?: org.json.JSONObject.NULL)
+            .put("transport", s.transport ?: "").put("time", s.time).put("fallback", s.fallbackUrl).put("done", s.done)) }
+    }.toString()
+
+    fun decode(json: String?): List<NavStop> = runCatching {
+        val array = org.json.JSONArray(json ?: return emptyList())
+        (0 until array.length()).map { i -> array.getJSONObject(i).let { o ->
+            NavStop(o.optString("title"), o.optString("location").ifBlank { null }, if (o.isNull("lat")) null else o.optDouble("lat"), if (o.isNull("lng")) null else o.optDouble("lng"),
+                o.optString("transport").ifBlank { null }, o.optString("time"), o.optString("fallback"), o.optBoolean("done"))
+        } }
+    }.getOrDefault(emptyList())
 
     enum class Mode { DRIVING, TWO_WHEELER, CYCLING, WALKING }
 
@@ -33,7 +49,7 @@ object InAppNavigation {
      * Navigates to the place in the app when possible, otherwise opens [fallbackUrl] in Google Maps and says why.
      * A stop without coordinates is looked up from [query] (its address) on the navigation screen.
      */
-    fun navigate(context: Context, latitude: Double?, longitude: Double?, title: String, transport: String?, fallbackUrl: String, query: String? = null) {
+    fun navigate(context: Context, latitude: Double?, longitude: Double?, title: String, transport: String?, fallbackUrl: String, query: String? = null, day: List<NavStop> = emptyList(), index: Int = -1) {
         val reason = when {
             !BuildConfig.IN_APP_NAVIGATION -> "This version of the app was built without in-app navigation."
             BuildConfig.MAPS_API_KEY.isBlank() -> "This version of the app has no Google Maps key."
@@ -48,6 +64,7 @@ object InAppNavigation {
         context.startActivity(Intent(context, NavigationActivity::class.java)
             .putExtra(EXTRA_LAT, latitude ?: Double.NaN).putExtra(EXTRA_LNG, longitude ?: Double.NaN).putExtra(EXTRA_QUERY, query)
             .putExtra(EXTRA_TITLE, title).putExtra(EXTRA_MODE, mode(transport)!!.name).putExtra(EXTRA_FALLBACK, fallbackUrl)
+            .putExtra(EXTRA_ROUTE, encode(day)).putExtra(EXTRA_INDEX, index)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 

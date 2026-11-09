@@ -81,6 +81,8 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:6.4.1")
     if (inAppNavigation) {
         implementation("com.google.android.libraries.navigation:navigation:$navigationSdkVersion")
+        // Used by the navigation screen (referenced as android.support RecyclerView; Jetifier maps it here).
+        implementation("androidx.recyclerview:recyclerview:1.3.2")
         coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.0.4")
     }
     // Trip cover photos.

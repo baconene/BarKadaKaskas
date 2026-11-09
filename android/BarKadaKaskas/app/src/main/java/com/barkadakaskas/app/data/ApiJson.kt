@@ -154,6 +154,14 @@ internal object ApiJson {
         .put("timezone", draft.timezone.trim()).put("currency_code", draft.currency)
         .put("description", draft.description.trim().ifBlank { null } ?: JSONObject.NULL)
 
+    fun document(json: JSONObject) = TravelerDocument(
+        id = json.getLong("id"), memberId = json.optLong("member_id"), type = json.text("type"), label = json.textOrNull("label"),
+        visibility = json.text("visibility").ifBlank { "private" }, mimeType = json.text("mime_type"), isImage = json.optBoolean("is_image"),
+        mine = json.optBoolean("mine"), filePath = json.text("file_path"),
+    )
+
+    fun documents(body: JSONObject?) = body?.optJSONArray("data").mapObjects { document(it) }
+
     fun suggestion(json: JSONObject) = StopSuggestion(
         title = json.text("title"), location = json.textOrNull("location"), description = json.textOrNull("description"),
         startsAt = json.text("starts_at"), endsAt = json.text("ends_at"), transport = json.textOrNull("transport_mode"),

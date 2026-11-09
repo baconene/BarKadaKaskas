@@ -54,6 +54,27 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         if (stopId == null) request("POST", "/trips/$tripId/itinerary", ApiJson.stopBody(draft))
         else request("PATCH", "/trips/$tripId/itinerary/$stopId", ApiJson.stopBody(draft))
     }
+    override suspend fun documents(tripId: Long): List<TravelerDocument> = ApiJson.documents(request("GET", "/trips/$tripId/documents"))
+    override suspend fun uploadDocument(tripId: Long, type: String, label: String, visibility: String, bytes: ByteArray, mimeType: String, fileName: String): TravelerDocument =
+        ApiJson.document(data(request("POST", "/trips/$tripId/documents", raw = multipart(mapOf("type" to type, "label" to label.trim(), "visibility" to visibility), listOf(FilePart("file", fileName, mimeType, bytes))))))
+    override suspend fun setDocumentVisibility(tripId: Long, documentId: Long, visibility: String): TravelerDocument =
+        ApiJson.document(data(request("PATCH", "/trips/$tripId/documents/$documentId", JSONObject().put("visibility", visibility))))
+    override suspend fun deleteDocument(tripId: Long, documentId: Long) { request("DELETE", "/trips/$tripId/documents/$documentId") }
+    override suspend fun documentFile(filePath: String): ByteArray = withContext(Dispatchers.IO) {
+        val base = store.serverUrl.ifBlank { throw ApiException("Enter your server address first.") }
+        val token = store.token ?: throw ApiException("Please log in again.", 401)
+        val connection = URL("$base/api/v1$filePath").openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 15_000; connection.readTimeout = 60_000
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val status = connection.responseCode
+            if (status !in 200..299) throw ApiException(friendlyError(status, null), status)
+            connection.inputStream.use { it.readBytes() }
+        } catch (failure: ApiException) { throw failure }
+        catch (_: IOException) { throw ApiException("Can't reach the server. Check your internet connection.") }
+        finally { connection.disconnect() }
+    }
+
     override suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion> =
         ApiJson.suggestions(request("POST", "/trips/$tripId/itinerary/suggestions", JSONObject().put("prompt", prompt.trim()), readTimeout = 100_000))
     override suspend fun addStops(tripId: Long, stops: List<StopSuggestion>) { request("POST", "/trips/$tripId/itinerary/batch", ApiJson.batchBody(stops)) }

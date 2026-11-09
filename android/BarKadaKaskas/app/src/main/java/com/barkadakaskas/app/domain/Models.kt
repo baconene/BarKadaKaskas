@@ -27,6 +27,14 @@ data class TripDetail(val trip: Trip, val members: List<Member>, val categories:
 }
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")
 /** latitude/longitude keep (or set) the map pin; the server clears it when they are omitted. */
+/** A traveller's document for a trip (boarding pass, ID, bank QR...). [visibility] is "trip" (everyone) or "private" (owner and organizer). */
+data class TravelerDocument(val id: Long, val memberId: Long, val type: String, val label: String?, val visibility: String, val mimeType: String, val isImage: Boolean, val mine: Boolean, val filePath: String) {
+    val title: String get() = label ?: typeName(type)
+    companion object {
+        val TYPES = listOf("boarding_pass" to "Boarding pass", "id" to "ID", "bank_qr" to "Bank / e-wallet QR", "booking" to "Booking", "other" to "Other")
+        fun typeName(type: String) = TYPES.find { it.first == type }?.second ?: "Document"
+    }
+}
 /** An activity suggested by the AI planner; times are local to the trip ("yyyy-MM-ddTHH:mm"), costs per person in minor units. */
 data class StopSuggestion(val title: String, val location: String?, val description: String?, val startsAt: String, val endsAt: String, val transport: String?, val costMinMinor: Long?, val costMaxMinor: Long?, val costNote: String?)
 data class StopDraft(val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null)
@@ -55,6 +63,13 @@ interface TravelRepository {
     suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean)
     /** Organizer: the AI planner drafts activities for [prompt]; nothing is saved. */
     suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion>
+    /** Documents on the trip this traveller may see (shared ones, plus their own and, for the organizer, everyone's). */
+    suspend fun documents(tripId: Long): List<TravelerDocument>
+    suspend fun uploadDocument(tripId: Long, type: String, label: String, visibility: String, bytes: ByteArray, mimeType: String, fileName: String): TravelerDocument
+    suspend fun setDocumentVisibility(tripId: Long, documentId: Long, visibility: String): TravelerDocument
+    suspend fun deleteDocument(tripId: Long, documentId: Long)
+    /** The file's bytes (sent with the session token; documents are never public). */
+    suspend fun documentFile(filePath: String): ByteArray
     /** Organizer: adds the approved suggestions to the itinerary in one go. */
     suspend fun addStops(tripId: Long, stops: List<StopSuggestion>)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)

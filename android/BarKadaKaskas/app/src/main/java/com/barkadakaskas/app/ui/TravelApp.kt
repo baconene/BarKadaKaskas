@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -78,6 +80,7 @@ import java.util.Currency
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Forest = Color(0xFF214E3E)
 private val ForestDark = Color(0xFF173A2E)
@@ -771,6 +774,84 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     detail.members.find { it.id == viewing }?.let { TravelerSheet(vm, it, it.id == detail.currentMemberId, editMine) { viewing = null } }
 }
 
+/** Opens a downloaded document in another app (gallery, PDF viewer) through the app's FileProvider. */
+private fun openDocument(context: Context, document: TravelerDocument, bytes: ByteArray) {
+    val extension = when { document.mimeType == "application/pdf" -> "pdf"; document.mimeType == "image/png" -> "png"; document.mimeType == "image/webp" -> "webp"; else -> "jpg" }
+    val file = java.io.File(context.cacheDir, "documents").apply { mkdirs() }.resolve("document-${document.id}.$extension").apply { writeBytes(bytes) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    try { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, document.mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    catch (_: ActivityNotFoundException) { Toast.makeText(context, "No app on this phone can open this file.", Toast.LENGTH_LONG).show() }
+}
+
+/** Boarding passes, IDs, bank QR codes on a traveller's card. You see shared ones (and the organizer everyone's); you manage your own. */
+@Composable private fun DocumentsSection(vm: TravelViewModel, member: Member, isMe: Boolean) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(member.id) { vm.loadDocuments() }
+    val docs = vm.documents.filter { it.memberId == member.id }
+    var adding by remember { mutableStateOf(false) }
+    var type by remember { mutableStateOf("boarding_pass") }
+    var label by remember { mutableStateOf("") }
+    var visibility by remember { mutableStateOf("private") }
+    var picked by remember { mutableStateOf<Uri?>(null) }
+    var preparing by remember { mutableStateOf(false) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) picked = uri }
+
+    Text("DOCUMENTS", color = Moss, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+    if (vm.documentsLoading && docs.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+    else if (docs.isEmpty()) Text(if (isMe) "Keep your boarding pass, ID or bank QR here for the trip." else "No documents shared with you.", color = Muted)
+    docs.forEach { doc ->
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp)).clickable { vm.withDocumentFile(doc) { openDocument(context, doc, it) } }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).background(Sage), contentAlignment = Alignment.Center) {
+                val bytes = vm.documentFiles[doc.filePath]
+                val thumb = remember(bytes) { bytes?.let { b -> runCatching { android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap() }.getOrNull() } }
+                if (doc.isImage) LaunchedEffect(doc.filePath) { vm.withDocumentFile(doc) {} }
+                if (thumb != null) androidx.compose.foundation.Image(thumb, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Icon(if (doc.isImage) Icons.Default.Image else Icons.Default.Description, null, tint = Forest)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(doc.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${TravelerDocument.typeName(doc.type)} · ${if (doc.visibility == "trip") "Everyone on the trip" else if (isMe) "You and the organizer" else "Private"}", color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            if (doc.mine) {
+                IconButton(onClick = { vm.toggleDocumentVisibility(doc) }, enabled = !vm.busy) { Icon(if (doc.visibility == "trip") Icons.Default.VisibilityOff else Icons.Default.Visibility, if (doc.visibility == "trip") "Make private" else "Share with everyone on the trip", tint = Forest) }
+                IconButton(onClick = { vm.deleteDocument(doc) }, enabled = !vm.busy) { Icon(Icons.Default.Delete, "Remove document", tint = Danger) }
+            }
+        }
+    }
+    if (isMe && !adding) OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add a document") }
+    if (isMe && adding) {
+        Choice("Type", type, TravelerDocument.TYPES, { type = it; visibility = if (it == "bank_qr") "trip" else "private" })
+        Field("Name (optional)", label, { label = it }, supporting = "e.g. Cebu Pacific MNL–DGT, GCash")
+        Text("Who can see it", fontWeight = FontWeight.SemiBold)
+        listOf("private" to "Only me and the organizer", "trip" to "Everyone on the trip").forEach { (key, text) ->
+            Row(Modifier.fillMaxWidth().clickable { visibility = key }, verticalAlignment = Alignment.CenterVertically) { RadioButton(visibility == key, { visibility = key }); Text(text) }
+        }
+        OutlinedButton(onClick = { pick.launch(arrayOf("image/*", "application/pdf")) }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.AttachFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (picked == null) "Choose a photo or PDF" else "File chosen · change")
+        }
+        Submit(if (preparing) "Preparing…" else "Upload", vm.busy || preparing, picked != null, Icons.Default.Upload) {
+            val uri = picked ?: return@Submit
+            preparing = true
+            scope.launch {
+                val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                // Photos are downsized (QR codes stay sharp at 2400px); PDFs go as they are, up to 10 MB.
+                val bytes = if (mime.startsWith("image/")) Photos.jpeg(context, uri, maxSide = 2400)
+                    else withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() }
+                preparing = false
+                when {
+                    bytes == null -> Toast.makeText(context, "That file couldn't be opened.", Toast.LENGTH_LONG).show()
+                    bytes.size > 10 * 1024 * 1024 -> Toast.makeText(context, "The file can be up to 10 MB.", Toast.LENGTH_LONG).show()
+                    mime.startsWith("image/") -> vm.uploadDocument(type, label, visibility, bytes, "image/jpeg", "document.jpg") { adding = false; label = ""; picked = null }
+                    else -> vm.uploadDocument(type, label, visibility, bytes, "application/pdf", "document.pdf") { adding = false; label = ""; picked = null }
+                }
+            }
+        }
+        TextButton(onClick = { adding = false; picked = null }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+    }
+}
+
 /** A traveller's contact and emergency details; your own can be edited here, including your photo. */
 @Composable private fun TravelerSheet(vm: TravelViewModel, member: Member, isMe: Boolean, startEditing: Boolean, dismiss: () -> Unit) {
     val context = LocalContext.current
@@ -800,6 +881,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Text(listOfNotNull(member.emergencyName, member.emergencyRelationship).joinToString(" · "), fontWeight = FontWeight.SemiBold)
                 member.emergencyPhone?.let { Button(onClick = { dial(it) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Icon(Icons.Default.Call, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Call $it") } }
             } else Text(if (isMe) "Add someone the group can call if something happens to you." else "Not added yet.", color = Muted)
+            DocumentsSection(vm, member, isMe)
             if (isMe) Submit("Edit my details", vm.busy, icon = Icons.Default.Edit) { editing = true }
         } else {
             Field("Mobile number", phone, { phone = it }, leading = Icons.Default.Call, capitalize = false, supporting = "e.g. +63 917 123 4567")

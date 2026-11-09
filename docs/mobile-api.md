@@ -62,6 +62,8 @@ PATCH `/trips/{trip}/itinerary/{item}` → 200 `{data:ItineraryItem}`.
 PATCH `/trips/{trip}/itinerary/{item}/done` `{done:boolean}` → 200 `{data:ItineraryItem}`. Any active member may tick an activity off or undo it; `completed_at` and `completed_by_user_id` are shared by everyone on the trip.
 POST `/trips/{trip}/itinerary/suggestions` `{prompt}` → 200 `{data:[{title,location,description,starts_at,ends_at,transport_mode,cost_min_minor,cost_max_minor,cost_note}]}`. Organizer only. AI (Gemini on Vertex AI) drafts activities inside the trip dates; times are local `YYYY-MM-DDTHH:MM`, costs per person in minor units. Nothing is saved; can take up to a minute; 503 when the planner isn't configured (trip detail `ai_planner` says whether it is).
 POST `/trips/{trip}/itinerary/batch` `{items:[…same fields…]}` → 201 `{data:[ItineraryItem]}`. Organizer only. Saves the approved activities in one go.
+
+Traveller documents (boarding pass, ID, bank QR, booking, other): GET `/trips/{trip}/documents` → `{data:[{id,member_id,type,label,visibility,mime_type,size,is_image,mine,file_path}]}` lists what you may see (`visibility` `trip` = everyone on the trip, `private` = owner and organizer). POST multipart `type,label?,visibility?,file` (JPG/PNG/WebP/PDF ≤10 MB; a bank QR defaults to `trip`, others to `private`) → 201. PATCH/DELETE `/trips/{trip}/documents/{id}` (owner only). The file is at `/api/v1` + `file_path`, sent with the bearer token; it is never public.
 Organizer only. Both take a full form:
 
 ```json

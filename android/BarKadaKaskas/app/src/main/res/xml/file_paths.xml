@@ -2,4 +2,6 @@
 <!-- Receipt photos taken with the camera are written here, then uploaded and deleted. -->
 <paths>
     <cache-path name="camera" path="camera/" />
+    <!-- Traveller documents opened in another app (PDF viewer, gallery); overwritten on each open. -->
+    <cache-path name="documents" path="documents/" />
 </paths>

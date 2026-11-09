@@ -1,6 +1,7 @@
 package com.barkadakaskas.app.ui
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -55,6 +56,44 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         val trip = repository.createTrip(draft); trips = repository.trips(); detail = repository.trip(trip.id)
         pendingAiPrompt = aiPrompt.trim().ifBlank { null }
         done()
+    }
+
+    // Traveller documents (boarding passes, IDs, bank QR codes), loaded when a traveller card opens.
+    var documents by mutableStateOf<List<TravelerDocument>>(emptyList()); private set
+    var documentsLoading by mutableStateOf(false); private set
+    /** Downloaded files by path, so thumbnails and re-opening don't download again. */
+    val documentFiles = mutableStateMapOf<String, ByteArray>()
+    fun loadDocuments() {
+        val tripId = detail?.trip?.id ?: return
+        documentsLoading = true
+        viewModelScope.launch {
+            try { documents = repository.documents(tripId) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not load documents." }
+            finally { documentsLoading = false }
+        }
+    }
+    fun uploadDocument(type: String, label: String, visibility: String, bytes: ByteArray, mimeType: String, fileName: String, done: () -> Unit) = launch {
+        val tripId = detail?.trip?.id ?: return@launch
+        documents = listOf(repository.uploadDocument(tripId, type, label, visibility, bytes, mimeType, fileName)) + documents
+        done()
+    }
+    fun toggleDocumentVisibility(document: TravelerDocument) = launch {
+        val tripId = detail?.trip?.id ?: return@launch
+        val updated = repository.setDocumentVisibility(tripId, document.id, if (document.visibility == "trip") "private" else "trip")
+        documents = documents.map { if (it.id == document.id) updated else it }
+    }
+    fun deleteDocument(document: TravelerDocument) = launch {
+        val tripId = detail?.trip?.id ?: return@launch
+        repository.deleteDocument(tripId, document.id)
+        documents = documents.filterNot { it.id == document.id }
+    }
+    /** Downloads (once) and hands the file to [use]; errors show in the app's error banner. */
+    fun withDocumentFile(document: TravelerDocument, use: (ByteArray) -> Unit) {
+        documentFiles[document.filePath]?.let { use(it); return }
+        viewModelScope.launch {
+            try { repository.documentFile(document.filePath).also { documentFiles[document.filePath] = it; use(it) } }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not open the document." }
+        }
     }
 
     // AI trip planner (organizer). Suggestions are only a draft until addSuggestions saves the approved ones.

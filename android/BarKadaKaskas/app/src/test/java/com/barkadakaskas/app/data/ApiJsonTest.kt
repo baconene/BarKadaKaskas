@@ -142,4 +142,11 @@ class ApiJsonTest {
         val item = ApiJson.batchBody(list).getJSONArray("items").getJSONObject(0)
         assertEquals("2026-11-12T09:00", item.getString("starts_at")); assertTrue(item.isNull("description")); assertEquals(10000L, item.getLong("cost_min_minor"))
     }
+
+    @Test fun travelerDocumentsParse() {
+        val docs = ApiJson.documents(JSONObject("""{"data":[{"id":4,"member_id":9,"type":"bank_qr","label":null,"visibility":"trip","mime_type":"image/jpeg","size":1000,"is_image":true,"mine":true,"file_path":"/trips/1/documents/4/file"}]}"""))
+        assertEquals(1, docs.size)
+        assertEquals("Bank / e-wallet QR", docs[0].title); assertEquals("trip", docs[0].visibility); assertTrue(docs[0].isImage && docs[0].mine)
+        assertEquals("/trips/1/documents/4/file", docs[0].filePath)
+    }
 }

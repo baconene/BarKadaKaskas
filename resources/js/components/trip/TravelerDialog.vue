@@ -3,6 +3,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { Camera, HeartPulse, MessageCircle, Phone, Sparkles, Trash2, UserRound, X } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
+import TravelerDocuments from '@/components/trip/TravelerDocuments.vue';
 import { saveAvatar } from '@/lib/uploads';
 
 /** A traveller's contact details and emergency contact; your own can be edited here, including your photo. */
@@ -10,7 +11,7 @@ export type TravelerUser = {
     id?: number; name: string; phone?: string | null; other_contact?: string | null; avatar_url?: string | null;
     emergency_contact_name?: string | null; emergency_contact_relationship?: string | null; emergency_contact_phone?: string | null;
 };
-const props = defineProps<{ user: TravelerUser; isMe: boolean; isOrganizer: boolean; startEditing?: boolean }>();
+const props = defineProps<{ user: TravelerUser; isMe: boolean; isOrganizer: boolean; startEditing?: boolean; tripId?: number; memberId?: number }>();
 const emit = defineEmits<{ close: [] }>();
 
 const dialog = ref<HTMLDialogElement | null>(null);
@@ -80,6 +81,7 @@ function removePhoto() {
                     </template>
                     <p v-else class="muted small">{{ isMe ? 'Add someone the group can call if something happens to you.' : 'Not added yet.' }}</p>
                 </section>
+                <TravelerDocuments v-if="tripId && memberId" :trip-id="tripId" :member-id="memberId" :is-me="isMe" />
                 <button v-if="isMe" type="button" class="btn wide" @click="editing = true">Edit my details</button>
                 <p class="muted small privacy">Only people on your trips can see these details.</p>
             </template>

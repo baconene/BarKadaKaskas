@@ -129,7 +129,7 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
             <h2 id="history-title">Payment history <span v-if="pendingForMe" class="count warn">{{ pendingForMe }} to confirm</span></h2>
             <PaymentHistoryEntry v-for="s in settlements" :key="s.id" :sender="name(s.from_member_id)" :recipient="name(s.to_member_id)" :amount="money(s.amount_minor)" :method="s.payment_method" :status="s.status" :paid-at="s.paid_at" :confirmed-at="s.confirmed_at" :timezone="timezone" :expense="expenses.find(e => e.id === s.expense_id)" :can-confirm="s.status === 'pending' && s.to_member_id === currentMemberId" @confirm="router.post(`/trips/${tripId}/settlements/${s.id}/confirm`, {}, { preserveScroll: true, preserveState: true })" />
         </section>
-        <TravelerDialog v-if="viewed" :key="viewed.id" :user="viewed.user" :is-me="viewed.id === currentMemberId" :is-organizer="isOrganizerMember(viewed)" :start-editing="editingMine" @close="viewing = null" />
+        <TravelerDialog v-if="viewed" :key="viewed.id" :user="viewed.user" :is-me="viewed.id === currentMemberId" :is-organizer="isOrganizerMember(viewed)" :start-editing="editingMine" :trip-id="tripId" :member-id="viewed.id" @close="viewing = null" />
     </div>
 </template>
 

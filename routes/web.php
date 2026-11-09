@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
+use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerDocumentController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -34,6 +34,11 @@ Route::middleware('auth')->group(function () {
     Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone'])->name('itinerary.done');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');
     Route::get('trips/{trip}/posts', [TripPostController::class, 'index'])->name('posts.index');
+    Route::get('trips/{trip}/documents', [TravelerDocumentController::class, 'index'])->name('documents.index');
+    Route::post('trips/{trip}/documents', [TravelerDocumentController::class, 'store'])->middleware('throttle:20,1')->name('documents.store');
+    Route::patch('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'update'])->name('documents.update');
+    Route::delete('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'destroy'])->name('documents.destroy');
+    Route::get('trips/{trip}/documents/{document}/file', [TravelerDocumentController::class, 'file'])->name('documents.file');
     Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1')->name('posts.store');
     Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy'])->name('posts.destroy');
     Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1')->name('posts.like');

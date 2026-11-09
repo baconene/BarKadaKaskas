@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
+use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerDocumentController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,6 +30,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
         Route::get('trips/{trip}/posts', [TripPostController::class, 'index']);
+        Route::get('trips/{trip}/documents', [TravelerDocumentController::class, 'index']);
+        Route::post('trips/{trip}/documents', [TravelerDocumentController::class, 'store'])->middleware('throttle:20,1');
+        Route::patch('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'update']);
+        Route::delete('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'destroy']);
+        Route::get('trips/{trip}/documents/{document}/file', [TravelerDocumentController::class, 'file']);
         Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1');
         Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy']);
         Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1');

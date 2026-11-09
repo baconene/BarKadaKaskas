@@ -12,7 +12,7 @@ import com.barkadakaskas.app.BuildConfig
  * Public transport, ferries and flights still go to Google Maps.
  */
 object InAppNavigation {
-    const val EXTRA_LAT = "lat"; const val EXTRA_LNG = "lng"; const val EXTRA_TITLE = "title"; const val EXTRA_MODE = "mode"; const val EXTRA_FALLBACK = "fallback"
+    const val EXTRA_LAT = "lat"; const val EXTRA_LNG = "lng"; const val EXTRA_TITLE = "title"; const val EXTRA_MODE = "mode"; const val EXTRA_FALLBACK = "fallback"; const val EXTRA_QUERY = "query"
 
     enum class Mode { DRIVING, TWO_WHEELER, CYCLING, WALKING }
 
@@ -29,12 +29,25 @@ object InAppNavigation {
 
     fun canNavigate(latitude: Double?, longitude: Double?, transport: String?): Boolean = enabled && latitude != null && longitude != null && mode(transport) != null
 
-    /** Navigates to the place in the app when possible, otherwise opens [fallbackUrl] in Google Maps. */
-    fun navigate(context: Context, latitude: Double?, longitude: Double?, title: String, transport: String?, fallbackUrl: String) {
-        if (!canNavigate(latitude, longitude, transport)) { openGoogleMaps(context, fallbackUrl); return }
+    /**
+     * Navigates to the place in the app when possible, otherwise opens [fallbackUrl] in Google Maps and says why.
+     * A stop without coordinates is looked up from [query] (its address) on the navigation screen.
+     */
+    fun navigate(context: Context, latitude: Double?, longitude: Double?, title: String, transport: String?, fallbackUrl: String, query: String? = null) {
+        val reason = when {
+            !BuildConfig.IN_APP_NAVIGATION -> "This version of the app was built without in-app navigation."
+            BuildConfig.MAPS_API_KEY.isBlank() -> "This version of the app has no Google Maps key."
+            mode(transport) == null -> "In-app navigation can't route public transport, ferries or flights."
+            (latitude == null || longitude == null) && query.isNullOrBlank() -> "This stop has no map location."
+            else -> null
+        }
+        if (reason != null) {
+            android.widget.Toast.makeText(context, "$reason Opening Google Maps.", android.widget.Toast.LENGTH_LONG).show()
+            openGoogleMaps(context, fallbackUrl); return
+        }
         context.startActivity(Intent(context, NavigationActivity::class.java)
-            .putExtra(EXTRA_LAT, latitude!!).putExtra(EXTRA_LNG, longitude!!).putExtra(EXTRA_TITLE, title)
-            .putExtra(EXTRA_MODE, mode(transport)!!.name).putExtra(EXTRA_FALLBACK, fallbackUrl)
+            .putExtra(EXTRA_LAT, latitude ?: Double.NaN).putExtra(EXTRA_LNG, longitude ?: Double.NaN).putExtra(EXTRA_QUERY, query)
+            .putExtra(EXTRA_TITLE, title).putExtra(EXTRA_MODE, mode(transport)!!.name).putExtra(EXTRA_FALLBACK, fallbackUrl)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 

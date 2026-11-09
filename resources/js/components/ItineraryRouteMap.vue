@@ -86,6 +86,8 @@ async function draw() {
         if (version !== generation || !canvas.value) return;
         if (!map || map.getDiv() !== canvas.value) {
             map = new maps.Map(canvas.value, { center: { lat: 12.88, lng: 121.77 }, zoom: 5, mapId: props.mapId || 'DEMO_MAP_ID', mapTypeControl: false, streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy', clickableIcons: false });
+            // Live traffic on the roads, so travel times on the plan can be read against current conditions.
+            new maps.TrafficLayer().setMap(map);
         }
         const geocoder = new geocoding.Geocoder();
         let geocodeDenied = geocodingBlocked;

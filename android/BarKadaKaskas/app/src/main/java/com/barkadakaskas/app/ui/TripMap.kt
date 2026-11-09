@@ -1,6 +1,13 @@
 package com.barkadakaskas.app.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import android.os.Looper
+import android.graphics.RectF
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -15,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.runtime.*
@@ -53,6 +61,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker as OsmMarker
 import org.osmdroid.views.overlay.Polyline as OsmPolyline
 import java.io.File
+import kotlinx.coroutines.launch
 
 /** One numbered pin on the trip map. [approximate] pins come from geocoding a typed address. */
 data class MapPin(val id: Long, val number: Int, val title: String, val subtitle: String, val latitude: Double, val longitude: Double, val approximate: Boolean = false)
@@ -85,6 +94,47 @@ private fun numberedPin(context: Context, number: Int, fill: Int, approximate: B
     return bitmap
 }
 
+/** "You" on the map: a top-down orange sports car (pointing up; the marker is rotated to the heading). */
+private fun carIcon(context: Context): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val w = 26 * d; val h = 46 * d
+    val bitmap = Bitmap.createBitmap((w + 6 * d).toInt(), (h + 6 * d).toInt(), Bitmap.Config.ARGB_8888)
+    val c = Canvas(bitmap); c.translate(3 * d, 3 * d)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    paint.color = 0x55000000; c.drawRoundRect(RectF(1 * d, 2 * d, w + 1 * d, h + 2 * d), 9 * d, 9 * d, paint) // shadow
+    paint.color = android.graphics.Color.parseColor("#1C1C1C") // wheels
+    listOf(8f, 33f).forEach { y -> c.drawRoundRect(RectF(-1.5f * d, y * d, 4 * d, (y + 9) * d), 2 * d, 2 * d, paint); c.drawRoundRect(RectF(w - 4 * d, y * d, w + 1.5f * d, (y + 9) * d), 2 * d, 2 * d, paint) }
+    paint.color = android.graphics.Color.parseColor("#FF8000"); c.drawRoundRect(RectF(1.5f * d, 0f, w - 1.5f * d, h), 10 * d, 10 * d, paint) // body
+    paint.color = android.graphics.Color.parseColor("#22313A"); c.drawRoundRect(RectF(5 * d, 12 * d, w - 5 * d, 21 * d), 4 * d, 4 * d, paint) // windscreen
+    c.drawRoundRect(RectF(6 * d, 31 * d, w - 6 * d, 37 * d), 3 * d, 3 * d, paint) // rear window
+    paint.color = android.graphics.Color.WHITE; c.drawRect(w / 2 - 1.5f * d, 1 * d, w / 2 + 1.5f * d, 11 * d, paint); c.drawRect(w / 2 - 1.5f * d, 22 * d, w / 2 + 1.5f * d, h - 10 * d, paint) // stripe
+    paint.color = android.graphics.Color.parseColor("#FFF4C2"); c.drawCircle(6 * d, 3 * d, 2 * d, paint); c.drawCircle(w - 6 * d, 3 * d, 2 * d, paint) // headlights
+    return bitmap
+}
+
+/** Follows the device's location (GPS or network) while [enabled]; null until the first fix. */
+@SuppressLint("MissingPermission") // Only called once location permission is granted; failures are ignored.
+@Composable private fun rememberMyLocation(context: Context, enabled: Boolean): Location? {
+    var location by remember { mutableStateOf<Location?>(null) }
+    DisposableEffect(enabled) {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val listener = object : LocationListener {
+            override fun onLocationChanged(update: Location) { location = update }
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Deprecated("Deprecated in Java") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+        if (enabled) runCatching {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter { manager.isProviderEnabled(it) }.forEach { provider ->
+                if (location == null) manager.getLastKnownLocation(provider)?.let { location = it }
+                manager.requestLocationUpdates(provider, 3000L, 5f, listener, Looper.getMainLooper())
+            }
+        }
+        onDispose { runCatching { manager.removeUpdates(listener) } }
+    }
+    return if (enabled) location else null
+}
+
 private fun hasLocationPermission(context: Context) =
     context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -99,6 +149,11 @@ private fun hasLocationPermission(context: Context) =
     var loaded by remember { mutableStateOf(false) }
     var showMe by remember { mutableStateOf(hasLocationPermission(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted -> showMe = granted.values.any { it } }
+    val me = rememberMyLocation(context, showMe)
+    val scope = rememberCoroutineScope()
+    val car = remember { BitmapDescriptorFactory.fromBitmap(carIcon(context)) }
+    val carState = rememberMarkerState()
+    LaunchedEffect(me) { me?.let { carState.position = LatLng(it.latitude, it.longitude) } }
 
     LaunchedEffect(pins, loaded, focus) {
         if (!loaded || pins.isEmpty()) return@LaunchedEffect
@@ -112,8 +167,9 @@ private fun hasLocationPermission(context: Context) =
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = camera,
-            properties = MapProperties(isMyLocationEnabled = showMe),
-            uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false, myLocationButtonEnabled = showMe),
+            // Live traffic; "you" is drawn as the car below once there is a fix (Google's blue dot until then).
+            properties = MapProperties(isMyLocationEnabled = showMe && me == null, isTrafficEnabled = true),
+            uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false, myLocationButtonEnabled = showMe && me == null),
             onMapLoaded = { loaded = true },
         ) {
             if (pins.size > 1) Polyline(
@@ -133,7 +189,12 @@ private fun hasLocationPermission(context: Context) =
                     )
                 }
             }
+            if (me != null) Marker(state = carState, icon = car, title = "You", anchor = Offset(0.5f, 0.5f), flat = true, rotation = if (me.hasBearing()) me.bearing else 0f, zIndex = 2f)
         }
+        if (me != null) SmallFloatingActionButton(
+            onClick = { scope.launch { runCatching { camera.animate(CameraUpdateFactory.newLatLngZoom(LatLng(me.latitude, me.longitude), 16f), 600) } } },
+            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp), containerColor = Color.White, contentColor = routeColor,
+        ) { Icon(Icons.Default.NearMe, "Show where I am") }
         if (!showMe) SmallFloatingActionButton(
             onClick = { askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) },
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp), containerColor = Color.White, contentColor = routeColor,

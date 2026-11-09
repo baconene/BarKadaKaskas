@@ -1,6 +1,8 @@
 package com.barkadakaskas.app.nav
 
 import android.Manifest
+import android.app.AlertDialog
+import android.location.Geocoder
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
@@ -11,6 +13,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.libraries.navigation.NavigationApi
@@ -40,6 +43,8 @@ class NavigationActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         navigationView = NavigationView(this)
         navigationView.onCreate(savedInstanceState)
+        // Live traffic on the navigation map (the route itself is already coloured by traffic).
+        navigationView.getMapAsync { map -> map.isTrafficEnabled = true }
         val density = resources.displayMetrics.density
         val end = Button(this).apply {
             text = "End"
@@ -82,7 +87,7 @@ class NavigationActivity : ComponentActivity() {
                     NavigationApi.ErrorCode.TERMS_NOT_ACCEPTED -> "Google's navigation terms weren't accepted."
                     NavigationApi.ErrorCode.NETWORK_ERROR -> "No connection for in-app navigation."
                     NavigationApi.ErrorCode.LOCATION_PERMISSION_MISSING -> "Location permission is needed to navigate here."
-                    else -> "In-app navigation couldn't start."
+                    else -> "In-app navigation couldn't start (error $errorCode)."
                 })
             }
         })
@@ -91,7 +96,25 @@ class NavigationActivity : ComponentActivity() {
     private fun route(navigator: Navigator) {
         val latitude = intent.getDoubleExtra(InAppNavigation.EXTRA_LAT, Double.NaN)
         val longitude = intent.getDoubleExtra(InAppNavigation.EXTRA_LNG, Double.NaN)
-        if (latitude.isNaN() || longitude.isNaN()) { handOff("This stop has no map location."); return }
+        if (latitude.isNaN() || longitude.isNaN()) { geocodeThenRoute(navigator); return }
+        routeTo(navigator, latitude, longitude)
+    }
+
+    /** Stops typed as an address have no pin: look the address up on the device first. */
+    @Suppress("DEPRECATION") // The listener variant is API 33+; this runs on a background thread.
+    private fun geocodeThenRoute(navigator: Navigator) {
+        val query = intent.getStringExtra(InAppNavigation.EXTRA_QUERY)
+        if (query.isNullOrBlank() || !Geocoder.isPresent()) { handOff("This stop has no map location."); return }
+        Thread {
+            val found = runCatching { Geocoder(this, Locale.getDefault()).getFromLocationName(query, 1)?.firstOrNull() }.getOrNull()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                if (found == null) handOff("Couldn't find “$query” on the map.") else routeTo(navigator, found.latitude, found.longitude)
+            }
+        }.start()
+    }
+
+    private fun routeTo(navigator: Navigator, latitude: Double, longitude: Double) {
         val destination = Waypoint.builder().setLatLng(latitude, longitude).setTitle(intent.getStringExtra(InAppNavigation.EXTRA_TITLE) ?: "Destination").build()
         val travelMode = when (runCatching { InAppNavigation.Mode.valueOf(intent.getStringExtra(InAppNavigation.EXTRA_MODE) ?: "") }.getOrNull()) {
             InAppNavigation.Mode.TWO_WHEELER -> RoutingOptions.TravelMode.TWO_WHEELER
@@ -110,13 +133,18 @@ class NavigationActivity : ComponentActivity() {
         }
     }
 
-    /** Opens the trip in Google Maps instead, says why, and closes this screen. */
+    /** Says why in-app navigation can't start, then opens the trip in Google Maps (or closes) and leaves this screen. */
     private fun handOff(reason: String) {
         if (handedOff || isFinishing) return
         handedOff = true
-        Toast.makeText(this, "$reason Opening Google Maps.", Toast.LENGTH_LONG).show()
-        intent.getStringExtra(InAppNavigation.EXTRA_FALLBACK)?.let { InAppNavigation.openGoogleMaps(this, it) }
-        finish()
+        val fallback = intent.getStringExtra(InAppNavigation.EXTRA_FALLBACK)
+        AlertDialog.Builder(this)
+            .setTitle("In-app navigation unavailable")
+            .setMessage(reason)
+            .setPositiveButton("Open Google Maps") { _, _ -> fallback?.let { InAppNavigation.openGoogleMaps(this, it) }; finish() }
+            .setNegativeButton("Close") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
     }
 
     override fun onStart() { super.onStart(); navigationView.onStart() }

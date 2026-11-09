@@ -113,7 +113,7 @@ private fun startNavigation(context: Context, url: String) = com.barkadakaskas.a
 /** Turn-by-turn to [stop] from where you are: inside the app when the Navigation SDK can route it, else Google Maps. */
 private fun navigateTo(context: Context, stop: Stop) {
     val url = Itinerary.navigateUrl(stop) ?: return
-    com.barkadakaskas.app.nav.InAppNavigation.navigate(context, stop.latitude, stop.longitude, stop.title, stop.transport, url)
+    com.barkadakaskas.app.nav.InAppNavigation.navigate(context, stop.latitude, stop.longitude, stop.title, stop.transport, url, stop.location.ifBlank { null })
 }
 
 private fun openUrl(context: Context, url: String) {

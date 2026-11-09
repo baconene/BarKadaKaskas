@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
+use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +24,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('trips/{trip}/invitations', [TripController::class, 'invite'])->middleware('throttle:10,1');
         Route::post('invitations/{token}/join', [TripController::class, 'join']);
         Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary']);
+        Route::post('trips/{trip}/itinerary/suggestions', [ItineraryPlanController::class, 'suggest'])->middleware('throttle:10,1');
+        Route::post('trips/{trip}/itinerary/batch', [ItineraryPlanController::class, 'store'])->middleware('throttle:20,1');
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
         Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');

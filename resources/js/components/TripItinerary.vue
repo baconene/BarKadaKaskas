@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ChevronLeft, ChevronRight, ChevronUp, List, Navigation, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight, ChevronUp, List, Navigation, Sparkles, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
 import ItineraryRouteMap, { type LegResult } from '@/components/ItineraryRouteMap.vue';
 import ActivitySheet from '@/components/trip/ActivitySheet.vue';
 import DailyRouteSummary from '@/components/trip/DailyRouteSummary.vue';
 import DaySelector from '@/components/trip/DaySelector.vue';
 import DayTimeline from '@/components/trip/DayTimeline.vue';
 import StopFormSheet from '@/components/trip/StopFormSheet.vue';
+import AiPlannerSheet from '@/components/trip/AiPlannerSheet.vue';
 import { costRange, dayKey, directionsUrl, orderedStops, totalCost, transport, type ItineraryStop } from '@/lib/itinerary';
 import { appFetch } from '@/lib/uploads';
 
 export type PlanView = 'today' | 'itinerary' | 'map';
-const props = defineProps<{ tripId: number; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
+const props = defineProps<{ tripId: number; destination?: string; aiPlanner?: boolean; aiPrompt?: string | null; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
 const emit = defineEmits<{ navigate: [view: PlanView] }>();
 
 // ---- Days -----------------------------------------------------------------------------
@@ -145,6 +146,9 @@ async function toggleDone(id: number) {
     }
 }
 const formOpen = ref<ItineraryStop | 'new' | null>(null);
+// AI planner; opens straight away (and starts suggesting) when the trip was just created with an AI request.
+const plannerOpen = ref(!!props.aiPrompt && props.isOrganizer && !!props.aiPlanner);
+const canPlanWithAi = computed(() => props.isOrganizer && !!props.aiPlanner);
 function editFromSheet(item: ItineraryStop) { openItem.value = null; formOpen.value = item; }
 function showOnMap(id: number) { openItem.value = null; selectedLeg.value = id; if (!isDesktop.value) emit('navigate', 'map'); }
 // Keep an open sheet in sync after the itinerary reloads.
@@ -162,7 +166,10 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
                 <RouteIcon :size="34" class="empty-icon" aria-hidden="true" />
                 <h2>Plan your first day</h2>
                 <p class="muted">Add your arrival point, then the places you want to visit. Activities show on the map with their budget.</p>
-                <button v-if="isOrganizer" type="button" class="btn" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> Add the first activity</button>
+                <div v-if="isOrganizer" class="empty-actions">
+                    <button v-if="canPlanWithAi" type="button" class="btn" @click="plannerOpen = true"><Sparkles :size="16" aria-hidden="true" /> Plan it with AI</button>
+                    <button type="button" class="btn" :class="{ secondary: canPlanWithAi }" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> Add the first activity</button>
+                </div>
             </div>
 
             <!-- Today -->
@@ -184,6 +191,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
                     <div><h2>Itinerary</h2><p class="muted">{{ days.length }} days · {{ stops.length }} activities</p></div>
                     <div class="head-actions">
                         <span v-if="shownBudget" class="budget-pill"><Wallet :size="15" aria-hidden="true" /> {{ costRange(shownBudget.min, shownBudget.max) }}<small>/person</small></span>
+                        <button v-if="canPlanWithAi" type="button" class="btn secondary add-btn" @click="plannerOpen = true"><Sparkles :size="16" aria-hidden="true" /> <span>AI plan</span></button>
                         <button v-if="isOrganizer" type="button" class="btn add-btn" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> <span>Add</span></button>
                     </div>
                 </header>
@@ -266,6 +274,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 
         <ActivitySheet :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer"
             :done="!!openItem && done.has(openItem.id)" :done-error="doneError" @close="openItem = null" @edit="editFromSheet" @toggle-done="toggleDone" @show-on-map="showOnMap" />
+        <AiPlannerSheet v-if="canPlanWithAi" :open="plannerOpen" :trip-id="tripId" :destination="destination ?? 'your trip'" :initial-prompt="aiPrompt" :auto-generate="!!aiPrompt" @close="plannerOpen = false" />
         <StopFormSheet v-if="isOrganizer" :open="formOpen" :trip-id="tripId" :timezone="timezone" :browser-key="googleMaps.browserKey" :default-day="view === 'itinerary' ? selectedDay : today?.day.key ?? null" @close="formOpen = null" />
     </div>
 </template>
@@ -278,6 +287,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .travel-app .screen-head h2{font-size:22px;letter-spacing:-.6px}
 .head-actions{display:flex;align-items:center;gap:8px}
 .add-btn{min-height:44px}
+.empty-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .budget-pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:750;color:#214e3e;background:#fff;border:1px solid #dfe7da;border-radius:999px;padding:7px 12px;white-space:nowrap}
 .budget-pill small{font-weight:500;color:#738178;font-size:11px}
 .timeline-card{padding:8px}

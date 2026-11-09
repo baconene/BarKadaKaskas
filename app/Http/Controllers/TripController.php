@@ -23,13 +23,16 @@ class TripController extends Controller
     }
     public function store(Request $request)
     {
-        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => 'required|in:PHP,USD,EUR,GBP,SGD,AUD,CAD']);
+        $data = $request->validate(['name' => 'required|string|max:120', 'destination' => 'required|string|max:200', 'description' => 'nullable|string|max:4000', 'starts_on' => 'required|date_format:Y-m-d', 'ends_on' => 'required|date_format:Y-m-d|after_or_equal:starts_on', 'timezone' => 'required|timezone', 'currency_code' => 'required|in:PHP,USD,EUR,GBP,SGD,AUD,CAD', 'ai_prompt' => 'nullable|string|max:2000']);
+        // An optional "plan it with AI" request from the create form opens the AI planner on the new trip.
+        $aiPrompt = trim((string) ($data['ai_prompt'] ?? '')); unset($data['ai_prompt']);
         $trip = DB::transaction(function () use ($data, $request) {
             $trip = Trip::create([...$data, 'organizer_user_id' => $request->user()->id]);
             $trip->members()->create(['user_id' => $request->user()->id, 'status' => 'active', 'joined_at' => now()]);
             return $trip;
         });
-        return $request->is('api/*') ? response()->json(['data' => $trip], 201) : to_route('trips.show', $trip);
+        if ($request->is('api/*')) { return response()->json(['data' => $trip], 201); }
+        return to_route('trips.show', $trip)->with('ai_prompt', $aiPrompt !== '' ? $aiPrompt : null);
     }
     public function show(Request $request, Trip $trip, TripBalances $balances)
     {
@@ -43,6 +46,7 @@ class TripController extends Controller
                 'balances' => $balances->calculate($trip), 'dues' => $balances->dues($trip, $shareRows->all()), 'expense_shares' => (object) $shareRows->all(),
                 'current_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'),
                 'is_organizer' => $trip->organizer_user_id === $request->user()->id,
+                'ai_planner' => app(\App\Services\Vertex\TripPlanner::class)->configured(),
             ]]);
         }
         return Inertia::render('Trips/Show', [
@@ -52,6 +56,7 @@ class TripController extends Controller
             'expenseShares' => $shareRows,
             'googleMaps' => ['browserKey' => config('services.google_maps.browser_key'), 'mapId' => config('services.google_maps.map_id')],
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
+            'aiPrompt' => session('ai_prompt'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured(),
         ]);
     }
     /** Organizer edits the trip details. Currency is fixed once expenses exist, so amounts keep their meaning. */

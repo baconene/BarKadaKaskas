@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ExpenseController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
+use App\Http\Controllers\{ExpenseController, ItineraryPlanController, SettlementController, ReceiptScanController, TravelerProfileController, TripController, TripCoverController, TripPostController};
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -28,6 +28,8 @@ Route::middleware('auth')->group(function () {
     Route::post('trips/{trip}/invitations', [TripController::class, 'invite'])->middleware('throttle:10,1')->name('trips.invite');
     Route::post('join/{token}', [TripController::class, 'join'])->middleware('throttle:10,1')->name('invitations.join');
     Route::post('trips/{trip}/itinerary', [TripController::class, 'itinerary'])->name('itinerary.store');
+    Route::post('trips/{trip}/itinerary/suggestions', [ItineraryPlanController::class, 'suggest'])->middleware('throttle:10,1')->name('itinerary.suggest');
+    Route::post('trips/{trip}/itinerary/batch', [ItineraryPlanController::class, 'store'])->middleware('throttle:20,1')->name('itinerary.batch');
     Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary'])->name('itinerary.update');
     Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone'])->name('itinerary.done');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');

@@ -190,7 +190,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 @Composable private fun Avatar(name: String, highlight: Boolean = false, size: Int = 40, url: String? = null) {
     Box(Modifier.size(size.dp).clip(CircleShape).background(if (highlight) Forest else Sage), contentAlignment = Alignment.Center) {
-        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (url != null) NetworkImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Text(initials(name), color = if (highlight) Color.White else Forest, fontWeight = FontWeight.Bold, fontSize = (size / 2.8).sp)
     }
 }
@@ -243,6 +243,9 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
 @Composable private fun TripsScreen(vm: TravelViewModel) {
     var create by remember { mutableStateOf(false) }
+    // The trip card being opened: shows "Opening…" until the trip loads, so slow networks still give feedback.
+    var opening by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(vm.busy) { if (!vm.busy) opening = null }
     val snackbar = remember { SnackbarHostState() }
     val list = rememberLazyListState()
     val today = LocalDate.now()
@@ -265,14 +268,15 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                     }
                 }
                 if (vm.trips.isEmpty() && !vm.busy) item { EmptyState(Icons.Default.Luggage, "Your adventures start here", "Create a trip, invite your barkada, and leave the expense math to us.", "Plan your first trip") { create = true } }
-                active.firstOrNull()?.let { next -> item(key = "hero-${next.id}") { HeroTrip(next, today, Modifier.animateItem()) { vm.openTrip(next) } } }
+                if (vm.trips.isEmpty() && vm.busy) items(3) { TripCardSkeleton() }
+                active.firstOrNull()?.let { next -> item(key = "hero-${next.id}") { OpeningOverlay(opening == next.id && vm.busy, Modifier.animateItem()) { HeroTrip(next, today, Modifier) { opening = next.id; vm.openTrip(next) } } } }
                 if (active.size > 1) {
                     item { SectionTitle("Coming up", active.size - 1) }
-                    itemsIndexed(active.drop(1), key = { _, trip -> trip.id }) { index, trip -> TripCard(trip, index + 1, today, Modifier.animateItem()) { vm.openTrip(trip) } }
+                    itemsIndexed(active.drop(1), key = { _, trip -> trip.id }) { index, trip -> OpeningOverlay(opening == trip.id && vm.busy, Modifier.animateItem()) { TripCard(trip, index + 1, today, Modifier) { opening = trip.id; vm.openTrip(trip) } } }
                 }
                 if (past.isNotEmpty()) {
                     item { SectionTitle(if (past.any { it.cancelled }) "Past & cancelled" else "Past trips", past.size) }
-                    itemsIndexed(past, key = { _, trip -> trip.id }) { index, trip -> TripCard(trip, index, today, Modifier.animateItem()) { vm.openTrip(trip) } }
+                    itemsIndexed(past, key = { _, trip -> trip.id }) { index, trip -> OpeningOverlay(opening == trip.id && vm.busy, Modifier.animateItem()) { TripCard(trip, index, today, Modifier) { opening = trip.id; vm.openTrip(trip) } } }
                 }
             }
         }
@@ -288,12 +292,40 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 /** The next (or ongoing) trip, shown big with a countdown. */
+@Composable private fun OpeningOverlay(active: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
+    Box(modifier) {
+        content()
+        if (active) Box(Modifier.matchParentSize().clip(RoundedCornerShape(24.dp)).background(Color.White.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+            Surface(color = Forest, shape = RoundedCornerShape(50), shadowElevation = 4.dp) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp))
+                    Text("Opening…", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
+}
+
+/** Placeholder card while the trip list loads for the first time. */
+@Composable private fun TripCardSkeleton() {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Shimmer(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))); Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Shimmer(Modifier.fillMaxWidth(0.4f).height(10.dp).clip(RoundedCornerShape(5.dp)))
+                Shimmer(Modifier.fillMaxWidth(0.75f).height(14.dp).clip(RoundedCornerShape(6.dp)))
+                Shimmer(Modifier.fillMaxWidth(0.55f).height(10.dp).clip(RoundedCornerShape(5.dp)))
+            }
+        }
+    }
+}
+
 @Composable private fun HeroTrip(trip: Trip, today: LocalDate, modifier: Modifier, open: () -> Unit) {
     val phase = Itinerary.phase(trip, today)
     Card(onClick = open, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Forest)) {
         Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Forest, Color(0xFF2F6B52))))) {
             if (trip.coverUrl != null) {
-                AsyncImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+                NetworkImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
                 // Darkens the photo so the white text stays readable.
                 Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.2f), Color.Black.copy(alpha = 0.7f)))))
             } else Icon(Icons.Default.Landscape, null, tint = Color.White.copy(alpha = 0.08f), modifier = Modifier.size(170.dp).align(Alignment.BottomEnd).offset(x = 30.dp, y = 40.dp))
@@ -326,7 +358,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     Card(onClick = open, modifier = modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(banner), contentAlignment = Alignment.Center) {
-                if (trip.coverUrl != null) AsyncImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                if (trip.coverUrl != null) NetworkImage(model = trip.coverUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 else Icon(Icons.Default.Place, null, tint = accent, modifier = Modifier.size(30.dp))
             }
             Spacer(Modifier.width(14.dp))
@@ -836,7 +868,7 @@ private fun postTime(iso: String): String = runCatching {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    AsyncImage(model = urls[page], contentDescription = "Photo ${page + 1} of ${urls.size}", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+                    NetworkImage(model = urls[page], contentDescription = "Photo ${page + 1} of ${urls.size}", contentScale = ContentScale.Fit, dark = true, modifier = Modifier.fillMaxWidth())
                 }
             }
             if (urls.size > 1) {
@@ -856,7 +888,7 @@ private fun postTime(iso: String): String = runCatching {
 
 @Composable private fun PhotoTile(photo: PostPhoto, modifier: Modifier, extra: Int, open: (String) -> Unit) {
     Box(modifier.background(Sage).clickable { open(photo.url) }) {
-        AsyncImage(model = photo.url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        NetworkImage(model = photo.url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         if (extra > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) { Text("+$extra", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
     }
 }
@@ -870,7 +902,7 @@ private fun postTime(iso: String): String = runCatching {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(picked, key = { _, uri -> uri.toString() }) { index, uri ->
                 Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp))) {
-                    AsyncImage(model = uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    NetworkImage(model = uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     Icon(Icons.Default.Close, "Remove photo", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).clickable { change(picked.filterIndexed { i, _ -> i != index }) }.padding(3.dp))
                 }
             }
@@ -1256,7 +1288,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
     val changed = name != trip.name || destination != trip.destination || about != trip.description || start != trip.startsOn || end != trip.endsOn || currency != trip.currency || zone != trip.timezone
     FormSheet("Edit trip", vm, dismiss) {
         Box(Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(18.dp)).background(Sage).clickable(enabled = !vm.busy && !preparing) { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-            if (trip.coverUrl != null) AsyncImage(model = trip.coverUrl, contentDescription = "Trip cover photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            if (trip.coverUrl != null) NetworkImage(model = trip.coverUrl, contentDescription = "Trip cover photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             else Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.AddPhotoAlternate, null, tint = Forest, modifier = Modifier.size(32.dp))
                 Text("Add a cover photo", color = Forest, fontWeight = FontWeight.SemiBold)

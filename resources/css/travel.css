@@ -46,3 +46,28 @@
 @keyframes skeleton-shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
 .skeleton{background:linear-gradient(90deg,#edf1e8 0,#f6f8f2 50%,#edf1e8 100%);background-size:400px 100%;animation:skeleton-shimmer 1.2s linear infinite;border-radius:8px}
 @media(prefers-reduced-motion:reduce){.skeleton{animation:none}*{scroll-behavior:auto!important}}
+
+/* ---- Buttons: one size system (44px touch targets; 36px .small) ---- */
+.travel-app .btn{min-height:44px;padding:0 18px;font-size:14px;line-height:1.2;border-radius:12px;white-space:nowrap;transition:background .15s,border-color .15s,box-shadow .15s,transform .1s;-webkit-tap-highlight-color:transparent}
+.travel-app .btn:hover:not(:disabled){background:#183d30}
+.travel-app .btn.secondary:hover:not(:disabled){background:#f2f6ec;border-color:#c5d3c3}
+.travel-app .btn.danger:hover:not(:disabled){background:#fde3da}
+.travel-app .btn:active:not(:disabled){transform:scale(.97)}
+.travel-app .btn:disabled{opacity:.55;cursor:not-allowed}
+.travel-app .btn.small,.travel-app .btn.small-btn{min-height:36px;padding:0 12px;font-size:13px;border-radius:10px}
+.travel-app .btn.wide,.travel-app .btn.block{width:100%}
+.travel-app .btn svg{flex-shrink:0}
+.travel-app .icon-action{min-width:40px!important;min-height:40px!important;border-radius:10px!important;cursor:pointer}
+.travel-app .icon-action:active:not(:disabled){transform:scale(.94)}
+@media(max-width:640px){.travel-app .btn{min-height:46px;padding:0 16px}.travel-app .btn.small,.travel-app .btn.small-btn{min-height:38px}}
+@media(prefers-reduced-motion:reduce){.travel-app .btn,.travel-app .icon-action{transition:none}.travel-app .btn:active,.travel-app .icon-action:active{transform:none}}
+
+/* ---- Loading states ---- */
+/* A card that was tapped and is opening (slow networks): dim it and show a spinner badge. */
+.is-opening{position:relative;pointer-events:none}
+.is-opening::after{content:"";position:absolute;inset:0;border-radius:inherit;background:#ffffff8c}
+.opening-badge{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:#214e3e;color:#fff;font-size:13px;font-weight:700;box-shadow:0 6px 18px #214e3e40}
+.spinner{width:16px;height:16px;border-radius:50%;border:2px solid #ffffff66;border-top-color:#fff;animation:spin .8s linear infinite}
+.spinner.dark{border-color:#214e3e33;border-top-color:#214e3e}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation-duration:2s}}

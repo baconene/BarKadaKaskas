@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, LoaderCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, Sparkles, Trash2, X } from 'lucide-vue-next';
+import LoadingImage from '@/components/LoadingImage.vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { appFetch, shrinkImage } from '@/lib/uploads';
@@ -149,7 +150,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
             </header>
             <div class="post-photos" :class="gridClass(post.photos.length)">
                 <button v-for="(photo, i) in post.photos.slice(0, post.photos.length > 4 ? 4 : post.photos.length)" :key="photo.url" type="button" class="photo" :style="post.photos.length === 1 && photo.width && photo.height ? { aspectRatio: `${photo.width} / ${photo.height}` } : undefined" @click="openViewer(post, i)">
-                    <img :src="photo.url" :alt="post.caption ? `Photo ${i + 1}: ${post.caption}` : `Photo ${i + 1} by ${post.author.name}`" loading="lazy" />
+                    <LoadingImage :src="photo.url" :alt="post.caption ? `Photo ${i + 1}: ${post.caption}` : `Photo ${i + 1} by ${post.author.name}`" />
                     <span v-if="i === 3 && post.photos.length > 4" class="more">+{{ post.photos.length - 4 }}</span>
                 </button>
             </div>
@@ -161,7 +162,14 @@ const empty = computed(() => loaded.value && !posts.value.length);
         </article>
 
         <button v-if="nextBefore" type="button" class="btn secondary load-more" :disabled="loading" @click="load(true)">{{ loading ? 'Loading…' : 'Load more' }}</button>
-        <p v-else-if="loading && !loaded" class="muted center"><LoaderCircle :size="18" class="spin" aria-hidden="true" /> Loading photos…</p>
+        <template v-else-if="loading && !loaded">
+            <article v-for="n in 2" :key="n" class="post card skeleton-post" aria-hidden="true">
+                <div class="post-head"><span class="skeleton sk-avatar" /><span class="who"><span class="skeleton sk-line" /><span class="skeleton sk-line short" /></span></div>
+                <div class="skeleton sk-photo" />
+                <div class="sk-foot"><span class="skeleton sk-line" /></div>
+            </article>
+            <p class="sr-only" role="status">Loading photos…</p>
+        </template>
 
         <button v-if="!readOnly" type="button" class="post-fab" @click="openComposer()"><ImagePlus :size="20" aria-hidden="true" /> Post photos</button>
 
@@ -212,7 +220,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .post-photos.many{grid-template-columns:1fr 1fr}
 .photo{position:relative;display:block;padding:0;border:0;background:#dfe6d9;cursor:zoom-in;aspect-ratio:1}
 .post-photos.one .photo{aspect-ratio:4/3;max-height:640px}
-.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.skeleton-post .sk-avatar{width:40px;height:40px;border-radius:50%;flex-shrink:0}.sk-line{display:block;height:12px;width:60%;border-radius:6px;margin:3px 0}.sk-line.short{width:30%}.sk-photo{aspect-ratio:4/3;border-radius:0}.sk-foot{padding:14px 16px}
 .more{position:absolute;inset:0;display:grid;place-items:center;background:#172f2a99;color:#fff;font-size:26px;font-weight:800}
 .caption{padding:12px 16px 0;font-size:15px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
 .post-foot{display:flex;align-items:center;gap:6px;padding:8px 10px 12px}

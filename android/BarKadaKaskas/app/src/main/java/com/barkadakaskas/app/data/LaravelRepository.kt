@@ -78,6 +78,11 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         request("POST", "/trips/$tripId/expenses/${expense.id}/shares/paid", body)
     }
 
+    override suspend fun setExpensePayers(tripId: Long, expense: Expense, payments: List<Payment>) {
+        val rows = org.json.JSONArray().apply { payments.forEach { put(JSONObject().put("trip_member_id", it.memberId).put("amount_minor", it.amountMinor)) } }
+        request("PUT", "/trips/$tripId/expenses/${expense.id}/payers", JSONObject().put("version", expense.version).put("payments", rows))
+    }
+
     override suspend fun recordMerchantPayment(tripId: Long, expense: Expense, memberId: Long, amountMinor: Long) {
         request("POST", "/trips/$tripId/expenses/${expense.id}/payments", JSONObject().put("trip_member_id", memberId).put("amount_minor", amountMinor).put("version", expense.version))
     }

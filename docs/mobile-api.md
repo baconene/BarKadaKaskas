@@ -98,6 +98,7 @@ currency_code,total_minor,split_method,status,version,cancellation_reason` and
 |---|---|---|
 | PATCH | `/status` | `{status,version,reason?,void_payments?}` |
 | POST | `/payments` | `{trip_member_id,amount_minor,version}` |
+| PUT | `/payers` | `{version,payments:[{trip_member_id,amount_minor}]}`. Organizer replaces who paid the merchant (empty = unpaid); shares unchanged. Cannot exceed the total; a completed expense stays paid in full; locked once reimbursements are recorded |
 | POST | `/shares/paid` | `{member_id,version,settlement_id?,new_payment?}` |
 | POST | `/receipts` | multipart field `receipt`, JPG/PNG/PDF <=10MB → 201 `{data:{id,processing_status}}` |
 

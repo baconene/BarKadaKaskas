@@ -987,6 +987,8 @@ private data class LineState(val description: String, val amountMinor: Long, val
         if (detail.isOrganizer) {
             if (expense.status == "open") { OutlinedButton(onClick = { action = "payment" }, Modifier.fillMaxWidth()) { Text("Record merchant payment") }; Button(onClick = { action = "completed" }, Modifier.fillMaxWidth()) { Text("Complete merchant bill") } }
             if (expense.status == "completed") Button(onClick = { action = "closed" }, Modifier.fillMaxWidth()) { Text("Close expense") }
+            // Payers stay editable until reimbursements are recorded against the bill (they went to those payers).
+            if (expense.status in listOf("open", "completed") && detail.settlements.none { it.expenseId == expense.id }) OutlinedButton(onClick = { action = "payers" }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Change who paid") }
         }
         if (canManage || canDelete) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (canManage && expense.status in listOf("open", "completed")) OutlinedButton(onClick = { action = "cancelled" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Block, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Cancel") }
@@ -1007,6 +1009,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
                     Button(onClick = { vm.mutate(dismiss) { repo, current -> repo.deleteExpense(current.trip.id, expense.id) } }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Delete expense") }
                     TextButton(onClick = { action = null }, modifier = Modifier.fillMaxWidth()) { Text("Keep expense") }
                 }
+                "payers" -> PayersEditor(vm, detail, expense) { action = null }
                 "payment" -> { Choice("Paid by", payer, detail.members.map { it.id.toString() to it.name }, { payer = it }); Field("Amount (${detail.trip.currency})", paymentAmount, { paymentAmount = it }, number = true); Submit("Record payment", vm.busy, amount(paymentAmount) != null) { vm.mutate({ action = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, payer.toLong(), amount(paymentAmount)!!) } } }
                 else -> {
                     Text(if (target == "closed") "Close this expense? Further expense edits will be locked." else if (target == "completed") "Confirm the merchant has been paid in full. Friends may still owe reimbursements." else "Cancel this expense? Its spending will be excluded from balances.")
@@ -1016,6 +1019,40 @@ private data class LineState(val description: String, val amountMinor: Long, val
             }
         }
     }
+}
+
+/** Organizer corrects who paid the merchant and how much; leave it empty if nobody has paid yet. Shares stay as they are. */
+@Composable private fun PayersEditor(vm: TravelViewModel, detail: TripDetail, expense: Expense, done: () -> Unit) {
+    val rows = remember(expense.id, expense.version) {
+        mutableStateListOf<Pair<String, String>>().apply {
+            expense.payments.groupBy { it.memberId }.forEach { (id, list) -> add(id.toString() to java.math.BigDecimal(list.sumOf { it.amountMinor }).movePointLeft(2).toPlainString()) }
+        }
+    }
+    val parsed = rows.map { (id, value) -> id.toLongOrNull() to amount(value) }
+    val total = parsed.sumOf { it.second ?: 0L }
+    val problem = when {
+        parsed.any { it.first == null || it.second == null } -> "Pick a traveller and enter an amount on every row."
+        parsed.map { it.first }.distinct().size != parsed.size -> "Each traveller can appear only once."
+        total > expense.totalMinor -> "Payments can't add up to more than ${money(expense.totalMinor, detail.trip.currency)}."
+        expense.status == "completed" && total != expense.totalMinor -> "A completed bill must stay paid in full (${money(expense.totalMinor, detail.trip.currency)})."
+        else -> null
+    }
+    Text("Who paid the merchant?", fontWeight = FontWeight.Bold)
+    Text("${money(total, detail.trip.currency)} of ${money(expense.totalMinor, detail.trip.currency)} paid. Remove every row if nobody has paid yet.", style = MaterialTheme.typography.bodySmall, color = Muted)
+    rows.forEachIndexed { index, (id, value) ->
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1.3f)) { Choice("Payer", id, detail.members.map { it.id.toString() to it.name }, { rows[index] = it to value }) }
+            Box(Modifier.weight(1f)) { Field("Amount", value, { rows[index] = id to it }, number = true) }
+            IconButton(onClick = { rows.removeAt(index) }) { Icon(Icons.Default.Close, "Remove payer", tint = Muted) }
+        }
+    }
+    TextButton(onClick = { rows.add((detail.members.firstOrNull { m -> rows.none { it.first == m.id.toString() } }?.id ?: detail.currentMemberId).toString() to "") }) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Add a payer") }
+    problem?.let { Text(it, color = Danger, style = MaterialTheme.typography.bodySmall) }
+    Submit("Save payers", vm.busy, problem == null) {
+        val payments = parsed.map { Payment(it.first!!, it.second!!) }
+        vm.mutate(done) { repo, current -> repo.setExpensePayers(current.trip.id, expense, payments) }
+    }
+    TextButton(onClick = done, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
 }
 
 @Composable private fun SettlementForm(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {

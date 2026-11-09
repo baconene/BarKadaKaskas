@@ -42,6 +42,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update']);
         Route::patch('trips/{trip}/expenses/{expense}/status', [ExpenseController::class, 'status']);
         Route::post('trips/{trip}/expenses/{expense}/payments', [ExpenseController::class, 'payment']);
+        Route::put('trips/{trip}/expenses/{expense}/payers', [ExpenseController::class, 'payers']);
         Route::post('trips/{trip}/expenses/{expense}/shares/paid', [ExpenseController::class, 'sharePaid']);
         Route::post('trips/{trip}/expenses/{expense}/receipts', [ExpenseController::class, 'receipt']);
         Route::get('receipts/{receipt}', [ExpenseController::class, 'download']);

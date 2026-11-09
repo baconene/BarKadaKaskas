@@ -123,6 +123,24 @@ class MobileApiTest extends TestCase
         $this->patchJson('/api/v1/trips/'.$other->id.'/expenses/'.$expense['id'], $this->expense() + ['version' => 3], $headers)->assertNotFound();
     }
 
+    public function test_organizer_changes_who_paid_from_the_app(): void
+    {
+        $headers = $this->headers($this->owner);
+        $path = '/api/v1/trips/'.$this->trip->id.'/expenses';
+        $id = $this->postJson($path, $this->expense(), $headers)->assertCreated()->json('data.id');
+        $payers = $path.'/'.$id.'/payers';
+        // Down payment by the friend instead of the owner paying in full; shares stay as they were.
+        $this->putJson($payers, ['version' => 1, 'payments' => [['trip_member_id' => $this->friendMember, 'amount_minor' => 3000]]], $headers)->assertOk()->assertJsonPath('data.version', 2);
+        $this->assertSame([[$this->friendMember, 3000]], \App\Models\ExpensePayment::where('expense_id', $id)->get()->map(fn ($p) => [$p->trip_member_id, $p->amount_minor])->all());
+        $this->assertSame(10001, (int) \App\Models\ExpenseAllocation::where('expense_id', $id)->sum('amount_minor'));
+        $this->putJson($payers, ['version' => 1, 'payments' => []], $headers)->assertUnprocessable(); // stale
+        $this->putJson($payers, ['version' => 2, 'payments' => [['trip_member_id' => $this->friendMember, 'amount_minor' => 20000]]], $headers)->assertUnprocessable();
+        $this->putJson($payers, ['version' => 2, 'payments' => []], $this->headers($this->friend))->assertForbidden();
+        $this->putJson($payers, ['version' => 2, 'payments' => []], $headers)->assertOk()->assertJsonPath('data.version', 3);
+        $this->assertSame(0, \App\Models\ExpensePayment::where('expense_id', $id)->count());
+        $this->assertDatabaseHas('activity_logs', ['subject_id' => $id, 'action' => 'payers_changed']);
+    }
+
     public function test_settlement_sender_and_confirmation_cannot_be_spoofed(): void
     {
         $path = '/api/v1/trips/'.$this->trip->id.'/settlements';

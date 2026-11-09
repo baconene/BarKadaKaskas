@@ -64,6 +64,8 @@ interface TravelRepository {
     suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String? = null, voidPayments: Boolean = false)
     suspend fun markSharePaid(tripId: Long, expense: Expense, memberId: Long, settlementId: Long? = null, newPayment: Boolean = false)
     suspend fun recordMerchantPayment(tripId: Long, expense: Expense, memberId: Long, amountMinor: Long)
+    /** Organizer replaces who paid the merchant ([payments] = member id to amount; empty means unpaid). Shares are unchanged. */
+    suspend fun setExpensePayers(tripId: Long, expense: Expense, payments: List<Payment>)
     suspend fun recordSettlement(tripId: Long, recipientId: Long, amountMinor: Long, method: String)
     suspend fun confirmSettlement(tripId: Long, settlementId: Long)
     suspend fun createInvitation(tripId: Long): String

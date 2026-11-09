@@ -36,20 +36,9 @@ class ExpenseController extends Controller
             $fail = fn ($message) => throw ValidationException::withMessages(['expense' => $message]);
             if (in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled], true)) { $fail('Closed and cancelled expenses cannot be edited.'); }
             if ($expense->version !== (int) $data['version']) { $fail('This expense changed. Refresh and reopen the editor before saving.'); }
-            // The organizer may correct who paid the merchant (and how much), but not once reimbursements
-            // were recorded against the bill: those went to the original payers. The change is logged.
-            $existing = $expense->payments()->get()->groupBy('trip_member_id')->map(fn ($rows) => (int) $rows->sum('amount_minor'))->sortKeys()->all();
-            $submitted = collect($data['payments'])->mapWithKeys(fn ($p) => [(int) $p['trip_member_id'] => (int) $p['amount_minor']])->sortKeys()->all();
-            $paymentsChanged = $existing !== $submitted;
-            if ($paymentsChanged && $expense->settlements()->exists()) { $fail('Reimbursements were already recorded for this bill, so who paid the merchant can no longer be changed.'); }
-            if ($expense->status === ExpenseStatus::Completed && array_sum($submitted) !== (int) $data['total_minor']) { $fail('A completed expense must be paid in full: merchant payments must equal the total.'); }
             if ($expense->adjustments()->exists()) { $fail('This expense has separate adjustments and requires an adjustment-aware editor.'); }
             $before = $expense->load(['items', 'allocations', 'payments'])->toArray();
-            if ($paymentsChanged) {
-                $paidAt = $expense->payments()->pluck('paid_at', 'trip_member_id');
-                $expense->payments()->delete();
-                foreach ($submitted as $memberId => $amount) { $expense->payments()->create(['trip_member_id' => $memberId, 'amount_minor' => $amount, 'paid_at' => $paidAt[$memberId] ?? now()]); }
-            }
+            $this->replacePayments($expense, $data['payments'], (int) $data['total_minor'], 'expense');
             $expense->allocations()->delete();
             $expense->items()->delete();
             $expense->update(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['version' => $expense->version + 1]);
@@ -57,6 +46,52 @@ class ExpenseController extends Controller
             ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'updated', 'before' => $before, 'after' => $expense->fresh(['items', 'allocations', 'payments'])->toArray()]);
         });
         return $this->respond($request, $expense);
+    }
+
+    /**
+     * Organizer corrects who paid the merchant and how much, leaving shares untouched (used by the mobile app,
+     * which has no full expense editor). Same rules as the web editor; see replacePayments.
+     */
+    public function payers(Request $request, Trip $trip, Expense $expense)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        Gate::authorize('plan', $trip);
+        $memberIds = $trip->members()->where('status', 'active')->pluck('id')->all();
+        $data = $request->validate([
+            'version' => 'required|integer|min:1', 'payments' => 'present|array|max:100',
+            'payments.*.trip_member_id' => ['required', 'integer', 'distinct', Rule::in($memberIds)], 'payments.*.amount_minor' => 'required|integer|min:1|max:100000000',
+        ]);
+        DB::transaction(function () use ($data, $expense, $request) {
+            $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $fail = fn ($message) => throw ValidationException::withMessages(['payments' => $message]);
+            if (in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled], true)) { $fail('Closed and cancelled expenses cannot be edited.'); }
+            if ($expense->version !== (int) $data['version']) { $fail('This expense changed. Refresh before trying again.'); }
+            $before = $expense->load('payments')->payments->toArray();
+            if (! $this->replacePayments($expense, $data['payments'], $expense->total_minor, 'payments')) { return; }
+            $expense->increment('version');
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'payers_changed', 'before' => ['payments' => $before], 'after' => ['payments' => $expense->payments()->get()->toArray()]]);
+        });
+        return $this->respond($request, $expense);
+    }
+
+    /**
+     * Replaces an expense's merchant payments with [$payments] (one row per payer) when they differ. Not allowed
+     * once reimbursements were recorded against the bill, since those went to the original payers. Payments may
+     * not exceed the total, and a completed expense must stay paid in full. Returns whether anything changed.
+     */
+    private function replacePayments(Expense $expense, array $payments, int $total, string $errorKey): bool
+    {
+        $fail = fn ($message) => throw ValidationException::withMessages([$errorKey => $message]);
+        $existing = $expense->payments()->get()->groupBy('trip_member_id')->map(fn ($rows) => (int) $rows->sum('amount_minor'))->sortKeys()->all();
+        $submitted = collect($payments)->mapWithKeys(fn ($p) => [(int) $p['trip_member_id'] => (int) $p['amount_minor']])->sortKeys()->all();
+        if (array_sum($submitted) > $total) { $fail('Payments cannot exceed the total.'); }
+        if ($expense->status === ExpenseStatus::Completed && array_sum($submitted) !== $total) { $fail('A completed expense must be paid in full: merchant payments must equal the total.'); }
+        if ($existing === $submitted) { return false; }
+        if ($expense->settlements()->exists()) { $fail('Reimbursements were already recorded for this bill, so who paid the merchant can no longer be changed.'); }
+        $paidAt = $expense->payments()->pluck('paid_at', 'trip_member_id');
+        $expense->payments()->delete();
+        foreach ($submitted as $memberId => $amount) { $expense->payments()->create(['trip_member_id' => $memberId, 'amount_minor' => $amount, 'paid_at' => $paidAt[$memberId] ?? now()]); }
+        return true;
     }
 
     /** Keeps a scanned receipt photo with the expense it became, along with what was read from it. */

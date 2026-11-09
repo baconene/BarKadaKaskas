@@ -108,9 +108,12 @@ private fun editClock(value: String, timezone: String): String = runCatching { O
 private fun initials(name: String) = name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }.ifBlank { "?" }
 
 /** Hands a Google Maps navigation link to the Google Maps app (turn-by-turn from the current location), else the browser. */
-private fun startNavigation(context: Context, url: String) {
-    val maps = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage("com.google.android.apps.maps").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try { context.startActivity(maps) } catch (_: ActivityNotFoundException) { openUrl(context, url) }
+private fun startNavigation(context: Context, url: String) = com.barkadakaskas.app.nav.InAppNavigation.openGoogleMaps(context, url)
+
+/** Turn-by-turn to [stop] from where you are: inside the app when the Navigation SDK can route it, else Google Maps. */
+private fun navigateTo(context: Context, stop: Stop) {
+    val url = Itinerary.navigateUrl(stop) ?: return
+    com.barkadakaskas.app.nav.InAppNavigation.navigate(context, stop.latitude, stop.longitude, stop.title, stop.transport, url)
 }
 
 private fun openUrl(context: Context, url: String) {
@@ -493,10 +496,10 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Icon(Icons.Default.LocationOff, null, tint = Muted, modifier = Modifier.size(32.dp)); Spacer(Modifier.height(8.dp))
                 Text(if (current.stops.any { it.location.isNotBlank() }) "Finding places on the map…" else "Add locations to see this day on the map", color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             } else TripMap(pins, Modifier.fillMaxSize(), Forest, focus = focusedIndex?.let { listOf(allStops[it - 1].id, allStops[it].id) } ?: emptyList()) { pin ->
-                current.stops.find { it.id == pin.id }?.let { stop -> Itinerary.navigateUrl(stop.copy(latitude = pin.latitude, longitude = pin.longitude))?.let { startNavigation(context, it) } }
+                current.stops.find { it.id == pin.id }?.let { stop -> navigateTo(context, stop.copy(latitude = pin.latitude, longitude = pin.longitude)) }
             }
         }
-        if (focusedIndex != null) JourneyCard(allStops[focusedIndex - 1], allStops[focusedIndex], focusedIndex, allStops.size - 1, { focusJourney(focusedIndex - 1) }, { focusJourney(focusedIndex + 1) }, { focusedId = null }, { url -> openUrl(context, url) })
+        if (focusedIndex != null) JourneyCard(allStops[focusedIndex - 1], allStops[focusedIndex], focusedIndex, allStops.size - 1, { focusJourney(focusedIndex - 1) }, { focusJourney(focusedIndex + 1) }, { focusedId = null }, { url -> openUrl(context, url) }) { allStops[focusedIndex].let { s -> navigateTo(context, geocoded[s.id]?.takeIf { !Itinerary.hasPin(s) }?.let { s.copy(latitude = it.first, longitude = it.second) } ?: s) } }
         else Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Route for ${Itinerary.dayLabel(current.key)}", fontWeight = FontWeight.Bold)
@@ -513,7 +516,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
     Column {
         current.stops.forEachIndexed { index, stop ->
-            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { url -> startNavigation(context, url) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
+            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }
@@ -556,7 +559,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     }
 }
 
-@Composable private fun JourneyCard(from: Stop, to: Stop, number: Int, total: Int, previous: () -> Unit, next: () -> Unit, close: () -> Unit, open: (String) -> Unit) {
+@Composable private fun JourneyCard(from: Stop, to: Stop, number: Int, total: Int, previous: () -> Unit, next: () -> Unit, close: () -> Unit, open: (String) -> Unit, navigate: () -> Unit) {
     val mode = transportOptions.find { it.first == to.transport }?.second ?: "Transport to be decided"
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -568,12 +571,16 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         Text("${from.title} → ${to.title}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
         if (to.location.isNotBlank()) Text(to.location, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         val directions = if (Itinerary.samePlace(from, to)) null else Itinerary.directionsUrl(from, to)
-        if (directions != null) Button(onClick = { open(directions) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Directions") }
-        else Text("Same spot as the previous stop, no travel needed.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        if (directions == null) Text("Same spot as the previous stop, no travel needed.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Navigate: turn-by-turn from where you are now (in the app when possible). Route: the planned leg in Google Maps.
+            if (to.location.isNotBlank()) Button(onClick = navigate, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Navigate") }
+            if (directions != null) OutlinedButton(onClick = { open(directions) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Directions, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Route") }
+        }
     }
 }
 
-@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (String) -> Unit, toggleDone: () -> Unit, edit: () -> Unit) {
+@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, edit: () -> Unit) {
     var expanded by rememberSaveable(stop.id) { mutableStateOf(false) }
     val located = guessed?.takeIf { !Itinerary.hasPin(stop) }?.let { stop.copy(latitude = it.first, longitude = it.second) } ?: stop
     val previousLocated = previous
@@ -598,7 +605,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 }
                 // Tapping the place starts navigation from where you are now.
                 val go = Itinerary.navigateUrl(located)
-                if (go != null) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFF1F5EC)).clickable(onClickLabel = "Navigate to ${stop.location}") { navigate(go) }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (go != null) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFF1F5EC)).clickable(onClickLabel = "Navigate to ${stop.location}") { navigate(located) }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Place, null, tint = Moss, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
                     Text(stop.location, Modifier.weight(1f), color = Forest, style = MaterialTheme.typography.bodySmall, maxLines = if (expanded) 3 else 1, overflow = TextOverflow.Ellipsis)
                     Surface(color = Forest, shape = RoundedCornerShape(50)) {

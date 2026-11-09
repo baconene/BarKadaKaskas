@@ -130,6 +130,28 @@ Each itinerary day has an in-app map with numbered pins joined in visiting order
    (Settings → Secrets and variables → Actions). The mobile workflow passes it
    to Gradle.
 
+### In-app turn-by-turn navigation (Android)
+
+"Navigate" on a stop or on the map's journey card opens Google's **Navigation
+SDK** inside the app: voice guidance, rerouting and arrival, from the
+traveller's location to the stop. It uses the same `MAPS_API_KEY`:
+
+1. In the same Google Cloud project, enable **Navigation SDK** (billed per
+   destination; see Google Maps Platform pricing) and add it to the key's API
+   restrictions.
+2. The first time, travellers accept Google's navigation terms in the app.
+
+It routes driving, motorcycle/tricycle (two-wheeler), cycling and walking.
+Public transport, ferries and flights, stops without a map location, a key
+without the Navigation SDK enabled, declined terms or a missing location
+permission all open Google Maps instead, as before.
+
+The Navigation SDK contains the Maps SDK, so the build drops the separate
+`play-services-maps` library when it is included. Build without it with
+`-PENABLE_NAVIGATION_SDK=false` (or the `ENABLE_NAVIGATION_SDK=false`
+environment variable); pick the library version with `NAVIGATION_SDK_VERSION`
+(default `6.0.0`).
+
 This is a different key from the web's `GOOGLE_MAPS_BROWSER_KEY`
 (`docs/google-maps-setup.md`), which is restricted to your website.
 

@@ -17,6 +17,12 @@ val defaultServerUrl: String = (findProperty("DEFAULT_SERVER_URL") as String?) ?
 val buildNumber: Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 // Stable signing key for sideloaded releases (CI secrets). Android only updates an app signed with the same key.
 val releaseKeystore: String? = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { file(it).exists() }
+// In-app turn-by-turn navigation with Google's Navigation SDK (uses MAPS_API_KEY; the "Navigation SDK" API must be
+// enabled on that Google Cloud project). It replaces the Maps SDK, which the Navigation SDK already contains.
+// ENABLE_NAVIGATION_SDK=false builds without it (navigation then always opens Google Maps); NAVIGATION_SDK_VERSION
+// picks the library version.
+val inAppNavigation: Boolean = ((findProperty("ENABLE_NAVIGATION_SDK") as String?) ?: System.getenv("ENABLE_NAVIGATION_SDK")?.takeIf { it.isNotBlank() } ?: "true").toBoolean()
+val navigationSdkVersion: String = (findProperty("NAVIGATION_SDK_VERSION") as String?) ?: System.getenv("NAVIGATION_SDK_VERSION")?.takeIf { it.isNotBlank() } ?: "6.0.0"
 val mapsApiKey: String = (findProperty("MAPS_API_KEY") as String?) ?: System.getenv("MAPS_API_KEY") ?: localProperties.getProperty("MAPS_API_KEY") ?: ""
 android {
     namespace = "com.barkadakaskas.app"
@@ -30,6 +36,7 @@ android {
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"$defaultServerUrl\"")
         buildConfigField("String", "MAPS_API_KEY", "\"${mapsApiKey.replace("\"", "")}\"")
+        buildConfigField("boolean", "IN_APP_NAVIGATION", inAppNavigation.toString())
     }
     signingConfigs {
         if (releaseKeystore != null) create("sideload") {
@@ -45,7 +52,13 @@ android {
             if (releaseKeystore != null) signingConfig = signingConfigs.getByName("sideload")
         }
     }
-    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17
+        // The Navigation SDK needs Java 8+ library desugaring.
+        isCoreLibraryDesugaringEnabled = inAppNavigation
+    }
+    // The navigation screen comes from src/navigation, or a stub that hands off to Google Maps.
+    sourceSets["main"].java.srcDir(if (inAppNavigation) "src/navigation/java" else "src/navigationOff/java")
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
 }
@@ -65,6 +78,10 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     // Google Maps in Compose (used when MAPS_API_KEY is set).
     implementation("com.google.maps.android:maps-compose:6.4.1")
+    if (inAppNavigation) {
+        implementation("com.google.android.libraries.navigation:navigation:$navigationSdkVersion")
+        coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.0.4")
+    }
     // Trip cover photos.
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -72,3 +89,6 @@ dependencies {
     // Android's org.json is a stub on the JVM; use the real library for unit tests.
     testImplementation("org.json:json:20240303")
 }
+
+// The Navigation SDK bundles the Maps SDK; a second copy from maps-compose would clash.
+if (inAppNavigation) configurations.all { exclude(group = "com.google.android.gms", module = "play-services-maps") }

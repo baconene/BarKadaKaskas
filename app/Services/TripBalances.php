@@ -27,6 +27,25 @@ class TripBalances
         return array_values($balances);
     }
 
+    /**
+     * Per traveller, the two sides that the net balance hides: what they still have to pay for their own shares
+     * (owes_minor) and what others still have to pay back to them on bills they covered (owed_minor). Uses the
+     * same per-bill share rows as the expense cards ([$shareRows] keyed by expense id), on recorded bills only.
+     */
+    public function dues(Trip $trip, array $shareRows): array
+    {
+        $dues = $trip->members()->pluck('id')->mapWithKeys(fn ($id) => [$id => ['member_id' => $id, 'owes_minor' => 0, 'owed_minor' => 0]])->all();
+        foreach ($trip->expenses as $expense) {
+            if (! in_array($expense->status->value, ['open', 'completed', 'closed'], true)) { continue; }
+            foreach ($shareRows[$expense->id] ?? [] as $row) {
+                if (! isset($dues[$row['member_id']])) { continue; }
+                $dues[$row['member_id']]['owes_minor'] += $row['remaining_minor'];
+                $dues[$row['member_id']]['owed_minor'] += max(0, $row['covered_minor'] - $row['share_minor']);
+            }
+        }
+        return array_values($dues);
+    }
+
     /** What recorded bills still owe their merchants (totals minus payments made), across the trip. */
     public function unpaidToMerchants(Trip $trip): int
     {

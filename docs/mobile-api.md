@@ -34,7 +34,7 @@ message; expense status changes, merchant payments, share confirmations and sett
 |---|---|---|
 | GET | `/trips` | `{data:[TripSummary]}`; only active memberships |
 | POST | `/trips` | `{name,destination,description?,starts_on,ends_on,timezone,currency_code}` → 201 `{data:TripSummary}` |
-| GET | `/trips/{trip}` | `{data:{trip,categories,balances,expense_shares,current_member_id,is_organizer}}` |
+| GET | `/trips/{trip}` | `{data:{trip,categories,balances,dues,expense_shares,current_member_id,is_organizer}}`. `dues[]` is `{member_id,owes_minor,owed_minor}`: still to pay for one's own shares, and still to be paid back by others, on recorded bills |
 | POST | `/trips/{trip}/invitations` | Organizer only → 201 `{data:{token,url,expires_at}}` |
 | PATCH | `/trips/{trip}` | Organizer only, not cancelled. Same body as create; `currency_code` cannot change once expenses exist (422) |
 | POST | `/trips/{trip}/cover` | Organizer only. Multipart `cover` (jpg/png/webp, ≤ 8 MB, ≥ 200×120) → `{data:Trip}` with `cover_url` |

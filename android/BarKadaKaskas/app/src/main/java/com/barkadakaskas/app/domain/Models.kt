@@ -19,8 +19,12 @@ data class Share(val memberId: Long, val amountMinor: Long, val coveredMinor: Lo
 data class Payment(val memberId: Long, val amountMinor: Long)
 data class Expense(val id: Long, val title: String, val merchant: String, val category: String, val categoryId: Long, val totalMinor: Long, val status: String, val version: Int, val incurredAt: String, val splitMethod: String, val shares: List<Share>, val payments: List<Payment>, val createdByMemberId: Long? = null)
 data class Balance(val memberId: Long, val name: String, val netMinor: Long)
+/** The two sides the net balance hides: still to pay for one's own shares, and still to be paid back by others. */
+data class Dues(val memberId: Long, val owesMinor: Long, val owedMinor: Long)
 data class Settlement(val id: Long, val fromMemberId: Long, val toMemberId: Long, val amountMinor: Long, val method: String, val status: String, val expenseId: Long? = null)
-data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean)
+data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList()) {
+    fun duesOf(memberId: Long): Dues = dues.find { it.memberId == memberId } ?: Dues(memberId, 0, 0)
+}
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")
 /** latitude/longitude keep (or set) the map pin; the server clears it when they are omitted. */
 data class StopDraft(val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null)

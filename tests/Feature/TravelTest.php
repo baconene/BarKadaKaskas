@@ -76,6 +76,19 @@ class TravelTest extends TestCase
         $this->assertSame([-2001, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
         $this->assertSame(7001, (new TripBalances)->unpaidToMerchants($this->trip));
     }
+    public function test_dues_show_what_each_traveller_still_owes_and_is_owed(): void
+    {
+        $this->createExpense();         // owner paid 100.01 in full
+        $this->createExpense(false);    // nobody has paid yet
+        $page = fn ($user) => $this->actingAs($user)->get("/trips/{$this->trip->id}")->viewData('page')['props'];
+        $dues = collect($page($this->owner)['dues'])->keyBy('member_id');
+        // Owner: own share of the paid bill is covered, still owes their share of the unpaid one, and is owed the friend's share.
+        $this->assertSame([5001, 5000], [$dues[$this->ownerMember]['owes_minor'], $dues[$this->ownerMember]['owed_minor']]);
+        $this->assertSame([10000, 0], [$dues[$this->friendMember]['owes_minor'], $dues[$this->friendMember]['owed_minor']]);
+        $this->app['auth']->forgetGuards();
+        $headers = ['Authorization' => 'Bearer '.$this->friend->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
+        $this->getJson("/api/v1/trips/{$this->trip->id}", $headers)->assertJsonPath('data.dues.1.owes_minor', 10000);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

@@ -40,7 +40,7 @@ class TripController extends Controller
             return response()->json(['data' => [
                 'trip' => $trip->load(['members.user:id,name,phone,other_contact,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,avatar_path', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
                 'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
-                'balances' => $balances->calculate($trip), 'expense_shares' => (object) $shareRows->all(),
+                'balances' => $balances->calculate($trip), 'dues' => $balances->dues($trip, $shareRows->all()), 'expense_shares' => (object) $shareRows->all(),
                 'current_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'),
                 'is_organizer' => $trip->organizer_user_id === $request->user()->id,
             ]]);
@@ -48,7 +48,7 @@ class TripController extends Controller
         return Inertia::render('Trips/Show', [
             'trip' => $trip->load(['members.user:id,name,phone,other_contact,emergency_contact_name,emergency_contact_relationship,emergency_contact_phone,avatar_path', 'itineraryItems' => fn ($q) => $q->orderBy('starts_at')->orderBy('id'), 'expenses' => fn ($q) => $q->latest()->with(['category', 'items', 'allocations', 'payments', 'receipts:id,expense_id,processing_status']), 'settlements']),
             'categories' => ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->orderBy('sort_order')->get(),
-            'balances' => $balances->calculate($trip), 'isOrganizer' => $trip->organizer_user_id === $request->user()->id,
+            'balances' => $balances->calculate($trip), 'dues' => $balances->dues($trip, $shareRows->all()), 'isOrganizer' => $trip->organizer_user_id === $request->user()->id,
             'expenseShares' => $shareRows,
             'googleMaps' => ['browserKey' => config('services.google_maps.browser_key'), 'mapId' => config('services.google_maps.map_id')],
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),

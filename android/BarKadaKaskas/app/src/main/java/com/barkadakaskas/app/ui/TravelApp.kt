@@ -537,6 +537,11 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     Card(colors = CardDefaults.cardColors(containerColor = Forest), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Trip spending", color = Color(0xFFCDDEBC)); Text(money(total, detail.trip.currency), color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text(if (pending > 0) "${money(pending, detail.trip.currency)} not yet paid to merchants" else "All recorded bills are paid", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.bodySmall)
+        val myDues = detail.duesOf(detail.currentMemberId)
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column { Text("You still owe", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(myDues.owesMinor, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+            Column { Text("Owed to you", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(myDues.owedMinor, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+        }
     } }
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
@@ -567,6 +572,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(when { mine < 0 -> "You owe"; mine > 0 -> "You're owed"; else -> "You're all settled" }, color = if (mine < 0) Danger else ForestDark, fontWeight = FontWeight.SemiBold)
             Text(if (mine == 0L) "🎉" else money(abs(mine), detail.trip.currency), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = if (mine < 0) Danger else ForestDark)
+            val myDues = detail.duesOf(detail.currentMemberId)
+            Text("Net of ${money(myDues.owesMinor, detail.trip.currency)} you still owe on your shares and ${money(myDues.owedMinor, detail.trip.currency)} others still owe you.", color = Muted, style = MaterialTheme.typography.bodySmall)
             Text("Reimbursements count once the recipient confirms them.", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -574,7 +581,11 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     InfoCard("Everyone") {
         detail.balances.forEach { balance -> Row(verticalAlignment = Alignment.CenterVertically) {
             Avatar(balance.name, balance.memberId == detail.currentMemberId); Spacer(Modifier.width(12.dp))
-            Text(if (balance.memberId == detail.currentMemberId) "${balance.name} (you)" else balance.name, Modifier.weight(1f), fontWeight = FontWeight.Medium)
+            Column(Modifier.weight(1f)) {
+                Text(if (balance.memberId == detail.currentMemberId) "${balance.name} (you)" else balance.name, fontWeight = FontWeight.Medium)
+                val dues = detail.duesOf(balance.memberId)
+                if (dues.owesMinor > 0 || dues.owedMinor > 0) Text("Still owes ${money(dues.owesMinor, detail.trip.currency)} · Owed ${money(dues.owedMinor, detail.trip.currency)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+            }
             Column(horizontalAlignment = Alignment.End) {
                 Text(money(abs(balance.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { balance.netMinor < 0 -> Danger; balance.netMinor > 0 -> Forest; else -> Muted })
                 Text(when { balance.netMinor > 0 -> "receives"; balance.netMinor < 0 -> "owes"; else -> "settled" }, color = Muted, style = MaterialTheme.typography.labelSmall)

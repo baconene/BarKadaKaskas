@@ -9,7 +9,7 @@ type Member = { id: number; user_id?: number; status?: string; user: TravelerUse
 type Settlement = { id: number; expense_id: number | null; from_member_id: number; to_member_id: number; amount_minor: number; status: string; payment_method: string; paid_at: string | null; confirmed_at: string | null };
 const props = defineProps<{
     tripId: number; tripName: string; organizerUserId?: number; currency: string; timezone: string;
-    members: Member[]; balances: { member_id: number; name: string; net_minor: number }[]; settlements: Settlement[];
+    members: Member[]; balances: { member_id: number; name: string; net_minor: number }[]; dues: { member_id: number; owes_minor: number; owed_minor: number }[]; settlements: Settlement[];
     expenses: any[]; currentMemberId: number; isOrganizer: boolean; invitationUrl: string | null;
 }>();
 
@@ -29,6 +29,7 @@ function openTraveler(id: number, edit = false) { editingMine.value = edit; view
 // it is what travellers still owe the merchants (or whoever pays them), not each other.
 const unpaidToMerchants = computed(() => props.expenses.filter(e => ['open', 'completed', 'closed'].includes(e.status))
     .reduce((sum, e) => sum + Math.max(0, e.total_minor - (e.payments ?? []).filter((p: { paid_at?: string | null }) => p.paid_at !== null).reduce((t: number, p: { amount_minor: number }) => t + p.amount_minor, 0)), 0));
+const duesOf = (memberId: number) => props.dues.find(d => d.member_id === memberId) ?? { owes_minor: 0, owed_minor: 0 };
 const balanceOf = (memberId: number) => props.balances.find(b => b.member_id === memberId)?.net_minor ?? 0;
 
 // Suggested settlements: a display-only plan that pays off every balance in the fewest transfers (greedy).
@@ -101,7 +102,7 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
             <p class="muted">Every recorded expense counts here in full, even before the merchant is paid, so each traveller sees their whole share. Reimbursements count once the recipient confirms.</p>
             <p v-if="unpaidToMerchants > 0" class="unpaid-note">{{ money(unpaidToMerchants) }} of recorded bills isn’t paid to the merchant yet. That part of everyone’s share goes to the merchant (or whoever pays it), so it isn’t in the suggested settlements below.</p>
             <ul class="balance-list">
-                <li v-for="b in balances" :key="b.member_id"><span>{{ b.name }}</span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor > 0 ? 'Receives' : b.net_minor < 0 ? 'Owes' : 'Settled' }} {{ money(Math.abs(b.net_minor)) }}</strong></li>
+                <li v-for="b in balances" :key="b.member_id"><span>{{ b.name }}<small v-if="duesOf(b.member_id).owes_minor || duesOf(b.member_id).owed_minor" class="dues">Still owes {{ money(duesOf(b.member_id).owes_minor) }} · Owed {{ money(duesOf(b.member_id).owed_minor) }}</small></span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor > 0 ? 'Receives' : b.net_minor < 0 ? 'Owes' : 'Settled' }} {{ money(Math.abs(b.net_minor)) }}</strong></li>
             </ul>
             <h3 class="sub">Suggested settlements</h3>
             <p v-if="!suggestions.length" class="muted">Everyone is settled up. 🎉</p>
@@ -142,6 +143,7 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 .travel-app .group h2{font-size:18px;letter-spacing:-.4px;display:flex;align-items:center;gap:8px}
 .count{font-size:11px;font-weight:700;background:#edf2e6;color:#526936;border-radius:999px;padding:2px 8px;letter-spacing:0}
 .count.warn{background:#fff3d6;color:#926815}
+.dues{display:block;font-size:11px;color:#6c7c72;font-weight:500;margin-top:2px}
 .unpaid-note{font-size:12px;line-height:1.6;color:#7a5a12;background:#fff8e6;border:1px solid #f0dfb0;border-radius:10px;padding:10px 12px;margin-top:8px}
 .travelers,.balance-list,.suggestions{list-style:none;margin:0;padding:0}
 .traveler{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:6px 0;border-bottom:1px solid #eef2ea}

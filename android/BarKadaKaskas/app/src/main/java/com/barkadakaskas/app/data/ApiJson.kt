@@ -52,6 +52,7 @@ internal object ApiJson {
             settlements = trip.optJSONArray("settlements").mapObjects { settlement(it) },
             currentMemberId = data.optLong("current_member_id"),
             isOrganizer = data.optBoolean("is_organizer"),
+            dues = data.optJSONArray("dues").mapObjects { Dues(it.getLong("member_id"), it.optLong("owes_minor"), it.optLong("owed_minor")) },
         )
     }
 

@@ -314,12 +314,12 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .map-top{position:absolute;z-index:2;top:10px;left:10px;right:10px}
 .map-top :deep(.day-option){box-shadow:0 2px 10px #0000001a;min-height:54px;min-width:56px;padding:6px 8px}
 .leg-card,.journey-sheet{position:absolute;z-index:2;left:10px;right:10px;bottom:10px;background:#fffefb;border-radius:16px;box-shadow:0 8px 30px #1d332833}
-.leg-card{padding:12px 14px;display:grid;gap:4px}
+.leg-card{padding:12px 14px;display:grid;gap:4px;grid-template-columns:minmax(0,1fr)} /* minmax(0) keeps long labels from widening the card past the screen */
 .leg-card .eyebrow{margin:0}
-.leg-card h4{font-size:15px;font-weight:750;line-height:1.3}
+.leg-card h4{font-size:15px;font-weight:750;line-height:1.3;overflow-wrap:anywhere}
 .leg-card-actions{display:flex;gap:8px;margin-top:6px}
 .leg-card-actions .btn{flex:1;min-height:44px;padding:10px 12px}
-.leg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap}
+.leg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;min-width:0}
 .leg-head .eyebrow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .leg-nav{display:flex;gap:6px;flex-shrink:0}
 .icon-btn:disabled{opacity:.4;cursor:default}

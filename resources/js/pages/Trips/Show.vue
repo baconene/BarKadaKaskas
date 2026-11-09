@@ -8,6 +8,7 @@ import TripItinerary from '@/components/TripItinerary.vue';
 import TripGroup from '@/components/trip/TripGroup.vue';
 import TripPhotos from '@/components/trip/TripPhotos.vue';
 import TripHeader from '@/components/trip/TripHeader.vue';
+import BalanceBreakdown from '@/components/trip/BalanceBreakdown.vue';
 import TripCancelDialog from '@/components/trip/TripCancelDialog.vue';
 import TripEditDialog from '@/components/trip/TripEditDialog.vue';
 import ReceiptScanner, { type ReceiptDraft } from '@/components/trip/ReceiptScanner.vue';
@@ -85,6 +86,7 @@ const shown=computed(()=>props.trip.expenses.filter(e=>(statusFilter.value==='al
 const myContribution=computed(()=>props.trip.expenses.filter(e=>e.status!=='cancelled').reduce((sum,e)=>sum+e.payments.filter(p=>p.trip_member_id===props.currentMemberId).reduce((t,p)=>t+p.amount_minor,0),0));
 // What you still have to pay for your own shares, and what others still owe you, as separate figures (the net balance hides both).
 const myDues=computed(()=>props.dues.find(d=>d.member_id===props.currentMemberId)??{member_id:props.currentMemberId,owes_minor:0,owed_minor:0});
+const breakdownOpen=ref(false);
 const myBalance=computed(()=>props.balances.find(b=>b.member_id===props.currentMemberId)?.net_minor??0);
 const payers=(e:Expense)=>[...new Set(e.payments.map(p=>name(p.trip_member_id)))].join(', ')||'Not paid yet';
 const openExpense=ref<number|null>(null);
@@ -168,7 +170,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 
  <section v-if="screen==='expenses'" class="expenses-screen" aria-labelledby="expenses-title">
  <div class="screen-top"><h2 id="expenses-title">Expenses</h2><button v-if="!cancelled" class="btn add-expense-desktop" @click="newExpense"><Plus :size="16"/> Add expense</button></div>
- <div class="money-strip"><div><span>Group spending</span><strong>{{ money(spent) }}</strong></div><div><span>You paid</span><strong>{{ money(myContribution) }}</strong></div><div><span>You still owe</span><strong :class="{owe:myDues.owes_minor>0}">{{ money(myDues.owes_minor) }}</strong></div><div><span>Owed to you</span><strong :class="{receive:myDues.owed_minor>0}">{{ money(myDues.owed_minor) }}</strong></div></div><p class="muted net-line">Net balance <strong :class="{owe:myBalance<0,receive:myBalance>0}">{{ money(myBalance) }}</strong> · what you still owe on your shares minus what others still owe you</p>
+ <div class="money-strip"><div><span>Group spending</span><strong>{{ money(spent) }}</strong></div><div><span>You paid</span><strong>{{ money(myContribution) }}</strong></div><button type="button" class="balance-card" aria-haspopup="dialog" @click="breakdownOpen=true"><span>Your balance <small>Details</small></span><strong :class="{owe:myBalance<0,receive:myBalance>0}">{{ money(myBalance) }}</strong></button></div><BalanceBreakdown :open="breakdownOpen" :currency="trip.currency_code" :current-member-id="currentMemberId" :net="myBalance" :owes="myDues.owes_minor" :owed="myDues.owed_minor" :expenses="trip.expenses" :expense-shares="expenseShares" :members="trip.members" @close="breakdownOpen=false"/>
  <div class="filter-row"><div class="chips" role="group" aria-label="Filter expenses"><button v-for="f in quickFilters" :key="f[0]" type="button" :aria-pressed="quickFilter===f[0]" @click="quickFilter=f[0]">{{ f[1] }}</button></div><select v-model="statusFilter" aria-label="Filter by status" class="filter"><option value="all">Any status</option><option v-for="s in ['open','completed','closed','cancelled']" :key="s" :value="s">{{ s }}</option></select></div>
  <form v-if="adding" ref="editor" class="card form-grid expense-form" @submit.prevent="saveExpense"><h2 class="full">{{ editingId ? 'Edit expense & assigned shares' : 'Record a shared expense' }}</h2><ReceiptScanner v-if="!editingId" :trip-id="trip.id" @scanned="applyScan"/><label class="field">Title<input v-model="expense.title" required placeholder="Dinner by the beach"/></label><label class="field">Category<select v-model="expense.category_id" required><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></label><label class="field">Total ({{ trip.currency_code }})<input v-model="expense.amount" type="number" min="0.01" max="1000000" step="0.01" required/></label><label class="field">Date<input v-model="expense.incurred_at" type="date" required/></label><label class="field">Merchant<input v-model="expense.merchant"/></label><label class="field">Split method<select v-model="expense.split_method"><option value="equal">Equally</option><option value="exact">Exact amounts</option><option value="percentage">Percentages</option><option value="shares">Shares</option><option value="itemized">By receipt item</option></select></label>
  <div class="full"><h3>Who paid the merchant?</h3><p class="muted">{{ payersLocked ? 'Reimbursements were already recorded for this bill, so its payers can no longer change.' : editingId ? 'Correct who paid the merchant and how much. Leave an amount blank if it hasn’t been paid yet.' : 'Leave amounts blank if this expense has not been paid yet.' }}</p><div v-for="(payer,index) in expense.payers" :key="index" class="row" style="margin-top:10px"><label class="field" style="flex:1">Payer<select v-model="payer.id" :disabled="payersLocked"><option v-for="m in trip.members" :key="m.id" :value="m.id">{{ m.user.name }}</option></select></label><label class="field" style="flex:1">Amount paid<input :disabled="payersLocked" v-model="payer.amount" type="number" min="0.01" step="0.01"/></label><button v-if="expense.payers.length>1 && !payersLocked" class="btn secondary" type="button" @click="expense.payers.splice(index,1)">Remove</button></div><button v-if="!payersLocked" class="btn secondary section-gap" type="button" @click="expense.payers.push({id:currentMemberId,amount:''})">Add another payer</button></div>
@@ -217,11 +219,14 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 .expenses-screen{display:grid;gap:12px}
 .screen-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .travel-app .screen-top h2{font-size:22px;letter-spacing:-.6px}
-.money-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.net-line{font-size:12px;margin-top:8px}
+.money-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.balance-card{display:grid;gap:2px;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #cfdcc6;min-width:0;text-align:left;cursor:pointer}
+.balance-card:hover{background:#f6f9f1}
+.balance-card span{display:flex;justify-content:space-between;gap:4px}
+.balance-card small{font-size:10px;font-weight:700;color:#3d7650}
 .money-strip div{display:grid;gap:2px;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #e0e7dc;min-width:0}
-.money-strip span{font-size:11px;color:#6c7c72;font-weight:600}
-.money-strip strong{font-size:16px;font-weight:800;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.money-strip span,.balance-card span{font-size:11px;color:#6c7c72;font-weight:600}
+.money-strip strong,.balance-card strong{font-size:16px;font-weight:800;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .owe{color:#a6573e}.receive{color:#3d7650}
 .filter-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .chips{display:flex;gap:6px}
@@ -246,7 +251,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 .fab{position:fixed;z-index:35;right:max(16px,env(safe-area-inset-right));bottom:calc(76px + env(safe-area-inset-bottom));display:grid;place-items:center;width:56px;height:56px;border-radius:18px;border:0;background:#214e3e;color:#fff;box-shadow:0 8px 24px #214e3e55;cursor:pointer}
 .fab:focus-visible{outline:3px solid #9cb865;outline-offset:3px}
 .add-expense-desktop{display:none}
-@media(min-width:1024px){.fab{display:none}.add-expense-desktop{display:inline-flex}.money-strip strong{font-size:19px}.money-strip{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(min-width:1024px){.fab{display:none}.add-expense-desktop{display:inline-flex}.money-strip strong{font-size:19px}}
 @media(max-width:360px){.money-strip strong{font-size:14px}.money-strip div{padding:9px 10px}}
 @media(prefers-reduced-motion:reduce){.expense-chevron{transition:none}}
 .cancelled-banner{display:grid;gap:6px;justify-items:start;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:#fff4ef;border:1px solid #edc9bd;color:#7d3424;font-size:14px;line-height:1.5}.cancelled-banner .btn{margin-top:4px}

@@ -134,4 +134,12 @@ class ApiJsonTest {
         assertEquals("https://x.test/trip-photos/p.jpg", page.posts[0].photos[0].url)
         assertEquals("https://x.test/avatars/a.jpg", page.posts[0].authorAvatarUrl)
     }
+
+    @Test fun aiSuggestionsParseAndRoundTripToTheBatchBody() {
+        val list = ApiJson.suggestions(JSONObject("""{"data":[{"title":"Cambugahay Falls","location":"Lazi, Siquijor","description":null,"starts_at":"2026-11-12T09:00","ends_at":"2026-11-12T11:30","transport_mode":"tricycle","cost_min_minor":10000,"cost_max_minor":25000,"cost_note":"Entrance"},{"title":"","starts_at":"2026-11-12T12:00","ends_at":"2026-11-12T13:00"}]}"""))
+        assertEquals(1, list.size)
+        assertEquals("tricycle", list[0].transport); assertEquals(25000L, list[0].costMaxMinor); assertNull(list[0].description)
+        val item = ApiJson.batchBody(list).getJSONArray("items").getJSONObject(0)
+        assertEquals("2026-11-12T09:00", item.getString("starts_at")); assertTrue(item.isNull("description")); assertEquals(10000L, item.getLong("cost_min_minor"))
+    }
 }

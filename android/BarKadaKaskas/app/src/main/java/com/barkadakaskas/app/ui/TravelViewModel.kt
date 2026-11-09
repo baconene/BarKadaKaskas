@@ -44,9 +44,29 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     fun openTrip(trip: Trip) = launch { detail = repository.trip(trip.id) }
     fun backToTrips() { if (!busy) { detail = null; posts = emptyList(); postsLoadedFor = null; postsNextBefore = null } }
     fun signOut() = launch { repository.logout(); user = null; detail = null; trips = emptyList() }
-    fun createTrip(draft: TripDraft, done: () -> Unit) = launch {
-        val trip = repository.createTrip(draft); trips = repository.trips(); detail = repository.trip(trip.id); done()
+    /** [aiPrompt], when given, opens the AI planner on the new trip and starts suggesting. */
+    fun createTrip(draft: TripDraft, aiPrompt: String = "", done: () -> Unit) = launch {
+        val trip = repository.createTrip(draft); trips = repository.trips(); detail = repository.trip(trip.id)
+        pendingAiPrompt = aiPrompt.trim().ifBlank { null }
+        done()
     }
+
+    // AI trip planner (organizer). Suggestions are only a draft until addSuggestions saves the approved ones.
+    var pendingAiPrompt by mutableStateOf<String?>(null)
+    var suggestions by mutableStateOf<List<StopSuggestion>>(emptyList()); private set
+    var planning by mutableStateOf(false); private set
+    fun suggest(prompt: String) {
+        val tripId = detail?.trip?.id ?: return
+        if (planning || prompt.isBlank()) return
+        planning = true; error = null
+        viewModelScope.launch {
+            try { suggestions = repository.suggestStops(tripId, prompt) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "The AI planner could not answer. Try again." }
+            finally { planning = false }
+        }
+    }
+    fun clearSuggestions() { suggestions = emptyList() }
+    fun addSuggestions(approved: List<StopSuggestion>, done: () -> Unit) = mutate({ suggestions = emptyList(); done() }) { repo, current -> repo.addStops(current.trip.id, approved) }
     fun mutate(done: () -> Unit = {}, action: suspend (TravelRepository, TripDetail) -> Unit) = launch {
         val current = detail ?: return@launch
         action(repository, current)

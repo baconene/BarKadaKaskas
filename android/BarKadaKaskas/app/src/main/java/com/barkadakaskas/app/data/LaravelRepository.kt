@@ -54,6 +54,9 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         if (stopId == null) request("POST", "/trips/$tripId/itinerary", ApiJson.stopBody(draft))
         else request("PATCH", "/trips/$tripId/itinerary/$stopId", ApiJson.stopBody(draft))
     }
+    override suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion> =
+        ApiJson.suggestions(request("POST", "/trips/$tripId/itinerary/suggestions", JSONObject().put("prompt", prompt.trim()), readTimeout = 100_000))
+    override suspend fun addStops(tripId: Long, stops: List<StopSuggestion>) { request("POST", "/trips/$tripId/itinerary/batch", ApiJson.batchBody(stops)) }
     override suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean) { request("PATCH", "/trips/$tripId/itinerary/$stopId/done", JSONObject().put("done", done)) }
 
     override suspend fun createExpense(tripId: Long, draft: ExpenseDraft) { request("POST", "/trips/$tripId/expenses", ApiJson.expenseBody(draft)) }
@@ -130,7 +133,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     /** multipart/form-data with a single file field. */
     private fun multipart(field: String, fileName: String, mimeType: String, bytes: ByteArray): Payload = multipart(emptyMap(), listOf(FilePart(field, fileName, mimeType, bytes)))
 
-    private suspend fun request(method: String, path: String, body: JSONObject? = null, auth: Boolean = true, raw: Payload? = null): JSONObject? = withContext(Dispatchers.IO) {
+    private suspend fun request(method: String, path: String, body: JSONObject? = null, auth: Boolean = true, raw: Payload? = null, readTimeout: Int = 30_000): JSONObject? = withContext(Dispatchers.IO) {
         val base = store.serverUrl.ifBlank { throw ApiException("Enter your server address first.") }
         val token = store.token
         if (auth && token == null) throw ApiException("Please log in again.", 401)
@@ -140,12 +143,12 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
             connection.requestMethod = if (method == "PATCH") "POST" else method
             if (method == "PATCH") connection.setRequestProperty("X-HTTP-Method-Override", "PATCH")
             connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
+            connection.readTimeout = readTimeout
             connection.setRequestProperty("Accept", "application/json")
             if (auth) connection.setRequestProperty("Authorization", "Bearer $token")
             if (raw != null) {
                 connection.doOutput = true
-                connection.readTimeout = 60_000
+                connection.readTimeout = maxOf(readTimeout, 60_000)
                 connection.setRequestProperty("Content-Type", raw.contentType)
                 connection.setFixedLengthStreamingMode(raw.bytes.size)
                 connection.outputStream.use { it.write(raw.bytes) }

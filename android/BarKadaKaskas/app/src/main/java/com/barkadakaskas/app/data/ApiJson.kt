@@ -52,6 +52,7 @@ internal object ApiJson {
             settlements = trip.optJSONArray("settlements").mapObjects { settlement(it) },
             currentMemberId = data.optLong("current_member_id"),
             isOrganizer = data.optBoolean("is_organizer"),
+            aiPlanner = data.optBoolean("ai_planner"),
             dues = data.optJSONArray("dues").mapObjects { Dues(it.getLong("member_id"), it.optLong("owes_minor"), it.optLong("owed_minor")) },
         )
     }
@@ -152,6 +153,20 @@ internal object ApiJson {
         .put("starts_on", draft.startsOn.trim()).put("ends_on", draft.endsOn.trim())
         .put("timezone", draft.timezone.trim()).put("currency_code", draft.currency)
         .put("description", draft.description.trim().ifBlank { null } ?: JSONObject.NULL)
+
+    fun suggestion(json: JSONObject) = StopSuggestion(
+        title = json.text("title"), location = json.textOrNull("location"), description = json.textOrNull("description"),
+        startsAt = json.text("starts_at"), endsAt = json.text("ends_at"), transport = json.textOrNull("transport_mode"),
+        costMinMinor = json.longOrNull("cost_min_minor"), costMaxMinor = json.longOrNull("cost_max_minor"), costNote = json.textOrNull("cost_note"),
+    )
+
+    fun suggestions(body: JSONObject?) = body?.optJSONArray("data").mapObjects { suggestion(it) }.filter { it.title.isNotBlank() && it.startsAt.isNotBlank() }
+
+    fun batchBody(stops: List<StopSuggestion>) = JSONObject().put("items", org.json.JSONArray().apply {
+        stops.forEach { s -> put(JSONObject().put("title", s.title).put("location", s.location ?: JSONObject.NULL).put("description", s.description ?: JSONObject.NULL)
+            .put("starts_at", s.startsAt).put("ends_at", s.endsAt).put("transport_mode", s.transport ?: JSONObject.NULL)
+            .put("cost_min_minor", s.costMinMinor ?: JSONObject.NULL).put("cost_max_minor", s.costMaxMinor ?: JSONObject.NULL).put("cost_note", s.costNote ?: JSONObject.NULL)) }
+    })
 
     fun stopBody(draft: StopDraft) = JSONObject()
         .put("title", draft.title.trim()).put("location", draft.location.trim()).put("description", draft.description.trim())

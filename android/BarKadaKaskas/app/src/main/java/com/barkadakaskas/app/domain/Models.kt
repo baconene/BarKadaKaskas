@@ -22,11 +22,13 @@ data class Balance(val memberId: Long, val name: String, val netMinor: Long)
 /** The two sides the net balance hides: still to pay for one's own shares, and still to be paid back by others. */
 data class Dues(val memberId: Long, val owesMinor: Long, val owedMinor: Long)
 data class Settlement(val id: Long, val fromMemberId: Long, val toMemberId: Long, val amountMinor: Long, val method: String, val status: String, val expenseId: Long? = null)
-data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList()) {
+data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList(), val aiPlanner: Boolean = false) {
     fun duesOf(memberId: Long): Dues = dues.find { it.memberId == memberId } ?: Dues(memberId, 0, 0)
 }
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")
 /** latitude/longitude keep (or set) the map pin; the server clears it when they are omitted. */
+/** An activity suggested by the AI planner; times are local to the trip ("yyyy-MM-ddTHH:mm"), costs per person in minor units. */
+data class StopSuggestion(val title: String, val location: String?, val description: String?, val startsAt: String, val endsAt: String, val transport: String?, val costMinMinor: Long?, val costMaxMinor: Long?, val costNote: String?)
 data class StopDraft(val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null)
 /** One receipt line in an itemized split, shared equally by [memberIds]. */
 data class ItemDraft(val description: String, val amountMinor: Long, val memberIds: List<Long>)
@@ -51,6 +53,10 @@ interface TravelRepository {
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
     /** Ticks an activity off for everyone on the trip, or undoes it. Any traveller on the trip may do this. */
     suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean)
+    /** Organizer: the AI planner drafts activities for [prompt]; nothing is saved. */
+    suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion>
+    /** Organizer: adds the approved suggestions to the itinerary in one go. */
+    suspend fun addStops(tripId: Long, stops: List<StopSuggestion>)
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
     suspend fun updateProfile(draft: ProfileDraft)
     suspend fun uploadAvatar(jpeg: ByteArray)

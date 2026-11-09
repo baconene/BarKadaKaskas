@@ -42,6 +42,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -403,6 +404,10 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     var selected by rememberSaveable(trip.id) { mutableIntStateOf(days.indexOfFirst { it.key == today }.coerceAtLeast(0)) }
     val day = days.getOrNull(selected.coerceIn(0, (days.size - 1).coerceAtLeast(0)))
     var editing by remember { mutableStateOf<Stop?>(null) }; var form by remember { mutableStateOf(false) }
+    val canPlanWithAi = detail.isOrganizer && detail.aiPlanner && !trip.cancelled
+    var planner by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.pendingAiPrompt) { if (vm.pendingAiPrompt != null && canPlanWithAi) planner = true }
+    if (planner) AiPlannerSheet(vm, detail) { planner = false; vm.pendingAiPrompt = null }
     // Typed addresses have no pin; look them up on the device so they still show on the map.
     val geocoded = remember { mutableStateMapOf<Long, Pair<Double, Double>>() }
     LaunchedEffect(day) { day?.stops?.filter { !Itinerary.hasPin(it) && it.location.isNotBlank() && it.id !in geocoded }?.forEach { stop ->
@@ -414,10 +419,16 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             Text("Itinerary", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("${days.size} day${if (days.size == 1) "" else "s"} · ${detail.stops.size} activit${if (detail.stops.size == 1) "y" else "ies"}", color = Muted)
         }
+        if (canPlanWithAi) OutlinedButton(onClick = { planner = true }, enabled = !vm.busy, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("AI plan") }
+        if (canPlanWithAi && detail.isOrganizer) Spacer(Modifier.width(8.dp))
         if (detail.isOrganizer) FilledTonalButton(onClick = { editing = null; form = true }, enabled = !vm.busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add") }
     }
     Itinerary.totalCost(detail.stops)?.let { (min, max) -> Pill("${Itinerary.costRange(min, max, trip.currency)} per person (estimate)", Icons.Default.Payments) }
-    if (days.isEmpty()) { EmptyState(Icons.Default.Map, "A blank itinerary", "Add your arrival point, then the places you want to visit.", if (detail.isOrganizer) "Add the first stop" else null) { editing = null; form = true }; if (form) StopForm(vm, detail, editing) { form = false }; return }
+    if (days.isEmpty()) {
+        EmptyState(Icons.Default.Map, "A blank itinerary", if (canPlanWithAi) "Let AI suggest an itinerary, or add your arrival point and the places you want to visit." else "Add your arrival point, then the places you want to visit.", if (detail.isOrganizer) "Add the first stop" else null) { editing = null; form = true }
+        if (canPlanWithAi) Button(onClick = { planner = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Plan it with AI") }
+        if (form) StopForm(vm, detail, editing) { form = false }; return
+    }
 
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(end = 8.dp)) {
         itemsIndexed(days, key = { _, it -> it.key.toString() }) { index, item ->
@@ -477,6 +488,42 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 /** The focused journey under the map: "Journey N of M", previous / next / close always in the same place, and directions. */
+/** AI trip planner: describe the trip, untick what you don't want, add the rest. Nothing is saved until "Add". */
+@Composable private fun AiPlannerSheet(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {
+    var prompt by rememberSaveable { mutableStateOf(vm.pendingAiPrompt ?: "") }
+    val keep = remember(vm.suggestions) { mutableStateListOf<Boolean>().apply { repeat(vm.suggestions.size) { add(true) } } }
+    // Opened from "create trip" with a request: start suggesting straight away.
+    LaunchedEffect(Unit) { if (vm.pendingAiPrompt != null && vm.suggestions.isEmpty()) vm.suggest(prompt) }
+    val approved = vm.suggestions.filterIndexed { i, _ -> keep.getOrElse(i) { true } }
+    fun clock(local: String) = runCatching { java.time.LocalDateTime.parse(local).format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)) }.getOrDefault(local.takeLast(5))
+    FormSheet("Plan ${detail.trip.destination} with AI", vm, { if (!vm.planning) { vm.clearSuggestions(); dismiss() } }, "Describe the trip; you approve what gets added.") {
+        Field("What kind of trip is it?", prompt, { prompt = it }, singleLine = false, supporting = "e.g. Beaches and waterfalls, budget-friendly, local food, arriving by ferry on day 1 around 3 PM")
+        Button(onClick = { vm.suggest(prompt) }, enabled = !vm.planning && !vm.busy && prompt.trim().length >= 3, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+            if (vm.planning) { CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Planning… this can take a minute") }
+            else { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (vm.suggestions.isEmpty()) "Suggest an itinerary" else "Suggest again") }
+        }
+        if (vm.suggestions.isNotEmpty()) {
+            Text("Untick anything you don't want. You can edit each activity after it's added.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            vm.suggestions.withIndex().groupBy { it.value.startsAt.take(10) }.forEach { (date, entries) ->
+                Text(runCatching { LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)) }.getOrDefault(date), fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+                entries.forEach { (i, s) ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { keep[i] = !keep[i] }.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                        Checkbox(keep.getOrElse(i) { true }, { keep[i] = it })
+                        Column(Modifier.weight(1f).padding(top = 10.dp).alpha(if (keep.getOrElse(i) { true }) 1f else 0.45f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("${clock(s.startsAt)} · ${s.title}", fontWeight = FontWeight.SemiBold)
+                            s.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                            val meta = listOfNotNull(transportOptions.find { it.first == s.transport }?.second, Itinerary.costRange(s.costMinMinor, s.costMaxMinor, detail.trip.currency)?.let { "$it/person" }).joinToString(" · ")
+                            if (meta.isNotBlank()) Text(meta, color = Moss, style = MaterialTheme.typography.labelMedium)
+                            s.description?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+            }
+            Submit("Add ${approved.size} ${if (approved.size == 1) "activity" else "activities"} to the itinerary", vm.busy, approved.isNotEmpty(), Icons.Default.Check) { vm.addSuggestions(approved, dismiss) }
+        }
+    }
+}
+
 @Composable private fun JourneyCard(from: Stop, to: Stop, number: Int, total: Int, previous: () -> Unit, next: () -> Unit, close: () -> Unit, open: (String) -> Unit) {
     val mode = transportOptions.find { it.first == to.transport }?.second ?: "Transport to be decided"
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -868,7 +915,9 @@ private fun postTime(iso: String): String = runCatching {
             Box(Modifier.weight(1f)) { Choice("Currency", currency, listOf("PHP", "USD", "EUR", "GBP", "SGD", "AUD", "CAD").map { it to it }, { currency = it }) }
             Box(Modifier.weight(1.4f)) { Choice("Time zone", zone, (timezones + listOfNotNull(ZoneId.systemDefault().id.takeIf { it !in timezones })).map { it to it.replace('_', ' ') }, { zone = it }) }
         }
-        Submit("Create trip", vm.busy, name.isNotBlank() && destination.isNotBlank() && end >= start, Icons.Default.Check) { vm.createTrip(TripDraft(name, destination, start, end, currency, zone), dismiss) }
+        var aiPrompt by rememberSaveable { mutableStateOf("") }
+        Field("Plan it with AI (optional)", aiPrompt, { aiPrompt = it }, leading = Icons.Default.AutoAwesome, singleLine = false, supporting = "Describe the trip and AI will suggest an itinerary for you to approve. Leave blank to add activities yourself.")
+        Submit("Create trip", vm.busy, name.isNotBlank() && destination.isNotBlank() && end >= start, Icons.Default.Check) { vm.createTrip(TripDraft(name, destination, start, end, currency, zone), aiPrompt, dismiss) }
     }
 }
 

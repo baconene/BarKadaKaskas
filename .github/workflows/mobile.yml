@@ -19,7 +19,8 @@ jobs:
         working-directory: android/BarKadaKaskas
     env:
       # Optional repository secret; without it the app falls back to OpenStreetMap.
-      MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+      # Read from the repository secret, or a repository variable of the same name.
+      MAPS_API_KEY: ${{ secrets.MAPS_API_KEY || vars.MAPS_API_KEY }}
       # Optional repository variable; defaults to the production server in build.gradle.kts.
       DEFAULT_SERVER_URL: ${{ vars.DEFAULT_SERVER_URL }}
     steps:

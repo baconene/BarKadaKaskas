@@ -525,7 +525,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
-    var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }
+    var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }; var breakdown by remember { mutableStateOf(false) }
     // Same rule as the server's balances: every recorded bill counts in full, paid to the merchant or not.
     val total = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sumOf { it.totalMinor }
     // Part of those bills not yet paid to the merchant (e.g. only a down payment so far).
@@ -537,12 +537,15 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     Card(colors = CardDefaults.cardColors(containerColor = Forest), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Trip spending", color = Color(0xFFCDDEBC)); Text(money(total, detail.trip.currency), color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text(if (pending > 0) "${money(pending, detail.trip.currency)} not yet paid to merchants" else "All recorded bills are paid", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.bodySmall)
-        val myDues = detail.duesOf(detail.currentMemberId)
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Column { Text("You still owe", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(myDues.owesMinor, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
-            Column { Text("Owed to you", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(myDues.owedMinor, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+        val net = detail.balances.find { it.memberId == detail.currentMemberId }?.netMinor ?: 0
+        Surface(onClick = { breakdown = true }, shape = RoundedCornerShape(14.dp), color = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text("Your balance", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(net, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+                Text("Details", color = Color.White, style = MaterialTheme.typography.labelLarge); Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White)
+            }
         }
     } }
+    if (breakdown) BalanceBreakdownSheet(detail) { breakdown = false }
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -565,15 +568,15 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 @Composable private fun BalancesTab(vm: TravelViewModel, detail: TripDetail) {
-    var form by remember { mutableStateOf(false) }
+    var form by remember { mutableStateOf(false) }; var breakdown by remember { mutableStateOf(false) }
     val mine = detail.balances.find { it.memberId == detail.currentMemberId }?.netMinor ?: 0
+    if (breakdown) BalanceBreakdownSheet(detail) { breakdown = false }
     Text("Keep it fair", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = if (mine < 0) Color(0xFFFFF0EC) else Sage)) {
+    Card(onClick = { breakdown = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = if (mine < 0) Color(0xFFFFF0EC) else Sage)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(when { mine < 0 -> "You owe"; mine > 0 -> "You're owed"; else -> "You're all settled" }, color = if (mine < 0) Danger else ForestDark, fontWeight = FontWeight.SemiBold)
             Text(if (mine == 0L) "🎉" else money(abs(mine), detail.trip.currency), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = if (mine < 0) Danger else ForestDark)
-            val myDues = detail.duesOf(detail.currentMemberId)
-            Text("Net of ${money(myDues.owesMinor, detail.trip.currency)} you still owe on your shares and ${money(myDues.owedMinor, detail.trip.currency)} others still owe you.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("Tap for what you will pay and receive", color = Forest, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
             Text("Reimbursements count once the recipient confirms them.", color = Muted, style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -1064,6 +1067,46 @@ private data class LineState(val description: String, val amountMinor: Long, val
         vm.mutate(done) { repo, current -> repo.setExpensePayers(current.trip.id, expense, payments) }
     }
     TextButton(onClick = done, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+}
+
+/** Bottom sheet behind "Your balance": the net split into what you will pay and receive, bill by bill. */
+@Composable private fun BalanceBreakdownSheet(detail: TripDetail, dismiss: () -> Unit) {
+    val currency = detail.trip.currency
+    val net = detail.balances.find { it.memberId == detail.currentMemberId }?.netMinor ?: 0
+    val dues = detail.duesOf(detail.currentMemberId)
+    val lines = remember(detail) { BalanceBreakdown.of(detail) }
+    fun name(id: Long) = detail.members.find { it.id == id }?.name ?: "Traveler"
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color.White) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("YOUR BALANCE", color = Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text(money(net, currency), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = when { net < 0 -> Danger; net > 0 -> Forest; else -> Ink })
+            Text(when { net > 0 -> "Overall, you will receive more than you pay."; net < 0 -> "Overall, you will pay more than you receive."; else -> "You are even overall." }, color = Muted)
+            InfoCard {
+                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.NorthEast, null, tint = Danger, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("You will pay", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(dues.owesMinor, currency), fontWeight = FontWeight.Bold, color = Danger) }
+                if (lines.pay.isEmpty()) Text("Nothing left to pay.", color = Muted)
+                lines.pay.forEach { line ->
+                    val to = line.toMemberIds.map(::name).joinToString(", ")
+                    BreakdownRow(line.title, "Your share · to " + when { to.isEmpty() -> "the merchant (not paid yet)"; line.merchantUnpaid -> "$to and the merchant"; else -> to }, money(line.amountMinor, currency))
+                }
+            }
+            InfoCard {
+                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.SouthWest, null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("You will receive", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(dues.owedMinor, currency), fontWeight = FontWeight.Bold, color = Forest) }
+                if (lines.receive.isEmpty()) Text("Nobody owes you right now.", color = Muted)
+                lines.receive.forEach { line ->
+                    BreakdownRow(line.title, if (line.from.isEmpty()) "Others’ shares of a bill you covered" else line.from.joinToString(" · ") { "${name(it.memberId)} ${money(it.amountMinor, currency)}" }, money(line.amountMinor, currency))
+                }
+            }
+            Text("Balance = what you will receive − what you will pay. Amounts update when payments are marked as paid.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable private fun BreakdownRow(title: String, note: String, amount: String) {
+    HorizontalDivider(color = Line)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(note, color = Muted, style = MaterialTheme.typography.bodySmall) }
+        Spacer(Modifier.width(12.dp)); Text(amount, fontWeight = FontWeight.SemiBold)
+    }
 }
 
 @Composable private fun SettlementForm(vm: TravelViewModel, detail: TripDetail, dismiss: () -> Unit) {

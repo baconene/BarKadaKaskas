@@ -136,7 +136,8 @@ class MobileApiTest extends TestCase
         $this->putJson($payers, ['version' => 1, 'payments' => []], $headers)->assertUnprocessable(); // stale
         $this->putJson($payers, ['version' => 2, 'payments' => [['trip_member_id' => $this->friendMember, 'amount_minor' => 20000]]], $headers)->assertUnprocessable();
         $this->putJson($payers, ['version' => 2, 'payments' => []], $this->headers($this->friend))->assertForbidden();
-        $this->putJson($payers, ['version' => 2, 'payments' => []], $headers)->assertOk()->assertJsonPath('data.version', 3);
+        // Fresh token: the test guard would otherwise keep the friend signed in.
+        $this->putJson($payers, ['version' => 2, 'payments' => []], $this->headers($this->owner))->assertOk()->assertJsonPath('data.version', 3);
         $this->assertSame(0, \App\Models\ExpensePayment::where('expense_id', $id)->count());
         $this->assertDatabaseHas('activity_logs', ['subject_id' => $id, 'action' => 'payers_changed']);
     }

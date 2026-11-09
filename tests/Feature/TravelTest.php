@@ -65,10 +65,16 @@ class TravelTest extends TestCase
         $this->actingAs($this->owner); $this->changeStatus($expense, 'completed')->assertSessionHasNoErrors();
         $this->assertSame([5000, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
     }
-    public function test_open_expense_not_yet_paid_to_the_merchant_is_left_out_of_balances(): void
+    public function test_open_expense_not_yet_paid_is_forecast_in_full(): void
     {
-        $this->createExpense(false);
-        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $expense = $this->createExpense(false);
+        // Nobody has paid the merchant yet: both travellers still owe their whole share.
+        $this->assertSame([-5001, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->assertSame(10001, (new TripBalances)->unpaidToMerchants($this->trip));
+        // A down payment is credited to whoever made it; the rest stays owed to the merchant.
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/payments", ['trip_member_id' => $this->ownerMember, 'amount_minor' => 3000, 'version' => 1])->assertSessionHasNoErrors();
+        $this->assertSame([-2001, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->assertSame(7001, (new TripBalances)->unpaidToMerchants($this->trip));
     }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {

@@ -222,7 +222,7 @@ struct BalancesView: View {
                     }
                 }
             } header: { Text("Balances") } footer: {
-                Text("Completed and closed expenses count here. Reimbursements count once the recipient confirms.")
+                Text("Every recorded expense counts here in full, even before the merchant is paid. Reimbursements count once the recipient confirms.")
             }
             if (detail.trip.members ?? []).count > 1 {
                 Section { Button("Record money you sent", systemImage: "arrow.up.right.circle") { recording = true } }

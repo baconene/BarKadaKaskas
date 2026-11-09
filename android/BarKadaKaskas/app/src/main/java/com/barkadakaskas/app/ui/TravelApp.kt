@@ -526,16 +526,17 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
     var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }
-    // Same rule as the server's balances: completed/closed bills, plus open ones paid in full to the merchant.
-    val total = detail.expenses.filter { it.status in listOf("completed", "closed") || (it.status == "open" && it.payments.sumOf { p -> p.amountMinor } == it.totalMinor) }.sumOf { it.totalMinor }
-    val pending = detail.expenses.filter { it.status == "open" }.sumOf { it.totalMinor }
+    // Same rule as the server's balances: every recorded bill counts in full, paid to the merchant or not.
+    val total = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sumOf { it.totalMinor }
+    // Part of those bills not yet paid to the merchant (e.g. only a down payment so far).
+    val pending = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sumOf { (it.totalMinor - it.payments.sumOf { p -> p.amountMinor }).coerceAtLeast(0) }
     Row(verticalAlignment = Alignment.Bottom) {
         Text("Shared expenses", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         if (!detail.trip.cancelled) FilledTonalButton(onClick = { create = true }, enabled = !vm.busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add") }
     }
     Card(colors = CardDefaults.cardColors(containerColor = Forest), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Trip spending", color = Color(0xFFCDDEBC)); Text(money(total, detail.trip.currency), color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text(if (pending > 0) "+ ${money(pending, detail.trip.currency)} still open" else "Completed and closed expenses", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.bodySmall)
+        Text(if (pending > 0) "${money(pending, detail.trip.currency)} not yet paid to merchants" else "All recorded bills are paid", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.bodySmall)
     } }
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {

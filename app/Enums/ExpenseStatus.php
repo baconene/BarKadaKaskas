@@ -12,6 +12,6 @@ enum ExpenseStatus: string
 
     public function countsTowardBalance(): bool
     {
-        return in_array($this, [self::Completed, self::Closed], true);
+        return in_array($this, [self::Open, self::Completed, self::Closed], true);
     }
 }

@@ -86,8 +86,8 @@ const payers=(e:Expense)=>[...new Set(e.payments.map(p=>name(p.trip_member_id)))
 const openExpense=ref<number|null>(null);
 const shortDate=(value:string)=>new Intl.DateTimeFormat('en-PH',{month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${value.slice(0,10)}T00:00:00Z`));
 const pendingForMe=computed(()=>props.trip.settlements.filter(s=>s.status==='pending'&&s.to_member_id===props.currentMemberId).length);
-// Same rule as the server's balances: completed/closed bills, plus open ones the merchant has been paid for in full.
-const counts=(e:Expense)=>['completed','closed'].includes(e.status)||(e.status==='open'&&e.payments.filter(p=>p.paid_at).reduce((t,p)=>t+p.amount_minor,0)===e.total_minor);
+// Same rule as the server's balances: every recorded bill counts in full, paid to the merchant or not.
+const counts=(e:Expense)=>['open','completed','closed'].includes(e.status);
 const spent=computed(()=>props.trip.expenses.filter(counts).reduce((s,e)=>s+e.total_minor,0));
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:props.trip.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const expense=useForm({title:'',merchant:'',incurred_at:today,category_id:props.categories[0]?.id??'',amount:'',split_method:'equal',people:props.trip.members.map(m=>({id:m.id,selected:true as boolean,value:'1'})),payers:[{id:props.currentMemberId,amount:''}],items:[{description:'',amount:'',member_ids:[] as number[]}],receipt_scan_id:null as number|null});

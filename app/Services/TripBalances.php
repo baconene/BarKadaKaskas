@@ -6,17 +6,17 @@ use App\Models\Trip;
 
 /**
  * Each traveller's net position: what they paid merchants and received as reimbursements, minus their
- * assigned shares and what they repaid. Open expenses count as soon as the merchant has been paid in full
- * and the whole total is assigned, so travellers see what they owe before the organizer completes the bill.
+ * assigned shares and what they repaid. Every recorded bill (open, completed or closed) counts in full as
+ * a forecast, even before the merchant is paid: travellers see their whole share, while payers are credited
+ * only with what they have actually paid. Until a bill is fully paid, the balances therefore don't add up
+ * to zero; the difference is what is still owed to merchants (see unpaidToMerchants).
  */
 class TripBalances
 {
     public function calculate(Trip $trip): array
     {
         $balances = $trip->members()->with('user')->get()->mapWithKeys(fn ($member) => [$member->id => ['member_id' => $member->id, 'name' => $member->user->name, 'net_minor' => 0]])->all();
-        $expenses = $trip->expenses()->whereIn('status', ['open', 'completed', 'closed'])->with(['payments', 'allocations'])->get()
-            ->filter(fn ($expense) => $expense->status->countsTowardBalance() || self::funded($expense));
-        foreach ($expenses as $expense) {
+        foreach ($trip->expenses()->whereIn('status', ['open', 'completed', 'closed'])->with(['payments', 'allocations'])->get() as $expense) {
             foreach ($expense->payments as $payment) { if ($payment->paid_at) { $balances[$payment->trip_member_id]['net_minor'] += $payment->amount_minor; } }
             foreach ($expense->allocations as $allocation) { $balances[$allocation->trip_member_id]['net_minor'] -= $allocation->amount_minor; }
         }
@@ -27,10 +27,10 @@ class TripBalances
         return array_values($balances);
     }
 
-    /** An open expense is ready to split once merchant payments and assigned shares both equal its total. */
-    public static function funded(\App\Models\Expense $expense): bool
+    /** What recorded bills still owe their merchants (totals minus payments made), across the trip. */
+    public function unpaidToMerchants(Trip $trip): int
     {
-        return (int) $expense->payments->whereNotNull('paid_at')->sum('amount_minor') === $expense->total_minor
-            && (int) $expense->allocations->sum('amount_minor') === $expense->total_minor;
+        return (int) $trip->expenses()->whereIn('status', ['open', 'completed', 'closed'])->with('payments')->get()
+            ->sum(fn ($expense) => max(0, $expense->total_minor - (int) $expense->payments->whereNotNull('paid_at')->sum('amount_minor')));
     }
 }

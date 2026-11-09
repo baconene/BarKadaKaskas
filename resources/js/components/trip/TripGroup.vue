@@ -25,6 +25,10 @@ const me = computed(() => props.members.find(m => m.id === props.currentMemberId
 const missingMine = computed(() => !!me.value && !me.value.user.phone && !me.value.user.emergency_contact_phone);
 const isOrganizerMember = (m: Member) => !!props.organizerUserId && (m.user_id ?? m.user.id) === props.organizerUserId;
 function openTraveler(id: number, edit = false) { editingMine.value = edit; viewing.value = id; }
+// Recorded bills count in full, so until merchants are paid the balances leave this much unaccounted for:
+// it is what travellers still owe the merchants (or whoever pays them), not each other.
+const unpaidToMerchants = computed(() => props.expenses.filter(e => ['open', 'completed', 'closed'].includes(e.status))
+    .reduce((sum, e) => sum + Math.max(0, e.total_minor - (e.payments ?? []).filter((p: { paid_at?: string | null }) => p.paid_at !== null).reduce((t: number, p: { amount_minor: number }) => t + p.amount_minor, 0)), 0));
 const balanceOf = (memberId: number) => props.balances.find(b => b.member_id === memberId)?.net_minor ?? 0;
 
 // Suggested settlements: a display-only plan that pays off every balance in the fewest transfers (greedy).
@@ -94,7 +98,8 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 
         <section class="card group-card" aria-labelledby="balances-title">
             <h2 id="balances-title">Balances</h2>
-            <p class="muted">Completed and closed expenses count here. Reimbursements count once the recipient confirms.</p>
+            <p class="muted">Every recorded expense counts here in full, even before the merchant is paid, so each traveller sees their whole share. Reimbursements count once the recipient confirms.</p>
+            <p v-if="unpaidToMerchants > 0" class="unpaid-note">{{ money(unpaidToMerchants) }} of recorded bills isn’t paid to the merchant yet. That part of everyone’s share goes to the merchant (or whoever pays it), so it isn’t in the suggested settlements below.</p>
             <ul class="balance-list">
                 <li v-for="b in balances" :key="b.member_id"><span>{{ b.name }}</span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor > 0 ? 'Receives' : b.net_minor < 0 ? 'Owes' : 'Settled' }} {{ money(Math.abs(b.net_minor)) }}</strong></li>
             </ul>
@@ -137,6 +142,7 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 .travel-app .group h2{font-size:18px;letter-spacing:-.4px;display:flex;align-items:center;gap:8px}
 .count{font-size:11px;font-weight:700;background:#edf2e6;color:#526936;border-radius:999px;padding:2px 8px;letter-spacing:0}
 .count.warn{background:#fff3d6;color:#926815}
+.unpaid-note{font-size:12px;line-height:1.6;color:#7a5a12;background:#fff8e6;border:1px solid #f0dfb0;border-radius:10px;padding:10px 12px;margin-top:8px}
 .travelers,.balance-list,.suggestions{list-style:none;margin:0;padding:0}
 .traveler{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:56px;padding:6px 0;border-bottom:1px solid #eef2ea}
 .traveler:last-child{border:0}

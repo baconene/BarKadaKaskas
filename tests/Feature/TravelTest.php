@@ -55,6 +55,21 @@ class TravelTest extends TestCase
         $this->changeStatus($expense, 'open')->assertSessionHasErrors('status');
         $this->assertDatabaseCount('activity_logs', 3);
     }
+    public function test_open_expense_paid_in_full_shows_what_each_traveller_owes(): void
+    {
+        $expense = $this->createExpense();
+        $this->assertSame(ExpenseStatus::Open, $expense->fresh()->status);
+        $this->assertSame([5000, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->actingAs($this->friend)->get("/trips/{$this->trip->id}")->assertInertia(fn (Assert $page) => $page->where('balances.1.net_minor', -5000));
+        // Completing the bill later does not change anyone's balance.
+        $this->actingAs($this->owner); $this->changeStatus($expense, 'completed')->assertSessionHasNoErrors();
+        $this->assertSame([5000, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
+    public function test_open_expense_not_yet_paid_to_the_merchant_is_left_out_of_balances(): void
+    {
+        $this->createExpense(false);
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

@@ -526,7 +526,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
     var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }
-    val total = detail.expenses.filter { it.status in listOf("completed", "closed") }.sumOf { it.totalMinor }
+    // Same rule as the server's balances: completed/closed bills, plus open ones paid in full to the merchant.
+    val total = detail.expenses.filter { it.status in listOf("completed", "closed") || (it.status == "open" && it.payments.sumOf { p -> p.amountMinor } == it.totalMinor) }.sumOf { it.totalMinor }
     val pending = detail.expenses.filter { it.status == "open" }.sumOf { it.totalMinor }
     Row(verticalAlignment = Alignment.Bottom) {
         Text("Shared expenses", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)

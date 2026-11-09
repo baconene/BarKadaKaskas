@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ChevronRight, ChevronUp, Navigation, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ChevronLeft, ChevronRight, ChevronUp, List, Navigation, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
 import ItineraryRouteMap, { type LegResult } from '@/components/ItineraryRouteMap.vue';
 import ActivitySheet from '@/components/trip/ActivitySheet.vue';
 import DailyRouteSummary from '@/components/trip/DailyRouteSummary.vue';
@@ -79,6 +79,21 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia));
 const mapVisible = computed(() => props.visible && (props.view === 'map' || isDesktop.value));
 const hasMap = computed(() => !!props.googleMaps.browserKey && stops.value.length >= 2);
 watch(mapDay, () => { selectedLeg.value = null; });
+// Previous / next journey from the focused card. On Today it stays within today; elsewhere it walks the whole
+// trip and switches the day shown when the next journey is on another day.
+const stepLegs = computed(() => (props.view === 'today' ? mapLegs.value : legs.value));
+const focusedIndex = computed(() => stepLegs.value.findIndex(leg => leg.to.id === selectedLeg.value));
+async function stepLeg(direction: 1 | -1) {
+    const next = stepLegs.value[focusedIndex.value + direction];
+    if (!next) return;
+    const key = dayOf(next.to);
+    if (props.view !== 'today' && selectedDay.value && selectedDay.value !== key) {
+        selectedDay.value = key;
+        await nextTick(); // the day change clears the focused journey first
+    }
+    selectedLeg.value = next.to.id;
+}
+function showJourneyList() { selectedLeg.value = null; if (props.view === 'map') sheetOpen.value = true; }
 function focusLeg(id: number) {
     selectedLeg.value = selectedLeg.value === id ? null : id;
     // On phones the map has its own screen.
@@ -213,7 +228,14 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 
             <!-- Focused journey (all layouts) -->
             <div v-if="focusedLeg" class="leg-card" aria-live="polite">
-                <div class="row spread"><p class="eyebrow">Journey {{ focusedLeg.number }} · {{ focusedLeg.mode?.label ?? 'Transport to be decided' }}</p><button type="button" class="icon-btn" aria-label="Show all journeys" @click="selectedLeg = null"><X :size="16" /></button></div>
+                <div class="row spread">
+                    <p class="eyebrow">Journey {{ focusedIndex + 1 }} of {{ stepLegs.length }} · {{ focusedLeg.mode?.label ?? 'Transport to be decided' }}</p>
+                    <span class="leg-nav">
+                        <button type="button" class="icon-btn" aria-label="Previous journey" :disabled="focusedIndex <= 0" @click="stepLeg(-1)"><ChevronLeft :size="18" /></button>
+                        <button type="button" class="icon-btn" aria-label="Next journey" :disabled="focusedIndex < 0 || focusedIndex >= stepLegs.length - 1" @click="stepLeg(1)"><ChevronRight :size="18" /></button>
+                        <button type="button" class="icon-btn" :aria-label="view === 'map' ? 'Show the journey list' : 'Close journey'" @click="showJourneyList"><List v-if="view === 'map'" :size="16" /><X v-else :size="16" /></button>
+                    </span>
+                </div>
                 <h4>{{ focusedLeg.from.title }} → {{ focusedLeg.to.title }}</h4>
                 <p class="muted">{{ legResults[focusedLeg.to.id]?.summary ?? 'Calculating…' }}</p>
                 <div class="leg-card-actions">
@@ -287,6 +309,8 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .leg-card h4{font-size:15px;font-weight:750;line-height:1.3}
 .leg-card-actions{display:flex;gap:8px;margin-top:6px}
 .leg-card-actions .btn{flex:1;min-height:44px;padding:10px 12px}
+.leg-nav{display:flex;gap:6px}
+.icon-btn:disabled{opacity:.4;cursor:default}
 .icon-btn{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}
 .sheet-handle{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;width:100%;padding:8px 16px 12px;border:0;background:transparent;color:inherit;font:inherit;cursor:grab;touch-action:none;text-align:left;min-height:56px}
 .grabber{grid-column:1/-1;justify-self:center;width:40px;height:4px;border-radius:999px;background:#d3dccd;margin-bottom:4px}

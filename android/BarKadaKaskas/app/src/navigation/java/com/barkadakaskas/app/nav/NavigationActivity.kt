@@ -11,6 +11,10 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import com.barkadakaskas.app.data.LaravelRepository
+import com.barkadakaskas.app.data.TokenStore
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -67,7 +72,11 @@ class NavigationActivity : ComponentActivity() {
     private var handedOff = false
     private var started = false
 
-    private lateinit var stops: List<InAppNavigation.NavStop>
+    private val stops = mutableStateListOf<InAppNavigation.NavStop>()
+    private var tripId: Long? = null
+    private var marking by mutableStateOf(false)
+    /** The stop you arrived at, while the "mark as done?" question is showing. */
+    private var askDone by mutableStateOf<Int?>(null)
     private var current by mutableIntStateOf(0)
     private var arrived by mutableStateOf(false)
     private var routing by mutableStateOf(true)
@@ -75,6 +84,9 @@ class NavigationActivity : ComponentActivity() {
     private val arrivalListener = Navigator.ArrivalListener {
         arrived = true
         navigator?.stopGuidance()
+        // Offer to tick the stop off for everyone on the trip.
+        val stop = stops.getOrNull(current)
+        if (stop?.id != null && !stop.done && tripId != null) askDone = current
     }
     private val askLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.any { it }) acceptTermsThenNavigate() else handOff("Location permission is needed to navigate here.")
@@ -82,7 +94,8 @@ class NavigationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        stops = InAppNavigation.decode(intent.getStringExtra(InAppNavigation.EXTRA_ROUTE)).ifEmpty {
+        tripId = intent.getLongExtra(InAppNavigation.EXTRA_TRIP, -1L).takeIf { it > 0 }
+        stops += InAppNavigation.decode(intent.getStringExtra(InAppNavigation.EXTRA_ROUTE)).ifEmpty {
             // Opened for a single stop: show just that one.
             listOf(InAppNavigation.NavStop(intent.getStringExtra(InAppNavigation.EXTRA_TITLE) ?: "Destination", intent.getStringExtra(InAppNavigation.EXTRA_QUERY),
                 intent.getDoubleExtra(InAppNavigation.EXTRA_LAT, Double.NaN).takeUnless { it.isNaN() }, intent.getDoubleExtra(InAppNavigation.EXTRA_LNG, Double.NaN).takeUnless { it.isNaN() },
@@ -126,7 +139,24 @@ class NavigationActivity : ComponentActivity() {
                         Icon(Icons.Default.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("End", fontWeight = FontWeight.SemiBold)
                     }
                 }
-                if (arrived && next != null) Button(onClick = { switchTo(next) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) {
+                askDone?.let { index ->
+                    Surface(color = Sage, shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, null, tint = Forest, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(8.dp))
+                                Text("Mark “${stops[index].title}” as done?", color = Ink, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("Everyone on the trip will see it ticked off.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { markDone(index) }, enabled = !marking, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(12.dp)) {
+                                    if (marking) CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp) else Text("Mark done")
+                                }
+                                OutlinedButton(onClick = { askDone = null }, enabled = !marking, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Not now", color = Forest) }
+                            }
+                        }
+                    }
+                }
+                if (arrived && next != null && askDone == null) Button(onClick = { switchTo(next) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) {
                     Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Next: ${stops[next].title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (stops.size > 1) {
@@ -166,6 +196,21 @@ class NavigationActivity : ComponentActivity() {
             if (active) Text("Now", color = Forest, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             else if (inApp) Icon(Icons.Default.Navigation, "Navigate here", tint = Forest, modifier = Modifier.size(18.dp))
             else Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open in Google Maps", tint = Muted, modifier = Modifier.size(18.dp))
+        }
+    }
+
+    /** Saves "done" on the server for the stop (same as ticking it in the itinerary) and updates the list. */
+    private fun markDone(index: Int) {
+        val trip = tripId ?: return
+        val stopId = stops.getOrNull(index)?.id ?: return
+        marking = true
+        lifecycleScope.launch {
+            val saved = runCatching { LaravelRepository(TokenStore(applicationContext)).setStopDone(trip, stopId, true) }.isSuccess
+            marking = false
+            if (saved) {
+                stops[index] = stops[index].copy(done = true)
+                askDone = null
+            } else Toast.makeText(this@NavigationActivity, "Couldn't save. Check your connection and try again.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -212,6 +257,7 @@ class NavigationActivity : ComponentActivity() {
             return
         }
         current = index
+        askDone = null
         route(index)
     }
 

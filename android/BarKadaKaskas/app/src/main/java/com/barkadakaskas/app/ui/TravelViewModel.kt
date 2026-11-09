@@ -40,6 +40,12 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         user = if (register) repository.register(name.trim(), email.trim(), password) else repository.login(email.trim(), password)
         trips = repository.trips()
     }
+    /** Reloads the open trip without the busy state, ignoring failures (used when returning to the app). */
+    fun refreshQuietly() {
+        val id = detail?.trip?.id ?: return
+        if (busy) return
+        viewModelScope.launch { runCatching { repository.trip(id) }.getOrNull()?.let { fresh -> if (detail?.trip?.id == id) detail = fresh } }
+    }
     fun refresh() = launch { detail?.let { detail = repository.trip(it.trip.id) } ?: run { trips = repository.trips() } }
     fun openTrip(trip: Trip) = launch { detail = repository.trip(trip.id) }
     fun backToTrips() { if (!busy) { detail = null; posts = emptyList(); postsLoadedFor = null; postsNextBefore = null } }

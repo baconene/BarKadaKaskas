@@ -151,7 +151,6 @@ private fun hasLocationPermission(context: Context) =
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted -> showMe = granted.values.any { it } }
     val me = rememberMyLocation(context, showMe)
     val scope = rememberCoroutineScope()
-    val car = remember { BitmapDescriptorFactory.fromBitmap(carIcon(context)) }
     val carState = rememberMarkerState()
     LaunchedEffect(me) { me?.let { carState.position = LatLng(it.latitude, it.longitude) } }
 
@@ -189,7 +188,8 @@ private fun hasLocationPermission(context: Context) =
                     )
                 }
             }
-            if (me != null) Marker(state = carState, icon = car, title = "You", anchor = Offset(0.5f, 0.5f), flat = true, rotation = if (me.hasBearing()) me.bearing else 0f, zIndex = 2f)
+            // Created here, inside the map: BitmapDescriptorFactory crashes if used before Google Maps has started.
+            if (me != null) Marker(state = carState, icon = remember { BitmapDescriptorFactory.fromBitmap(carIcon(context)) }, title = "You", anchor = Offset(0.5f, 0.5f), flat = true, rotation = if (me.hasBearing()) me.bearing else 0f, zIndex = 2f)
         }
         if (me != null) SmallFloatingActionButton(
             onClick = { scope.launch { runCatching { camera.animate(CameraUpdateFactory.newLatLngZoom(LatLng(me.latitude, me.longitude), 16f), 600) } } },

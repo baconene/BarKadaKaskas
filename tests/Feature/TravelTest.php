@@ -244,16 +244,37 @@ class TravelTest extends TestCase
         $this->assertSame(ExpenseStatus::Closed, $expense->fresh()->status);
     }
 
-    public function test_invalid_edit_rolls_back_and_cannot_remove_recorded_payments(): void
+    public function test_organizer_can_correct_who_paid_the_merchant(): void
     {
-        $expense = $this->createExpense(); $data = $this->payload() + ['version' => 1];
-        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
-        $data['payments'] = [];
-        $this->patch($url, $data)->assertSessionHasErrors('expense');
+        $expense = $this->createExpense(); $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
+        $data = $this->payload() + ['version' => 1];
+        $data['payments'] = [['trip_member_id' => $this->friendMember, 'amount_minor' => 6000], ['trip_member_id' => $this->ownerMember, 'amount_minor' => 4001]];
+        $this->actingAs($this->friend)->patch($url, $data)->assertForbidden();
+        $this->actingAs($this->owner)->patch($url, $data)->assertSessionHasNoErrors();
+        $this->assertSame(6000, (int) $expense->payments()->where('trip_member_id', $this->friendMember)->sum('amount_minor'));
+        $this->assertSame([-1000, 1000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        // Down to a partial (down) payment, then back to nothing paid yet.
+        $data['version'] = 2; $data['payments'] = [['trip_member_id' => $this->friendMember, 'amount_minor' => 3000]];
+        $this->patch($url, $data)->assertSessionHasNoErrors();
         $this->assertSame(1, $expense->payments()->count());
-        $data = $this->payload() + ['version' => 1]; $data['split_method'] = 'exact';
+        $data['version'] = 3; $data['payments'] = [];
+        $this->patch($url, $data)->assertSessionHasNoErrors();
+        $this->assertSame(0, $expense->payments()->count());
+        $data['version'] = 4; $data['payments'] = [['trip_member_id' => $this->friendMember, 'amount_minor' => 20000]];
+        $this->patch($url, $data)->assertSessionHasErrors('payments');
+        $this->assertDatabaseHas('activity_logs', ['subject_id' => $expense->id, 'action' => 'updated']);
+    }
+
+    public function test_payers_lock_once_reimbursements_are_recorded_and_invalid_edits_roll_back(): void
+    {
+        $expense = $this->createExpense(); $url = "/trips/{$this->trip->id}/expenses/{$expense->id}";
+        $this->post("{$url}/shares/paid", ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasNoErrors();
+        $data = $this->payload() + ['version' => $expense->fresh()->version];
+        $data['payments'] = [['trip_member_id' => $this->friendMember, 'amount_minor' => 10001]];
+        $this->patch($url, $data)->assertSessionHasErrors('expense');
+        $this->assertSame($this->ownerMember, $expense->payments()->value('trip_member_id'));
+        $data = $this->payload() + ['version' => $expense->fresh()->version]; $data['split_method'] = 'exact';
         $this->patch($url, $data)->assertSessionHasErrors('allocations');
-        $this->assertSame(1, $expense->fresh()->version);
         $this->assertSame(10001, (int) $expense->allocations()->sum('amount_minor'));
     }
 

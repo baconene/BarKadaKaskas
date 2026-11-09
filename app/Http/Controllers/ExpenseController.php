@@ -36,18 +36,25 @@ class ExpenseController extends Controller
             $fail = fn ($message) => throw ValidationException::withMessages(['expense' => $message]);
             if (in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled], true)) { $fail('Closed and cancelled expenses cannot be edited.'); }
             if ($expense->version !== (int) $data['version']) { $fail('This expense changed. Refresh and reopen the editor before saving.'); }
-            // Payments are historical facts. The editor changes shares, never payment history.
+            // The organizer may correct who paid the merchant (and how much), but not once reimbursements
+            // were recorded against the bill: those went to the original payers. The change is logged.
             $existing = $expense->payments()->get()->groupBy('trip_member_id')->map(fn ($rows) => (int) $rows->sum('amount_minor'))->sortKeys()->all();
             $submitted = collect($data['payments'])->mapWithKeys(fn ($p) => [(int) $p['trip_member_id'] => (int) $p['amount_minor']])->sortKeys()->all();
-            if ($existing !== $submitted) { $fail('Recorded payments cannot be changed here. Use Record payment to add a payment.'); }
-            if ($expense->status === ExpenseStatus::Completed && array_sum($existing) !== (int) $data['total_minor']) { $fail('A completed expense total must still equal its recorded payments. You can change its assigned shares.'); }
+            $paymentsChanged = $existing !== $submitted;
+            if ($paymentsChanged && $expense->settlements()->exists()) { $fail('Reimbursements were already recorded for this bill, so who paid the merchant can no longer be changed.'); }
+            if ($expense->status === ExpenseStatus::Completed && array_sum($submitted) !== (int) $data['total_minor']) { $fail('A completed expense must be paid in full: merchant payments must equal the total.'); }
             if ($expense->adjustments()->exists()) { $fail('This expense has separate adjustments and requires an adjustment-aware editor.'); }
-            $before = $expense->load(['items', 'allocations'])->toArray();
+            $before = $expense->load(['items', 'allocations', 'payments'])->toArray();
+            if ($paymentsChanged) {
+                $paidAt = $expense->payments()->pluck('paid_at', 'trip_member_id');
+                $expense->payments()->delete();
+                foreach ($submitted as $memberId => $amount) { $expense->payments()->create(['trip_member_id' => $memberId, 'amount_minor' => $amount, 'paid_at' => $paidAt[$memberId] ?? now()]); }
+            }
             $expense->allocations()->delete();
             $expense->items()->delete();
             $expense->update(collect($data)->except(['payments', 'allocations', 'items', 'version'])->all() + ['version' => $expense->version + 1]);
             $this->writeAllocations($expense, $data, $splitter);
-            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'updated', 'before' => $before, 'after' => $expense->fresh(['items', 'allocations'])->toArray()]);
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'updated', 'before' => $before, 'after' => $expense->fresh(['items', 'allocations', 'payments'])->toArray()]);
         });
         return $this->respond($request, $expense);
     }

@@ -23,7 +23,8 @@ val releaseKeystore: String? = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { 
 // picks the library version.
 val inAppNavigation: Boolean = ((findProperty("ENABLE_NAVIGATION_SDK") as String?) ?: System.getenv("ENABLE_NAVIGATION_SDK")?.takeIf { it.isNotBlank() } ?: "true").toBoolean()
 val navigationSdkVersion: String = (findProperty("NAVIGATION_SDK_VERSION") as String?) ?: System.getenv("NAVIGATION_SDK_VERSION")?.takeIf { it.isNotBlank() } ?: "6.0.0"
-val mapsApiKey: String = (findProperty("MAPS_API_KEY") as String?) ?: System.getenv("MAPS_API_KEY") ?: localProperties.getProperty("MAPS_API_KEY") ?: ""
+// Blank values (e.g. an empty CI secret) fall through to the next source; surrounding spaces are ignored.
+val mapsApiKey: String = listOf(findProperty("MAPS_API_KEY") as String?, System.getenv("MAPS_API_KEY"), localProperties.getProperty("MAPS_API_KEY")).firstOrNull { !it.isNullOrBlank() }?.trim() ?: ""
 android {
     namespace = "com.barkadakaskas.app"
     compileSdk = 35

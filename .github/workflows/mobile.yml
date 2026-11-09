@@ -28,6 +28,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # Without the Maps key the app falls back to OpenStreetMap and Navigate always opens Google Maps.
+      - name: Check Google Maps key
+        run: |
+          if [ -z "$(echo "$MAPS_API_KEY" | tr -d '[:space:]')" ]; then
+            echo "::warning title=Google Maps key::The MAPS_API_KEY secret is empty, so this APK has no Google Maps key: the trip map uses OpenStreetMap and in-app navigation is off. Set the secret to your AIza... key (Settings > Secrets and variables > Actions)."
+          else
+            echo "MAPS_API_KEY is set (${#MAPS_API_KEY} characters)."
+          fi
       # A stable signing key lets people install new versions over old ones. Without the secrets the
       # APK is signed with a throwaway debug key and must be uninstalled before installing a newer one.
       - name: Restore signing key

@@ -228,8 +228,8 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 
             <!-- Focused journey (all layouts) -->
             <div v-if="focusedLeg" class="leg-card" aria-live="polite">
-                <div class="row spread">
-                    <p class="eyebrow">Journey {{ focusedIndex + 1 }} of {{ stepLegs.length }} · {{ focusedLeg.mode?.label ?? 'Transport to be decided' }}</p>
+                <div class="leg-head">
+                    <p class="eyebrow" :title="`Journey ${focusedIndex + 1} of ${stepLegs.length} · ${focusedLeg.mode?.label ?? 'Transport to be decided'}`">Journey {{ focusedIndex + 1 }} of {{ stepLegs.length }} · {{ focusedLeg.mode?.label ?? 'Transport to be decided' }}</p>
                     <span class="leg-nav">
                         <button type="button" class="icon-btn" aria-label="Previous journey" :disabled="focusedIndex <= 0" @click="stepLeg(-1)"><ChevronLeft :size="18" /></button>
                         <button type="button" class="icon-btn" aria-label="Next journey" :disabled="focusedIndex < 0 || focusedIndex >= stepLegs.length - 1" @click="stepLeg(1)"><ChevronRight :size="18" /></button>
@@ -309,7 +309,9 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .leg-card h4{font-size:15px;font-weight:750;line-height:1.3}
 .leg-card-actions{display:flex;gap:8px;margin-top:6px}
 .leg-card-actions .btn{flex:1;min-height:44px;padding:10px 12px}
-.leg-nav{display:flex;gap:6px}
+.leg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap}
+.leg-head .eyebrow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leg-nav{display:flex;gap:6px;flex-shrink:0}
 .icon-btn:disabled{opacity:.4;cursor:default}
 .icon-btn{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}
 .sheet-handle{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 8px;width:100%;padding:8px 16px 12px;border:0;background:transparent;color:inherit;font:inherit;cursor:grab;touch-action:none;text-align:left;min-height:56px}

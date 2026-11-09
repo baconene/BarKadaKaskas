@@ -63,10 +63,14 @@ val hasGoogleMaps: Boolean get() = BuildConfig.MAPS_API_KEY.isNotBlank()
 /**
  * In-app map of a day's stops: numbered pins joined in visiting order.
  * Tapping a pin shows its name; tapping that bubble calls [onNavigate] (Google Maps only).
+ * [focus] lists pin ids to zoom to (a journey's start and end); empty fits the whole day.
  */
-@Composable fun TripMap(pins: List<MapPin>, modifier: Modifier = Modifier, routeColor: Color = Color(0xFF214E3E), onNavigate: (MapPin) -> Unit = {}) {
-    if (hasGoogleMaps) GoogleTripMap(pins, modifier, routeColor, onNavigate) else OsmTripMap(pins, modifier, routeColor)
+@Composable fun TripMap(pins: List<MapPin>, modifier: Modifier = Modifier, routeColor: Color = Color(0xFF214E3E), focus: List<Long> = emptyList(), onNavigate: (MapPin) -> Unit = {}) {
+    if (hasGoogleMaps) GoogleTripMap(pins, modifier, routeColor, focus, onNavigate) else OsmTripMap(pins, modifier, routeColor, focus)
 }
+
+/** The pins the camera should frame: the focused ones when any are on the map, otherwise all of them. */
+private fun framed(pins: List<MapPin>, focus: List<Long>): List<MapPin> = pins.filter { it.id in focus }.ifEmpty { pins }
 
 private fun numberedPin(context: Context, number: Int, fill: Int, approximate: Boolean): Bitmap {
     val density = context.resources.displayMetrics.density
@@ -85,7 +89,7 @@ private fun hasLocationPermission(context: Context) =
     context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-@Composable private fun GoogleTripMap(pins: List<MapPin>, modifier: Modifier, routeColor: Color, onNavigate: (MapPin) -> Unit) {
+@Composable private fun GoogleTripMap(pins: List<MapPin>, modifier: Modifier, routeColor: Color, focus: List<Long>, onNavigate: (MapPin) -> Unit) {
     val context = LocalContext.current
     val density = context.resources.displayMetrics.density
     val camera = rememberCameraPositionState {
@@ -96,10 +100,11 @@ private fun hasLocationPermission(context: Context) =
     var showMe by remember { mutableStateOf(hasLocationPermission(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted -> showMe = granted.values.any { it } }
 
-    LaunchedEffect(pins, loaded) {
+    LaunchedEffect(pins, loaded, focus) {
         if (!loaded || pins.isEmpty()) return@LaunchedEffect
-        val update = if (pins.size == 1) CameraUpdateFactory.newLatLngZoom(LatLng(pins[0].latitude, pins[0].longitude), 15f)
-        else CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { pins.forEach { include(LatLng(it.latitude, it.longitude)) } }.build(), (56 * density).toInt())
+        val shown = framed(pins, focus)
+        val update = if (shown.size == 1) CameraUpdateFactory.newLatLngZoom(LatLng(shown[0].latitude, shown[0].longitude), 15f)
+        else CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { shown.forEach { include(LatLng(it.latitude, it.longitude)) } }.build(), (56 * density).toInt())
         runCatching { camera.animate(update, 600) }
     }
 
@@ -147,7 +152,7 @@ private fun configureOsm(context: Context) {
 }
 
 /** Fallback when no Google Maps key is configured. */
-@Composable private fun OsmTripMap(pins: List<MapPin>, modifier: Modifier, routeColor: Color) {
+@Composable private fun OsmTripMap(pins: List<MapPin>, modifier: Modifier, routeColor: Color, focus: List<Long>) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val map = remember {
@@ -191,11 +196,12 @@ private fun configureOsm(context: Context) {
                 }
             }
             view.invalidate()
+            val shown = framed(pins, focus).map { GeoPoint(it.latitude, it.longitude) }
             view.post {
                 when {
-                    points.size == 1 -> { view.controller.setZoom(15.0); view.controller.setCenter(points.first()) }
-                    points.size > 1 -> runCatching {
-                        view.zoomToBoundingBox(BoundingBox.fromGeoPointsSafe(points).increaseByScale(1.35f), false, (48 * context.resources.displayMetrics.density).toInt())
+                    shown.size == 1 -> { view.controller.setZoom(15.0); view.controller.setCenter(shown.first()) }
+                    shown.size > 1 -> runCatching {
+                        view.zoomToBoundingBox(BoundingBox.fromGeoPointsSafe(shown).increaseByScale(1.35f), false, (48 * context.resources.displayMetrics.density).toInt())
                     }
                 }
             }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -432,6 +433,12 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     val current = day ?: return
+    // Journeys across the whole trip (each stop after the first is reached from the one before it). Stepping to a
+    // journey on another day switches the day shown; picking another day by hand closes the journey card.
+    val allStops = remember(days) { days.flatMap { it.stops } }
+    var focusedId by rememberSaveable(trip.id) { mutableStateOf<Long?>(null) }
+    val focusedIndex = allStops.indexOfFirst { it.id == focusedId }.takeIf { it > 0 && allStops[it] in current.stops }
+    fun focusJourney(index: Int) { val stop = allStops.getOrNull(index) ?: return; days.indexOfFirst { stop in it.stops }.takeIf { it >= 0 }?.let { selected = it }; focusedId = stop.id }
     val pins = current.stops.mapIndexedNotNull { index, stop ->
         val point = if (Itinerary.hasPin(stop)) stop.latitude!! to stop.longitude!! else geocoded[stop.id]
         point?.let { MapPin(stop.id, index + 1, stop.title, stop.location, it.first, it.second, approximate = !Itinerary.hasPin(stop)) }
@@ -442,17 +449,22 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             if (pins.isEmpty()) Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.LocationOff, null, tint = Muted, modifier = Modifier.size(32.dp)); Spacer(Modifier.height(8.dp))
                 Text(if (current.stops.any { it.location.isNotBlank() }) "Finding places on the map…" else "Add locations to see this day on the map", color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            } else TripMap(pins, Modifier.fillMaxSize(), Forest) { pin ->
+            } else TripMap(pins, Modifier.fillMaxSize(), Forest, focus = focusedIndex?.let { listOf(allStops[it - 1].id, allStops[it].id) } ?: emptyList()) { pin ->
                 current.stops.find { it.id == pin.id }?.let { stop -> Itinerary.navigateUrl(stop.copy(latitude = pin.latitude, longitude = pin.longitude))?.let { startNavigation(context, it) } }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (focusedIndex != null) JourneyCard(allStops[focusedIndex - 1], allStops[focusedIndex], focusedIndex, allStops.size - 1, { focusJourney(focusedIndex - 1) }, { focusJourney(focusedIndex + 1) }, { focusedId = null }, { url -> openUrl(context, url) })
+        else Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Route for ${Itinerary.dayLabel(current.key)}", fontWeight = FontWeight.Bold)
                 val missing = current.stops.count { it.location.isNotBlank() } - pins.size
                 Text(if (missing > 0) "${pins.size} on the map · $missing still locating" else if (hasGoogleMaps) "Tap a pin, then its name, to navigate there" else "Tap a place below to navigate there", color = Muted, style = MaterialTheme.typography.bodySmall)
             }
             if (navigate != null) OutlinedButton(onClick = { openUrl(context, navigate) }, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Directions, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Day route") }
+        }
+        // Start stepping through the day's journeys (or the trip's first one when the day has a single stop).
+        if (focusedIndex == null && allStops.size > 1) TextButton(onClick = { focusJourney(allStops.indexOf(current.stops.first()).coerceAtLeast(1)) }, modifier = Modifier.padding(start = 6.dp, bottom = 6.dp)) {
+            Icon(Icons.Default.Route, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Step through journeys")
         }
     }
 
@@ -462,6 +474,24 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }
+}
+
+/** The focused journey under the map: "Journey N of M", previous / next / close always in the same place, and directions. */
+@Composable private fun JourneyCard(from: Stop, to: Stop, number: Int, total: Int, previous: () -> Unit, next: () -> Unit, close: () -> Unit, open: (String) -> Unit) {
+    val mode = transportOptions.find { it.first == to.transport }?.second ?: "Transport to be decided"
+    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("JOURNEY $number OF $total · ${mode.uppercase()}", Modifier.weight(1f), color = Moss, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = previous, enabled = number > 1) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous journey") }
+            IconButton(onClick = next, enabled = number < total) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next journey") }
+            IconButton(onClick = close) { Icon(Icons.Default.Close, "Close journey") }
+        }
+        Text("${from.title} → ${to.title}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+        if (to.location.isNotBlank()) Text(to.location, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val directions = if (Itinerary.samePlace(from, to)) null else Itinerary.directionsUrl(from, to)
+        if (directions != null) Button(onClick = { open(directions) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Directions") }
+        else Text("Same spot as the previous stop, no travel needed.", color = Muted, style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 @Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (String) -> Unit, toggleDone: () -> Unit, edit: () -> Unit) {

@@ -33,6 +33,15 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalFocusManager
+import android.location.LocationManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -140,7 +149,7 @@ class NavigationActivity : ComponentActivity() {
         val stop = stops[current]
         val next = stops.drop(current + 1).firstOrNull { !it.done }?.let { stops.indexOf(it) }
         Surface(color = Cream, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp).padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 18.dp).padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.align(Alignment.CenterHorizontally).size(width = 40.dp, height = 4.dp).clip(CircleShape).background(Line))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -179,6 +188,7 @@ class NavigationActivity : ComponentActivity() {
                 if (arrived && next != null && askDone == null) Button(onClick = { switchTo(next) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) {
                     Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Next: ${stops[next].title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                SearchBox()
                 if (stops.size > 1) {
                     HorizontalDivider(color = Line)
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -247,6 +257,73 @@ class NavigationActivity : ComponentActivity() {
                 askDone = null
             } else Toast.makeText(this@NavigationActivity, "Couldn't save. Check your connection and try again.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    // ---- Place search ------------------------------------------------------------------------------------
+
+    private var searching by mutableStateOf(false)
+    private var searchResults by mutableStateOf<List<PlaceSearch.Place>>(emptyList())
+    private var searchBusy by mutableStateOf(false)
+    private var searchMessage by mutableStateOf<String?>(null)
+
+    /** "Search a place" in the panel: find somewhere nearby and navigate there as a detour. */
+    @Composable private fun SearchBox() {
+        val focus = LocalFocusManager.current
+        var query by remember { mutableStateOf("") }
+        if (!searching) {
+            OutlinedButton(onClick = { searching = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Default.Search, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Search a place", color = Forest)
+            }
+            return
+        }
+        fun run() { if (query.isNotBlank()) { focus.clearFocus(); search(query) } }
+        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(14.dp),
+            placeholder = { Text("Gas station, pharmacy, an address…") }, leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { IconButton(onClick = { searching = false; searchResults = emptyList(); searchMessage = null; query = "" }) { Icon(Icons.Default.Close, "Close search") } },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { run() }))
+        when {
+            searchBusy -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Forest)
+            searchMessage != null -> Text(searchMessage!!, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        if (searchResults.isNotEmpty()) LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+            itemsIndexed(searchResults) { _, place ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { goToPlace(place) }.padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Place, null, tint = Moss, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(place.name, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        place.address?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                    Icon(Icons.Default.Navigation, "Navigate here", tint = Forest, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+
+    @android.annotation.SuppressLint("MissingPermission") // Navigation only runs with location permission.
+    private fun lastPosition(): Pair<Double, Double>? = runCatching {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).firstNotNullOfOrNull { manager.getLastKnownLocation(it) }?.let { it.latitude to it.longitude }
+    }.getOrNull()
+
+    private fun search(query: String) {
+        searchBusy = true; searchMessage = null
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { PlaceSearch.search(query, lastPosition(), packageName) } }
+            searchBusy = false
+            result.onSuccess { searchResults = it; if (it.isEmpty()) searchMessage = "No places found for “$query”." }
+                .onFailure { searchResults = emptyList(); searchMessage = "Search isn't available right now. ${it.message ?: ""}".trim() }
+        }
+    }
+
+    /** Navigates to a searched place as a detour, listed right after the current stop (it isn't saved to the trip). */
+    private fun goToPlace(place: PlaceSearch.Place) {
+        val url = "https://www.google.com/maps/dir/?api=1&destination=${place.latitude},${place.longitude}&dir_action=navigate"
+        val index = (current + 1).coerceAtMost(stops.size)
+        stops.add(index, InAppNavigation.NavStop(place.name, place.address, place.latitude, place.longitude, null, "Detour", url))
+        searching = false; searchResults = emptyList()
+        current = index
+        askDone = null
+        route(index)
     }
 
     // ---- Navigation ---------------------------------------------------------------------------------------

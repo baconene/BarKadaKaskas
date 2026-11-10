@@ -48,6 +48,7 @@ import com.google.android.libraries.navigation.NavigationApi
 import com.google.android.libraries.navigation.NavigationView
 import com.google.android.libraries.navigation.Navigator
 import com.google.android.libraries.navigation.RoutingOptions
+import com.google.android.libraries.navigation.StylingOptions
 import com.google.android.libraries.navigation.Waypoint
 import java.util.Locale
 
@@ -80,6 +81,10 @@ class NavigationActivity : ComponentActivity() {
     private var current by mutableIntStateOf(0)
     private var arrived by mutableStateOf(false)
     private var routing by mutableStateOf(true)
+    /** Time and distance left to the current stop, shown in the panel instead of Google's own trip card. */
+    private var remainingSeconds by mutableStateOf<Int?>(null)
+    private var remainingMeters by mutableStateOf<Int?>(null)
+    private val remainingListener = Navigator.RemainingTimeOrDistanceChangedListener { updateRemaining() }
 
     private val arrivalListener = Navigator.ArrivalListener {
         arrived = true
@@ -107,6 +112,15 @@ class NavigationActivity : ComponentActivity() {
         navigationView.onCreate(savedInstanceState)
         // Live traffic on the navigation map (the route itself is already coloured by traffic).
         navigationView.getMapAsync { map -> map.isTrafficEnabled = true }
+        // Google's guidance in the app's colours: forest-green instruction banner, soft-green turn arrows.
+        navigationView.setStylingOptions(StylingOptions()
+            .primaryDayModeThemeColor(0xFF214E3E.toInt()).secondaryDayModeThemeColor(0xFF2F6250.toInt())
+            .primaryNightModeThemeColor(0xFF15342A.toInt()).secondaryNightModeThemeColor(0xFF1E4537.toInt())
+            .headerLargeManeuverIconColor(0xFFCFE0A5.toInt()).headerSmallManeuverIconColor(0xFFCFE0A5.toInt()))
+        // Time, distance and arrival live in our panel; the speed limit sign stays, the extra speedometer goes.
+        navigationView.setEtaCardEnabled(false)
+        navigationView.setSpeedometerEnabled(false)
+        navigationView.setSpeedLimitIconEnabled(true)
         val panel = ComposeView(this).apply { setContent { MaterialTheme { Panel() } } }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -131,6 +145,12 @@ class NavigationActivity : ComponentActivity() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(when { arrived -> "YOU'VE ARRIVED"; routing -> "FINDING ROUTE…"; else -> "HEADING TO" }, color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        val seconds = remainingSeconds; val meters = remainingMeters
+                        if (!arrived && !routing && seconds != null && meters != null) Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(vertical = 2.dp)) {
+                            Text(duration(seconds), color = Forest, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                            Spacer(Modifier.width(8.dp))
+                            Text("${distance(meters)} · arrive ${arrival(seconds)}", color = Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 3.dp))
+                        }
                         Text(stop.title, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         stop.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
@@ -199,6 +219,21 @@ class NavigationActivity : ComponentActivity() {
         }
     }
 
+    private fun updateRemaining() {
+        val left = navigator?.currentTimeAndDistance ?: return
+        remainingSeconds = left.seconds; remainingMeters = left.meters
+    }
+
+    private fun duration(seconds: Int): String = when {
+        seconds < 60 -> "< 1 min"
+        seconds < 3600 -> "${seconds / 60} min"
+        else -> "${seconds / 3600} hr ${(seconds % 3600) / 60} min"
+    }
+
+    private fun distance(meters: Int): String = if (meters < 1000) "$meters m" else String.format(Locale.ENGLISH, "%.1f km", meters / 1000.0)
+
+    private fun arrival(seconds: Int): String = java.time.LocalTime.now().plusSeconds(seconds.toLong()).format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
+
     /** Saves "done" on the server for the stop (same as ticking it in the itinerary) and updates the list. */
     private fun markDone(index: Int) {
         val trip = tripId ?: return
@@ -233,6 +268,7 @@ class NavigationActivity : ComponentActivity() {
                 navigator = ready
                 ready.setAudioGuidance(Navigator.AudioGuidance.VOICE_ALERTS_AND_GUIDANCE)
                 ready.addArrivalListener(arrivalListener)
+                ready.addRemainingTimeOrDistanceChangedListener(30, 100, remainingListener)
                 route(current)
             }
 
@@ -297,6 +333,7 @@ class NavigationActivity : ComponentActivity() {
             if (status == Navigator.RouteStatus.OK) {
                 routing = false; started = true
                 navigator.startGuidance()
+                updateRemaining()
             } else {
                 routeFailed(if (status == Navigator.RouteStatus.NO_ROUTE_FOUND) "No route found to ${stop.title} in the app." else "In-app navigation couldn't find a route to ${stop.title}.")
             }
@@ -334,6 +371,7 @@ class NavigationActivity : ComponentActivity() {
     override fun onDestroy() {
         navigator?.let {
             it.removeArrivalListener(arrivalListener)
+            it.removeRemainingTimeOrDistanceChangedListener(remainingListener)
             it.stopGuidance()
             it.clearDestinations()
             it.cleanup()

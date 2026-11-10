@@ -5,7 +5,22 @@ import { onBeforeUnmount, ref } from 'vue';
 import LoadingImage from '@/components/LoadingImage.vue';
 import { MapPin, Plus, ArrowUpRight, Users, CalendarDays, EyeOff } from 'lucide-vue-next';
 import TravelLayout from '@/layouts/TravelLayout.vue';
-defineProps<{mapsKey?: string | null; aiPlanner?: boolean; trips: {id:number;name:string;destination:string;starts_on:string;ends_on:string;members_count:number;status:string;cover_url?:string|null}[]; hiddenCount?: number; showingHidden?: boolean}>();
+/**
+ * The trip card's badge from its dates (in the trip's time zone), like the Android app: upcoming, ongoing
+ * (day N of M) or completed; a cancelled trip says so. The stored status alone never moves past "planning".
+ */
+function tripPhase(trip:{starts_on:string;ends_on:string;status:string;timezone?:string}):{label:string;tone:string}{
+    if(trip.status==='cancelled')return{label:'Cancelled',tone:'cancelled'};
+    let today:string;
+    try{today=new Intl.DateTimeFormat('en-CA',{timeZone:trip.timezone||undefined,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+    catch{today=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+    const start=String(trip.starts_on).slice(0,10), end=String(trip.ends_on).slice(0,10);
+    const days=(a:string,b:string)=>Math.round((Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:00:00Z`))/86400000);
+    if(today<start){const n=days(today,start);return{label:n===1?'Tomorrow':`In ${n} days`,tone:'upcoming'};}
+    if(today>end)return{label:'Completed',tone:'closed'};
+    return{label:start===end?'Today':`Ongoing · Day ${days(start,today)+1} of ${days(start,end)+1}`,tone:'completed'};
+}
+defineProps<{mapsKey?: string | null; aiPlanner?: boolean; trips: {id:number;name:string;destination:string;starts_on:string;ends_on:string;members_count:number;status:string;timezone?:string;cover_url?:string|null}[]; hiddenCount?: number; showingHidden?: boolean}>();
 const creating = ref(false);
 // The card being opened: on slow connections it shows "Opening…" until the trip page arrives.
 const opening = ref<number | null>(null);
@@ -20,7 +35,7 @@ onBeforeUnmount(stopListening);
   <p v-if="showingHidden" class="muted" style="margin:-8px 0 18px">Cancelled trips the organizer hid. Open one to reopen it or show it again.</p>
   <div v-if="!trips.length && showingHidden" class="card empty"><h2>No hidden trips.</h2></div>
   <div v-else-if="!trips.length" class="card empty"><CompassArt /><h2>Your first adventure is waiting.</h2><p class="muted">Create a trip, invite your friends, and leave the expense math to us.</p><button class="btn" @click="creating=true">Create your first trip <ArrowUpRight :size="16" /></button></div>
-  <div v-else class="trip-grid"><Link v-for="(trip,index) in trips" :key="trip.id" :href="`/trips/${trip.id}`" class="trip-card" :class="{ 'is-opening': opening === trip.id }" :aria-busy="opening === trip.id" @click="opening = trip.id"><span v-if="opening === trip.id" class="opening-badge" role="status"><span class="spinner" aria-hidden="true" /> Opening…</span><div class="trip-art" :class="[`art-${index%3}`, { 'has-cover': trip.cover_url }]"><LoadingImage v-if="trip.cover_url" :src="trip.cover_url" class="trip-cover" :eager="index < 3" /><MapPin v-else :size="46" :stroke-width="1" /><span class="badge" :class="trip.status">{{ trip.status }}</span><div class="hills" /></div><div style="padding:22px"><p class="eyebrow">{{ trip.destination }}</p><h2>{{ trip.name }}</h2><div class="row muted" style="margin-top:20px"><CalendarDays :size="15" /> {{ trip.starts_on }} — {{ trip.ends_on }}</div><div class="row spread" style="margin-top:18px"><span class="row muted"><Users :size="15" /> {{ trip.members_count }} traveler{{ trip.members_count === 1 ? '' : 's' }}</span><ArrowUpRight :size="20" /></div></div></Link></div>
+  <div v-else class="trip-grid"><Link v-for="(trip,index) in trips" :key="trip.id" :href="`/trips/${trip.id}`" class="trip-card" :class="{ 'is-opening': opening === trip.id }" :aria-busy="opening === trip.id" @click="opening = trip.id"><span v-if="opening === trip.id" class="opening-badge" role="status"><span class="spinner" aria-hidden="true" /> Opening…</span><div class="trip-art" :class="[`art-${index%3}`, { 'has-cover': trip.cover_url }]"><LoadingImage v-if="trip.cover_url" :src="trip.cover_url" class="trip-cover" :eager="index < 3" /><MapPin v-else :size="46" :stroke-width="1" /><span class="badge" :class="tripPhase(trip).tone">{{ tripPhase(trip).label }}</span><div class="hills" /></div><div style="padding:22px"><p class="eyebrow">{{ trip.destination }}</p><h2>{{ trip.name }}</h2><div class="row muted" style="margin-top:20px"><CalendarDays :size="15" /> {{ trip.starts_on }} — {{ trip.ends_on }}</div><div class="row spread" style="margin-top:18px"><span class="row muted"><Users :size="15" /> {{ trip.members_count }} traveler{{ trip.members_count === 1 ? '' : 's' }}</span><ArrowUpRight :size="20" /></div></div></Link></div>
  </TravelLayout>
 </template>
 <script lang="ts">

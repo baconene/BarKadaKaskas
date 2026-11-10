@@ -17,6 +17,9 @@ Route::get('join/{token}', [TripController::class, 'invitation'])->middleware('t
 
 Route::middleware('auth')->group(function () {
     Route::get('dashboard', [TripController::class, 'index'])->name('dashboard');
+    Route::get('alerts', [\App\Http\Controllers\AlertController::class, 'index']);
+    Route::get('alerts/unread-count', [\App\Http\Controllers\AlertController::class, 'unreadCount']);
+    Route::post('alerts/read', [\App\Http\Controllers\AlertController::class, 'read']);
     Route::post('trips', [TripController::class, 'store'])->name('trips.store');
     Route::get('trips/{trip}', [TripController::class, 'show'])->name('trips.show');
     Route::patch('trips/{trip}', [TripController::class, 'update'])->name('trips.update');

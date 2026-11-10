@@ -85,6 +85,10 @@ internal object ApiJson {
         return PostComment(json.getLong("id"), json.text("body"), json.text("created_at"), author.text("name").ifBlank { "Traveler" }, author.imageUrl("avatar_url"), json.optBoolean("can_delete"))
     }
 
+    fun alertPage(body: JSONObject?) = AlertPage(body?.optJSONArray("data").mapObjects { a ->
+        Alert(a.getLong("id"), a.text("type"), a.text("title"), a.textOrNull("body"), a.optLong("trip_id"), a.textOrNull("trip_name"), a.optBoolean("read"), a.text("created_at"))
+    }, body?.optInt("unread_count") ?: 0)
+
     fun comments(body: JSONObject?) = body?.optJSONArray("data").mapObjects { comment(it) }
 
     fun postPage(body: JSONObject) = PostPage(body.optJSONArray("data").mapObjects { post(it) }, body.longOrNull("next_before"))

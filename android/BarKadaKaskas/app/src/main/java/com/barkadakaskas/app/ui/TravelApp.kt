@@ -142,7 +142,14 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     MaterialTheme(colorScheme = colors, shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp))) {
         val context = LocalContext.current
         // Back from in-app navigation (where stops can be marked done): reload the open trip quietly.
-        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refreshQuietly() }
+        androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refreshQuietly(); vm.loadAlerts(quiet = true) }
+        // While signed in: check alerts every minute, and ask once (Android 13+) to allow phone notifications for them.
+        val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        LaunchedEffect(vm.user) {
+            if (vm.user == null) return@LaunchedEffect
+            if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            while (true) { vm.loadAlerts(quiet = true); kotlinx.coroutines.delay(60_000) }
+        }
         LaunchedEffect(vm.invitationUrl) { vm.invitationUrl?.let { url ->
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join our trip on BarkadaKasKas: $url") }, "Invite your barkada")); vm.consumeInvitation()
         } }
@@ -150,6 +157,41 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             val screen = when { vm.restoring -> -1; vm.user == null -> 0; vm.detail == null -> 1; else -> 2 }
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { target ->
                 when (target) { -1 -> LoadingScreen(vm); 0 -> AuthScreen(vm); 1 -> TripsScreen(vm); else -> vm.detail?.let { TripScreen(vm, it) } }
+            }
+        }
+    }
+}
+
+/** Bell with the unread count; opens the alerts list. */
+@Composable private fun AlertsBell(vm: TravelViewModel) {
+    var open by remember { mutableStateOf(false) }
+    IconButton(onClick = { open = true; vm.loadAlerts() }) {
+        BadgedBox(badge = { if (vm.unreadAlerts > 0) Badge(containerColor = Color(0xFFC2410C)) { Text(if (vm.unreadAlerts > 99) "99+" else "${vm.unreadAlerts}") } }) {
+            Icon(Icons.Default.Notifications, if (vm.unreadAlerts > 0) "Alerts, ${vm.unreadAlerts} unread" else "Alerts")
+        }
+    }
+    if (open) AlertsSheet(vm) { open = false }
+}
+
+/** Your alerts across trips; tap one to open its trip on the right tab. */
+@Composable private fun AlertsSheet(vm: TravelViewModel, dismiss: () -> Unit) {
+    FormSheet("Alerts", vm, dismiss, "Comments, photos, expenses and plan changes on your trips") {
+        if (vm.unreadAlerts > 0) TextButton(onClick = { vm.markAlertsRead() }) { Icon(Icons.Default.DoneAll, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Mark all read") }
+        if (vm.alertsLoading && vm.alerts.isEmpty()) repeat(3) { Shimmer(Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(14.dp))) }
+        else if (vm.alerts.isEmpty()) Text("No alerts yet. You'll hear here when your barkada comments, posts photos, adds expenses or changes the plan.", color = Muted)
+        vm.alerts.forEach { alert ->
+            val (icon, tint) = when (alert.type) { "expense" -> Icons.AutoMirrored.Filled.ReceiptLong to Color(0xFF926815); "itinerary" -> Icons.Default.Event to Color(0xFF2F5A8A); "post" -> Icons.Default.PhotoCamera to Forest; else -> Icons.Default.ChatBubbleOutline to Forest }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (alert.read) Color.Transparent else Color(0xFFF3F8EC)).clickable {
+                if (!alert.read) vm.markAlertsRead(listOf(alert.id)); dismiss(); vm.openAlertTrip(alert.tripId, alert.tab)
+            }.padding(10.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(Sage), contentAlignment = Alignment.Center) { Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp)) }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(alert.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                    alert.body?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    Text(listOfNotNull(alert.tripName, postTime(alert.createdAt)).joinToString(" · "), color = Muted, style = MaterialTheme.typography.labelSmall)
+                }
+                if (!alert.read) Box(Modifier.padding(top = 6.dp).size(8.dp).clip(CircleShape).background(Color(0xFFC2410C)))
             }
         }
     }
@@ -309,7 +351,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     ErrorSnackbar(vm, snackbar)
     Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(title = { Text("My trips", fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
-            actions = { IconButton(vm::signOut, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.Logout, "Log out") } }) },
+            actions = { AlertsBell(vm); IconButton(vm::signOut, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.Logout, "Log out") } }) },
         floatingActionButton = { ExtendedFloatingActionButton(onClick = { create = true }, expanded = list.firstVisibleItemIndex == 0, containerColor = Forest, contentColor = Color.White,
             icon = { Icon(Icons.Default.Add, null) }, text = { Text("Plan a trip", fontWeight = FontWeight.SemiBold) }) }) { padding ->
         PullToRefreshBox(isRefreshing = vm.busy, onRefresh = vm::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -431,6 +473,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
 @Composable private fun TripScreen(vm: TravelViewModel, detail: TripDetail) {
     var tab by rememberSaveable(detail.trip.id) { mutableIntStateOf(0) }
+    // An alert or notification asked for a specific tab.
+    LaunchedEffect(vm.requestedTab, detail.trip.id) { vm.requestedTab?.let { tab = it; vm.requestedTab = null } }
     val snackbar = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
     val labels = listOf("Itinerary", "Expenses", "Photos", "Balances", "Group")
@@ -447,7 +491,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         topBar = { TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
             title = { Column { Text(detail.trip.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold); Text("${detail.trip.destination} · ${Itinerary.dateRange(detail.trip.startsOn, detail.trip.endsOn)}", style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
             navigationIcon = { IconButton(vm::backToTrips, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to trips") } },
-            actions = { if (detail.isOrganizer) Box {
+            actions = { AlertsBell(vm); if (detail.isOrganizer) Box {
                 IconButton(onClick = { menu = true }, enabled = !vm.busy) { Icon(Icons.Default.MoreVert, "Trip options") }
                 DropdownMenu(menu, { menu = false }) {
                     if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Edit trip & cover photo") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; editing = true })

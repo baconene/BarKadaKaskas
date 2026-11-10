@@ -89,6 +89,9 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         ApiJson.post(data(request("POST", "/trips/$tripId/posts", raw = multipart(mapOf("caption" to caption.trim()), jpegs.mapIndexed { i, bytes -> FilePart("photos[]", "photo-${i + 1}.jpg", "image/jpeg", bytes) }))))
     override suspend fun deletePost(tripId: Long, postId: Long) { request("DELETE", "/trips/$tripId/posts/$postId") }
     override suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int> = data(request("POST", "/trips/$tripId/posts/$postId/like")).let { it.optBoolean("liked") to it.optInt("likes_count") }
+    override suspend fun alerts(after: Long?): AlertPage = ApiJson.alertPage(request("GET", "/alerts" + (after?.let { "?after=$it" } ?: "")))
+    override suspend fun markAlertsRead(ids: List<Long>): Int =
+        request("POST", "/alerts/read", JSONObject().put("ids", JSONArray().apply { ids.forEach { put(it) } }))?.optInt("unread_count") ?: 0
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =
         request("POST", "/trips/$tripId/posts/$postId/comments", JSONObject().put("body", body.trim()))!!.let { ApiJson.comment(it.getJSONObject("data")) to it.optInt("comments_count") }

@@ -69,6 +69,32 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     }
     fun refresh() = launch { detail?.let { detail = repository.trip(it.trip.id) } ?: run { trips = repository.trips() } }
     fun openTrip(trip: Trip) = launch { detail = repository.trip(trip.id) }
+
+    // Alerts (bell). [requestedTab] tells the trip screen which tab an alert or notification should open.
+    var alerts by mutableStateOf<List<Alert>>(emptyList()); private set
+    var unreadAlerts by mutableStateOf(0); private set
+    var alertsLoading by mutableStateOf(false); private set
+    var requestedTab by mutableStateOf<Int?>(null)
+    /** Called with the newest alert id the app has shown, so background notifications don't repeat it. */
+    var onAlertsSeen: (Long) -> Unit = {}
+    fun loadAlerts(quiet: Boolean = false) {
+        if (user == null) return
+        if (!quiet) alertsLoading = true
+        viewModelScope.launch {
+            try { val page = repository.alerts(); alerts = page.alerts; unreadAlerts = page.unreadCount; page.alerts.maxOfOrNull { it.id }?.let(onAlertsSeen) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* offline: keep what we have */ }
+            finally { alertsLoading = false }
+        }
+    }
+    fun markAlertsRead(ids: List<Long> = emptyList()) {
+        alerts = alerts.map { if (ids.isEmpty() || it.id in ids) it.copy(read = true) else it }
+        viewModelScope.launch { runCatching { unreadAlerts = repository.markAlertsRead(ids) } }
+    }
+    /** Opens the alert's trip on the right tab (also used when a phone notification is tapped). */
+    fun openAlertTrip(tripId: Long, tab: Int) = launch {
+        requestedTab = tab
+        if (detail?.trip?.id != tripId) { detail = repository.trip(tripId); posts = emptyList(); postsLoadedFor = null; postsNextBefore = null }
+    }
     fun backToTrips() { if (!busy) { detail = null; posts = emptyList(); postsLoadedFor = null; postsNextBefore = null } }
     fun signOut() = launch { repository.logout(); user = null; detail = null; trips = emptyList() }
     /** [aiPrompt], when given, opens the AI planner on the new trip and starts suggesting. */

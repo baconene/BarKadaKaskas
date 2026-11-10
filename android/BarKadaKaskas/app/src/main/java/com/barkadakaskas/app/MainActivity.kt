@@ -27,7 +27,21 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = TravelViewModel(repository) as T
         }
-        setContent { TravelApp(viewModel(factory = factory)) }
+        // Background checks for trip alerts (phone notifications); tapping one opens its trip on the right tab.
+        com.barkadakaskas.app.alerts.AlertNotifications.schedule(applicationContext)
+        setContent {
+            val vm: TravelViewModel = viewModel(factory = factory)
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                vm.onAlertsSeen = { id -> com.barkadakaskas.app.alerts.AlertNotifications.markSeen(applicationContext, id) }
+                openFromNotification(intent, vm)
+            }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                val listener = androidx.core.util.Consumer<android.content.Intent> { openFromNotification(it, vm) }
+                addOnNewIntentListener(listener)
+                onDispose { removeOnNewIntentListener(listener) }
+            }
+            TravelApp(vm)
+        }
     }
 
     /**
@@ -51,5 +65,13 @@ class MainActivity : ComponentActivity() {
             .setPositiveButton("Copy details") { _, _ -> (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("BarkadaKasKas crash", details)) }
             .setNegativeButton("Dismiss", null)
             .show()
+    }
+
+    private fun openFromNotification(intent: android.content.Intent?, vm: TravelViewModel) {
+        val tripId = intent?.getLongExtra(com.barkadakaskas.app.alerts.AlertNotifications.EXTRA_TRIP, -1L) ?: -1L
+        if (tripId <= 0) return
+        val tab = intent?.getIntExtra(com.barkadakaskas.app.alerts.AlertNotifications.EXTRA_TAB, 0) ?: 0
+        intent?.removeExtra(com.barkadakaskas.app.alerts.AlertNotifications.EXTRA_TRIP)
+        vm.openAlertTrip(tripId, tab)
     }
 }

@@ -47,6 +47,8 @@ class TripPostController extends Controller
         });
         $post->load(['photos', 'member.user:id,name,avatar_path'])->loadCount(['likes', 'comments']);
         $post->liked = false;
+        $count = $post->photos->count();
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'post', \App\Services\Alerts::firstName($request->user()).' posted '.($count === 1 ? 'a photo' : "{$count} photos"), $post->caption, ['post_id' => $post->id]);
         return response()->json(['data' => $this->present($post, $trip, $memberId, $request)], 201);
     }
 
@@ -97,6 +99,10 @@ class TripPostController extends Controller
         $memberId = $this->memberId($request, $trip);
         abort_unless($memberId, 403);
         $comment = $post->comments()->create(['trip_member_id' => $memberId, 'body' => $body])->load('member.user:id,name,avatar_path');
+        // The post's author and everyone already in the conversation hear about it.
+        $people = $post->comments()->with('member:id,user_id')->get()->pluck('member.user_id')->push($post->member?->user_id)->filter()->unique()->values()->all();
+        $owner = $post->member?->user_id === $request->user()->id ? 'their' : (($post->member?->user?->name ? \App\Services\Alerts::firstName($post->member->user)."’s" : 'a'));
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'comment', \App\Services\Alerts::firstName($request->user())." commented on {$owner} photo", $body, ['post_id' => $post->id], $people);
         return response()->json(['data' => $this->presentComment($comment, $post, $trip, $memberId, $request), 'comments_count' => $post->comments()->count()], 201);
     }
 

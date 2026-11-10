@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AlertsBell from '@/components/AlertsBell.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { Compass, LogOut } from 'lucide-vue-next';
 import { computed } from 'vue';
@@ -10,7 +11,7 @@ const initials = computed(() => (me.value?.name ?? '').split(/\s+/).filter(Boole
 </script>
 <template>
   <div class="travel-app" :class="{ 'has-app-nav': appNav }">
-    <header class="travel-header"><Link href="/dashboard" class="brand"><Compass :size="27" /> BarKada<span>Kaskas</span></Link><nav><Link href="/dashboard">My trips</Link><Link href="/settings/profile" class="account-link" aria-label="Account settings"><img v-if="me?.avatar_url" :src="me.avatar_url" alt="" class="me" /><span v-else-if="me" class="me initials" aria-hidden="true">{{ initials }}</span><span class="account-label">Account</span></Link><Link href="/logout" method="post" as="button" aria-label="Log out"><LogOut :size="18" /></Link></nav></header>
+    <header class="travel-header"><Link href="/dashboard" class="brand"><Compass :size="27" /> BarKada<span>Kaskas</span></Link><nav><Link href="/dashboard">My trips</Link><AlertsBell v-if="me" /><Link href="/settings/profile" class="account-link" aria-label="Account settings"><img v-if="me?.avatar_url" :src="me.avatar_url" alt="" class="me" /><span v-else-if="me" class="me initials" aria-hidden="true">{{ initials }}</span><span class="account-label">Account</span></Link><Link href="/logout" method="post" as="button" aria-label="Log out"><LogOut :size="18" /></Link></nav></header>
     <main class="travel-main"><div v-if="Object.keys(page.props.errors || {}).length" role="alert" class="error-box"><p v-for="(error, key) in page.props.errors" :key="key">{{ error }}</p></div><slot /></main>
     <footer class="travel-footer">Good trips. Great company. Fair shares.</footer>
   </div>

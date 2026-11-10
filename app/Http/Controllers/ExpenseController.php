@@ -22,6 +22,16 @@ class ExpenseController extends Controller
             if (! empty($data['receipt_scan_id'])) { $this->attachScan($expense, (int) $data['receipt_scan_id'], $expense->created_by_member_id); }
             return $expense;
         });
+        // Tell each traveller about the new bill and their own share of it.
+        $alerts = app(\App\Services\Alerts::class);
+        $who = \App\Services\Alerts::firstName($request->user());
+        $shares = $expense->allocations()->get()->groupBy('trip_member_id')->map(fn ($rows) => (int) $rows->sum('amount_minor'));
+        foreach ($trip->members()->where('status', 'active')->get() as $member) {
+            $share = $shares[$member->id] ?? 0;
+            $alerts->notify($trip, $request->user(), 'expense', "New expense: {$expense->title}",
+                "{$who} added ".\App\Services\Alerts::money($expense->total_minor, $trip->currency_code).($share ? ' · your share '.\App\Services\Alerts::money($share, $trip->currency_code) : ''),
+                ['expense_id' => $expense->id], [$member->user_id]);
+        }
         return $this->respond($request, $expense, 201);
     }
 

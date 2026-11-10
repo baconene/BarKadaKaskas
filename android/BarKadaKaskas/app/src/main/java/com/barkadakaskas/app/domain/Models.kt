@@ -10,6 +10,12 @@ data class Member(val id: Long, val name: String, val phone: String? = null, val
 data class ProfileDraft(val phone: String, val otherContact: String, val emergencyName: String, val emergencyRelationship: String, val emergencyPhone: String)
 data class PostPhoto(val url: String, val width: Int?, val height: Int?)
 data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean, val commentsCount: Int = 0)
+/** Something another traveller did on one of your trips (comment, photos, expense, itinerary change). */
+data class Alert(val id: Long, val type: String, val title: String, val body: String?, val tripId: Long, val tripName: String?, val read: Boolean, val createdAt: String) {
+    /** The trip tab the alert opens: Itinerary 0, Expenses 1, Photos 2. */
+    val tab: Int get() = when (type) { "expense" -> 1; "comment", "post" -> 2; else -> 0 }
+}
+data class AlertPage(val alerts: List<Alert>, val unreadCount: Int)
 /** A comment under a photo post. */
 data class PostComment(val id: Long, val body: String, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val canDelete: Boolean)
 data class PostPage(val posts: List<Post>, val nextBefore: Long?)
@@ -85,6 +91,10 @@ interface TravelRepository {
     /** Toggles the viewer's heart; returns (liked, likesCount). */
     suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>
     suspend fun comments(tripId: Long, postId: Long): List<PostComment>
+    /** Your latest alerts (or only those newer than [after]) and the unread count. */
+    suspend fun alerts(after: Long? = null): AlertPage
+    /** Marks [ids] (or all, when empty) read; returns the unread count. */
+    suspend fun markAlertsRead(ids: List<Long> = emptyList()): Int
     /** Returns the new comment and the post's comment count. */
     suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int>
     /** Returns the post's comment count. */

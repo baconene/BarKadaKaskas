@@ -47,6 +47,8 @@ class ItineraryPlanController extends Controller
             ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'itinerary_planned', 'after' => ['count' => $items->count(), 'ids' => $items->pluck('id')->all()]]);
             return $items;
         });
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'itinerary', 'Itinerary updated',
+            \App\Services\Alerts::firstName($request->user()).' added '.$created->count().' '.($created->count() === 1 ? 'activity' : 'activities').' to the plan');
         return response()->json(['data' => $created->values()], 201);
     }
 }

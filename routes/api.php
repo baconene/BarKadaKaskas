@@ -11,6 +11,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
         Route::get('auth/me', [AuthController::class, 'me']);
+        Route::get('alerts', [\App\Http\Controllers\AlertController::class, 'index']);
+        Route::get('alerts/unread-count', [\App\Http\Controllers\AlertController::class, 'unreadCount']);
+        Route::post('alerts/read', [\App\Http\Controllers\AlertController::class, 'read']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('trips', [TripController::class, 'index']);
         Route::post('trips', [TripController::class, 'store']);

@@ -85,6 +85,8 @@ dependencies {
         implementation("androidx.recyclerview:recyclerview:1.3.2")
         coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.0.4")
     }
+    // Background check for new alerts (phone notifications without a push service).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     // Trip cover photos.
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")

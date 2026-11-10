@@ -158,6 +158,7 @@ class TripController extends Controller
         Gate::authorize('plan', $trip);
         $data = $this->itineraryData($request, $trip);
         $item = $trip->itineraryItems()->create([...$data, 'timezone' => $trip->timezone, 'created_by_user_id' => $request->user()->id]);
+        $this->itineraryAlert($request, $trip, 'added “'.$item->title.'”', $item);
         return $request->is('api/*') ? response()->json(['data' => $item], 201) : back();
     }
 
@@ -166,7 +167,16 @@ class TripController extends Controller
         Gate::authorize('plan', $trip);
         abort_unless($item->trip_id === $trip->id, 404);
         $item->update($this->itineraryData($request, $trip));
+        $this->itineraryAlert($request, $trip, 'changed “'.$item->title.'”', $item);
         return $request->is('api/*') ? response()->json(['data' => $item->fresh()]) : back();
+    }
+
+    /** Lets everyone else on the trip know the plan changed. */
+    private function itineraryAlert(Request $request, Trip $trip, string $what, \App\Models\ItineraryItem $item): void
+    {
+        $when = $item->starts_at?->setTimezone($trip->timezone)->format('D, M j · g:i A');
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'itinerary', 'Itinerary updated',
+            \App\Services\Alerts::firstName($request->user()).' '.$what.($when ? " ({$when})" : ''), ['item_id' => $item->id]);
     }
 
     /** Any traveller on the trip can tick an activity off (or undo it); everyone sees the same state. */

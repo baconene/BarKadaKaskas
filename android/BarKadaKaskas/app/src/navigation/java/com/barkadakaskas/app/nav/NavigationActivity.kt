@@ -48,6 +48,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.animateContentSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
@@ -146,27 +149,35 @@ class NavigationActivity : ComponentActivity() {
 
     @Composable private fun Panel() {
         var expanded by remember { mutableStateOf(stops.size > 1) }
+        // Swipe the panel down (or tap its handle) for a compact bar with more map; swipe up for everything.
+        var collapsed by remember { mutableStateOf(false) }
+        val swipe = Modifier.pointerInput(Unit) {
+            var dragged = 0f
+            detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = { if (dragged > 40f) collapsed = true else if (dragged < -40f) collapsed = false }) { change, dy -> change.consume(); dragged += dy }
+        }
         val stop = stops[current]
         val next = stops.drop(current + 1).firstOrNull { !it.done }?.let { stops.indexOf(it) }
         Surface(color = Cream, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 18.dp).padding(top = 10.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.align(Alignment.CenterHorizontally).size(width = 40.dp, height = 4.dp).clip(CircleShape).background(Line))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(when { arrived -> "YOU'VE ARRIVED"; routing -> "FINDING ROUTE…"; else -> "HEADING TO" }, color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        val seconds = remainingSeconds; val meters = remainingMeters
-                        if (!arrived && !routing && seconds != null && meters != null) Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(vertical = 2.dp)) {
-                            Text(duration(seconds), color = Forest, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
-                            Spacer(Modifier.width(8.dp))
-                            Text("${distance(meters)} · arrive ${arrival(seconds)}", color = Muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 3.dp))
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 18.dp).padding(bottom = 12.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Handle: a wide touch area so the swipe is easy to hit.
+                Box(Modifier.fillMaxWidth().height(28.dp).then(swipe).clickable(onClickLabel = if (collapsed) "Show more" else "Show less") { collapsed = !collapsed }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 44.dp, height = 5.dp).clip(CircleShape).background(Line))
+                }
+                Column(swipe, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(when { arrived -> "YOU'VE ARRIVED"; routing -> "FINDING ROUTE…"; else -> "HEADING TO" }, Modifier.weight(1f), color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Button(onClick = { finish() }, colors = ButtonDefaults.buttonColors(containerColor = Danger), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp), modifier = Modifier.heightIn(min = 36.dp)) {
+                            Icon(Icons.Default.Close, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("End", fontWeight = FontWeight.SemiBold)
                         }
-                        Text(stop.title, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        stop.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Button(onClick = { finish() }, colors = ButtonDefaults.buttonColors(containerColor = Danger), shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp)) {
-                        Icon(Icons.Default.Close, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("End", fontWeight = FontWeight.SemiBold)
+                    val seconds = remainingSeconds; val meters = remainingMeters
+                    if (!arrived && !routing && seconds != null && meters != null) Row(verticalAlignment = Alignment.Bottom) {
+                        Text(duration(seconds), color = Forest, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                        Spacer(Modifier.width(10.dp))
+                        Text("${distance(meters)} · arrive ${arrival(seconds)}", color = Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 3.dp))
                     }
+                    Text(stop.title, color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = if (collapsed) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    if (!collapsed) stop.location?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 askDone?.let { index ->
                     Surface(color = Sage, shape = RoundedCornerShape(16.dp)) {
@@ -188,8 +199,8 @@ class NavigationActivity : ComponentActivity() {
                 if (arrived && next != null && askDone == null) Button(onClick = { switchTo(next) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) {
                     Icon(Icons.Default.Navigation, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Next: ${stops[next].title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                SearchBox()
-                if (stops.size > 1) {
+                if (!collapsed) SearchBox()
+                if (!collapsed && stops.size > 1) {
                     HorizontalDivider(color = Line)
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Today's itinerary", Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)

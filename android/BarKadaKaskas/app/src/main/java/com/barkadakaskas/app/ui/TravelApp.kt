@@ -1260,7 +1260,22 @@ private data class LineState(val description: String, val amountMinor: Long, val
             if (canDelete) OutlinedButton(onClick = { action = "delete" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Delete") }
         }
         selectedShare?.let { share ->
-            HorizontalDivider(); Text("Confirm payment for ${detail.members.find { it.id == share.memberId }?.name}", fontWeight = FontWeight.Bold)
+            val who = detail.members.find { it.id == share.memberId }?.name ?: "Traveler"
+            // Is there anyone who covered more than their share (so this traveller can pay them back)?
+            val covered = expense.shares.filter { detail.isOrganizer || it.memberId == detail.currentMemberId }.sumOf { (it.coveredMinor - it.amountMinor).coerceAtLeast(0) }
+            val hasRepayment = detail.settlements.any { it.expenseId == null && it.fromMemberId == share.memberId && it.status in listOf("pending", "confirmed") }
+            if (covered <= 0 && !hasRepayment) {
+                val paid = expense.payments.sumOf { it.amountMinor }
+                val direct = minOf(share.remainingMinor, (expense.totalMinor - paid).coerceAtLeast(0))
+                HorizontalDivider()
+                Text("Nobody has paid $who's share to the merchant yet", fontWeight = FontWeight.Bold)
+                Text(if (paid > 0) "The ${money(paid, detail.trip.currency)} recorded so far only covers the payer's own share, so there is nothing to pay back." else "No merchant payment is recorded, so there is nothing to pay back.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("If $who paid the merchant directly, record it here. If someone paid the whole ${money(expense.totalMinor, detail.trip.currency)}, correct \"Change who paid\".", color = Muted, style = MaterialTheme.typography.bodySmall)
+                if (detail.isOrganizer && expense.status == "open" && direct > 0) Submit("${who.substringBefore(' ')} paid the merchant (${money(direct, detail.trip.currency)})", vm.busy) { vm.mutate({ selectedShare = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, share.memberId, direct) } }
+                TextButton(onClick = { selectedShare = null }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+                return@let
+            }
+            HorizontalDivider(); Text("Confirm payment for $who", fontWeight = FontWeight.Bold)
             val existing = detail.settlements.filter { it.expenseId == null && it.fromMemberId == share.memberId && it.status in listOf("pending", "confirmed") }
             Choice("Payment to apply", source, listOf("" to "Choose payment", "new" to "A separate new payment") + existing.map { it.id.toString() to "Existing ${money(it.amountMinor, detail.trip.currency)} to ${detail.members.find { m -> m.id == it.toMemberId }?.name}" }, { source = it })
             Text("Only confirm money actually received. This records a reimbursement; it does not transfer funds.", style = MaterialTheme.typography.bodySmall, color = Muted)

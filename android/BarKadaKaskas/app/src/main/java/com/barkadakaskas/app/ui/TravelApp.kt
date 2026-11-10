@@ -147,11 +147,53 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Join our trip on BarkadaKasKas: $url") }, "Invite your barkada")); vm.consumeInvitation()
         } }
         Surface(Modifier.fillMaxSize(), color = Cream) {
-            val screen = when { vm.user == null -> 0; vm.detail == null -> 1; else -> 2 }
+            val screen = when { vm.restoring -> -1; vm.user == null -> 0; vm.detail == null -> 1; else -> 2 }
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { target ->
-                when (target) { 0 -> AuthScreen(vm); 1 -> TripsScreen(vm); else -> vm.detail?.let { TripScreen(vm, it) } }
+                when (target) { -1 -> LoadingScreen(vm); 0 -> AuthScreen(vm); 1 -> TripsScreen(vm); else -> vm.detail?.let { TripScreen(vm, it) } }
             }
         }
+    }
+}
+
+/** Start-up screen while a saved session is checked, so signed-in travellers never see the login page flash by. */
+@Composable private fun LoadingScreen(vm: TravelViewModel) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Cream, Color(0xFFEFF4E8)))), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(32.dp)) {
+            Box(Modifier.size(88.dp).clip(RoundedCornerShape(26.dp)).background(Brush.linearGradient(listOf(Forest, Color(0xFF2F6B52)))), contentAlignment = Alignment.Center) {
+                Text("BK", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+            }
+            Row { Text("Barkada", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge); Text("KasKas", color = Moss, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge) }
+            val failed = vm.restoreFailed
+            if (failed == null) {
+                CircularProgressIndicator(Modifier.size(28.dp), color = Forest, strokeWidth = 3.dp)
+                Text("Getting your trips ready…", color = Muted)
+            } else {
+                Text(failed, color = Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Button(onClick = vm::restoreSession, colors = ButtonDefaults.buttonColors(containerColor = Forest), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Try again") }
+            }
+        }
+    }
+}
+
+/** Placeholder for a photo post while the feed loads. */
+@Composable private fun PostSkeleton() {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Shimmer(Modifier.size(38.dp).clip(CircleShape)); Spacer(Modifier.width(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Shimmer(Modifier.width(120.dp).height(12.dp).clip(RoundedCornerShape(6.dp))); Shimmer(Modifier.width(70.dp).height(10.dp).clip(RoundedCornerShape(5.dp))) }
+            }
+            Shimmer(Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(14.dp)))
+            Shimmer(Modifier.fillMaxWidth(0.6f).height(12.dp).clip(RoundedCornerShape(6.dp)))
+        }
+    }
+}
+
+/** Placeholder rows while a traveller's documents load. */
+@Composable private fun DocumentSkeleton() {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Shimmer(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp))); Spacer(Modifier.width(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { Shimmer(Modifier.width(140.dp).height(12.dp).clip(RoundedCornerShape(6.dp))); Shimmer(Modifier.width(100.dp).height(10.dp).clip(RoundedCornerShape(5.dp))) }
     }
 }
 
@@ -798,7 +840,7 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) picked = uri }
 
     Text("DOCUMENTS", color = Moss, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-    if (vm.documentsLoading && docs.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+    if (vm.documentsLoading && docs.isEmpty()) repeat(2) { DocumentSkeleton() }
     else if (docs.isEmpty()) Text(if (isMe) "Keep your boarding pass, ID or bank QR here for the trip." else "No documents shared with you.", color = Muted)
     docs.forEach { doc ->
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp)).clickable { vm.withDocumentFile(doc) { openDocument(context, doc, it) } }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -914,7 +956,7 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
     }
     Submit("Post photos", vm.busy, icon = Icons.Default.AddPhotoAlternate) { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     if (vm.postsLoadedFor == detail.trip.id && vm.posts.isEmpty()) EmptyState(Icons.Default.PhotoCamera, "No photos yet", "Be the first to share a moment from the trip.")
-    if (vm.postsLoading && vm.posts.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+    if (vm.postsLoading && vm.posts.isEmpty()) repeat(2) { PostSkeleton() }
     vm.posts.forEach { post ->
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
             Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {

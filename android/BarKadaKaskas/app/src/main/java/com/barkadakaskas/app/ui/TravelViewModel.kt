@@ -21,7 +21,27 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     /** True while a bottom-sheet form is open; it shows errors inline, so screens skip their snackbar. */
     var formOpen by mutableStateOf(false)
 
-    init { if (repository.hasSession) launch { user = repository.currentUser(); trips = repository.trips() } }
+    /** True while a saved session is being checked at start-up; the app shows its loading screen, not the login page. */
+    var restoring by mutableStateOf(repository.hasSession); private set
+    /** Set when that check couldn't reach the server (the session is kept; the loading screen offers Retry). */
+    var restoreFailed by mutableStateOf<String?>(null); private set
+
+    init { if (repository.hasSession) restoreSession() }
+
+    fun restoreSession() {
+        restoring = true; restoreFailed = null
+        viewModelScope.launch {
+            try {
+                user = repository.currentUser()
+                restoring = false
+                launch { trips = repository.trips() } // the dashboard shows skeleton cards meanwhile
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                // A rejected token clears the session (go to login); a network problem keeps it so Retry works.
+                if (!repository.hasSession) restoring = false else restoreFailed = failure.message ?: "Can't reach the server."
+            }
+        }
+    }
     fun clearError() { error = null }
     fun consumeInvitation() { invitationUrl = null }
     fun launch(action: suspend () -> Unit) {

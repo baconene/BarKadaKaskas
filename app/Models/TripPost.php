@@ -12,4 +12,5 @@ class TripPost extends Model
     public function member(): BelongsTo { return $this->belongsTo(TripMember::class, 'trip_member_id'); }
     public function photos(): HasMany { return $this->hasMany(TripPostPhoto::class)->orderBy('position'); }
     public function likes(): HasMany { return $this->hasMany(TripPostLike::class); }
+    public function comments(): HasMany { return $this->hasMany(TripPostComment::class); }
 }

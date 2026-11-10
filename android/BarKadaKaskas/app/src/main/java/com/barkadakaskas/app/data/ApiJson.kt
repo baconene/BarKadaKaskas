@@ -76,9 +76,16 @@ internal object ApiJson {
             id = json.getLong("id"), caption = json.textOrNull("caption"), createdAt = json.text("created_at"),
             authorName = author.text("name").ifBlank { "Traveler" }, authorAvatarUrl = author.imageUrl("avatar_url"),
             photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.imageUrl("url").orEmpty(), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt()) }.filter { it.url.isNotBlank() },
-            likesCount = json.optInt("likes_count"), liked = json.optBoolean("liked"), canDelete = json.optBoolean("can_delete"),
+            likesCount = json.optInt("likes_count"), liked = json.optBoolean("liked"), canDelete = json.optBoolean("can_delete"), commentsCount = json.optInt("comments_count"),
         )
     }
+
+    fun comment(json: JSONObject): PostComment {
+        val author = json.optJSONObject("author") ?: JSONObject()
+        return PostComment(json.getLong("id"), json.text("body"), json.text("created_at"), author.text("name").ifBlank { "Traveler" }, author.imageUrl("avatar_url"), json.optBoolean("can_delete"))
+    }
+
+    fun comments(body: JSONObject?) = body?.optJSONArray("data").mapObjects { comment(it) }
 
     fun postPage(body: JSONObject) = PostPage(body.optJSONArray("data").mapObjects { post(it) }, body.longOrNull("next_before"))
 

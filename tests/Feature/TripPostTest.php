@@ -90,4 +90,31 @@ class TripPostTest extends TestCase
         $page = $this->getJson("/api/v1/trips/{$this->trip->id}/posts", $this->headers($this->friend))->assertJsonCount(15, 'data');
         $this->getJson("/api/v1/trips/{$this->trip->id}/posts?before=".$page->json('next_before'), $this->headers($this->friend))->assertJsonCount(1, 'data')->assertJsonPath('next_before', null);
     }
+
+    public function test_members_comment_and_the_right_people_can_remove_comments(): void
+    {
+        $post = $this->sharePhotos($this->friend, 1);
+        $url = "/api/v1/trips/{$this->trip->id}/posts/{$post['id']}/comments";
+        $this->assertSame(0, $post['comments_count']);
+        $mine = $this->postJson($url, ['body' => '  Ganda!  '], $this->headers($this->other))->assertCreated()->assertJsonPath('data.body', 'Ganda!')->assertJsonPath('comments_count', 1)->json('data');
+        $this->assertTrue($mine['can_delete']);
+        $this->postJson($url, ['body' => 'Sana all'], $this->headers($this->owner))->assertCreated();
+        $this->postJson($url, ['body' => ''], $this->headers($this->owner))->assertJsonValidationErrors('body');
+
+        $list = $this->getJson($url, $this->headers($this->friend))->assertOk()->json('data');
+        $this->assertSame(['Ganda!', 'Sana all'], array_column($list, 'body'));
+        $this->assertTrue($list[0]['can_delete']); // the post's author may remove comments on their post
+        $this->assertSame(2, $this->getJson("/api/v1/trips/{$this->trip->id}/posts", $this->headers($this->owner))->json('data.0.comments_count'));
+
+        $outsider = User::factory()->create();
+        $this->getJson($url, $this->headers($outsider))->assertForbidden();
+        // A different member who is neither the comment's author, the post's author nor the organizer cannot remove it.
+        $third = User::factory()->create(); $this->trip->members()->create(['user_id' => $third->id, 'status' => 'active']);
+        $this->deleteJson("{$url}/{$mine['id']}", [], $this->headers($third))->assertForbidden();
+        $this->deleteJson("{$url}/{$mine['id']}", [], $this->headers($this->friend))->assertOk()->assertJsonPath('comments_count', 1);
+
+        // Deleting the post removes its comments too.
+        $this->deleteJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}", [], $this->headers($this->friend))->assertNoContent();
+        $this->assertDatabaseCount('trip_post_comments', 0);
+    }
 }

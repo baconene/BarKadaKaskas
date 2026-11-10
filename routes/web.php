@@ -42,6 +42,9 @@ Route::middleware('auth')->group(function () {
     Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1')->name('posts.store');
     Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy'])->name('posts.destroy');
     Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1')->name('posts.like');
+    Route::get('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comments'])->name('posts.comments');
+    Route::post('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comment'])->middleware('throttle:30,1')->name('posts.comment');
+    Route::delete('trips/{trip}/posts/{post}/comments/{comment}', [TripPostController::class, 'destroyComment'])->name('posts.comment.destroy');
     Route::get('me/profile', [TravelerProfileController::class, 'show'])->name('traveler-profile.show');
     Route::patch('me/profile', [TravelerProfileController::class, 'update'])->name('traveler-profile.update');
     Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1')->name('avatar.store');

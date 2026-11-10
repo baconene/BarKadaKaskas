@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, Sparkles, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, MessageCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
+import PostComments from '@/components/trip/PostComments.vue';
 import LoadingImage from '@/components/LoadingImage.vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { appFetch, shrinkImage } from '@/lib/uploads';
 
 /** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
-type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean };
+type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number };
+// Posts whose comments are open.
+const openComments = ref(new Set<number>());
+function toggleComments(id: number) { const next = new Set(openComments.value); if (next.has(id)) next.delete(id); else next.add(id); openComments.value = next; }
 const props = defineProps<{ tripId: number; tripName: string; readOnly?: boolean }>();
 
 const posts = ref<Post[]>([]);
@@ -158,7 +162,9 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <footer class="post-foot">
                 <button type="button" class="heart" :class="{ on: post.liked }" :aria-pressed="post.liked" :aria-label="post.liked ? 'Remove heart' : 'Add heart'" @click="toggleLike(post)"><Heart :size="20" :fill="post.liked ? 'currentColor' : 'none'" /></button>
                 <span class="muted">{{ post.likes_count }} {{ post.likes_count === 1 ? 'heart' : 'hearts' }}</span>
+                <button type="button" class="comment-btn" :aria-expanded="openComments.has(post.id)" @click="toggleComments(post.id)"><MessageCircle :size="19" aria-hidden="true" /> {{ post.comments_count ? `${post.comments_count} ${post.comments_count === 1 ? 'comment' : 'comments'}` : 'Comment' }}</button>
             </footer>
+            <PostComments v-if="openComments.has(post.id)" :trip-id="tripId" :post-id="post.id" :read-only="readOnly" @count="post.comments_count = $event" />
         </article>
 
         <button v-if="nextBefore" type="button" class="btn secondary load-more" :disabled="loading" @click="load(true)">{{ loading ? 'Loading…' : 'Load more' }}</button>
@@ -224,6 +230,8 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .more{position:absolute;inset:0;display:grid;place-items:center;background:#172f2a99;color:#fff;font-size:26px;font-weight:800}
 .caption{padding:12px 16px 0;font-size:15px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
 .post-foot{display:flex;align-items:center;gap:6px;padding:8px 10px 12px}
+.comment-btn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 12px;border:0;border-radius:999px;background:transparent;color:#4d6158;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.comment-btn:hover,.comment-btn[aria-expanded="true"]{background:#f1f5ec;color:#214e3e}
 .heart{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;border:0;background:transparent;color:#6c7c72;cursor:pointer;transition:transform .15s}
 .heart:active{transform:scale(.85)}
 .heart.on{color:#d0454c}

@@ -945,6 +945,7 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
     var picked by remember { mutableStateOf<List<Uri>>(emptyList()) }
     // Full-screen gallery: the post's photos and the one that was tapped.
     var viewing by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    var commentsFor by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(detail.trip.id) { if (vm.postsLoadedFor != detail.trip.id) vm.loadPosts() }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) picked = uris }
 
@@ -969,12 +970,18 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
             Row(Modifier.padding(start = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.toggleLike(post) }) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (post.liked) "Remove heart" else "Add heart", tint = if (post.liked) Color(0xFFD0454C) else Muted) }
                 Text("${post.likesCount} ${if (post.likesCount == 1) "heart" else "hearts"}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { commentsFor = post.id }) {
+                    Icon(Icons.Default.ChatBubbleOutline, null, Modifier.size(18.dp), tint = Muted); Spacer(Modifier.width(6.dp))
+                    Text(if (post.commentsCount == 0) "Comment" else "${post.commentsCount} ${if (post.commentsCount == 1) "comment" else "comments"}", color = Muted)
+                }
             }
         }
     }
     if (vm.postsNextBefore != null) OutlinedButton(onClick = { vm.loadPosts(more = true) }, enabled = !vm.postsLoading, modifier = Modifier.fillMaxWidth()) { Text(if (vm.postsLoading) "Loading…" else "Load more") }
     if (picked.isNotEmpty()) PostComposer(vm, picked, { picked = it }) { picked = emptyList() }
     viewing?.let { (urls, start) -> PhotoViewer(urls, start) { viewing = null } }
+    vm.posts.find { it.id == commentsFor }?.let { post -> CommentsSheet(vm, post) { commentsFor = null } }
 }
 
 private fun postTime(iso: String): String = runCatching {
@@ -997,6 +1004,38 @@ private fun postTime(iso: String): String = runCatching {
             listOf(0, 2).forEach { start -> Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 PhotoTile(shown[start], Modifier.weight(1f).fillMaxHeight(), 0, open); PhotoTile(shown[start + 1], Modifier.weight(1f).fillMaxHeight(), if (start == 2) photos.size - 4 else 0, open)
             } }
+        }
+    }
+}
+
+/** A photo post's comments in a bottom sheet: read them, add one, remove ones you're allowed to. */
+@Composable private fun CommentsSheet(vm: TravelViewModel, post: Post, dismiss: () -> Unit) {
+    var body by rememberSaveable(post.id) { mutableStateOf("") }
+    LaunchedEffect(post.id) { vm.loadComments(post) }
+    FormSheet(if (post.commentsCount == 0) "Comments" else "${post.commentsCount} ${if (post.commentsCount == 1) "comment" else "comments"}", vm, dismiss, "On ${post.authorName}'s post") {
+        if (vm.commentsLoading && vm.comments.isEmpty()) repeat(2) {
+            Row(verticalAlignment = Alignment.CenterVertically) { Shimmer(Modifier.size(32.dp).clip(CircleShape)); Spacer(Modifier.width(10.dp)); Shimmer(Modifier.fillMaxWidth(0.7f).height(36.dp).clip(RoundedCornerShape(14.dp))) }
+        } else if (vm.comments.isEmpty()) Text("No comments yet. Say something!", color = Muted)
+        vm.comments.forEach { comment ->
+            Row(verticalAlignment = Alignment.Top) {
+                Avatar(comment.authorName, size = 32, url = comment.authorAvatarUrl); Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Surface(color = Color(0xFFF3F6EF), shape = RoundedCornerShape(14.dp)) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { Text(comment.authorName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge); Text(comment.body) }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, top = 2.dp)) {
+                        Text(postTime(comment.createdAt), color = Muted, style = MaterialTheme.typography.labelSmall)
+                        if (comment.canDelete) TextButton(onClick = { vm.deleteComment(post, comment) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Remove", color = Danger, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(body, { if (it.length <= 1000) body = it }, Modifier.weight(1f), placeholder = { Text("Add a comment…") }, shape = RoundedCornerShape(20.dp), maxLines = 4)
+            Spacer(Modifier.width(8.dp))
+            FilledIconButton(onClick = { vm.addComment(post, body) { body = "" } }, enabled = body.isNotBlank() && !vm.commentSending, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Forest)) {
+                if (vm.commentSending) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.Send, "Post comment", tint = Color.White)
+            }
         }
     }
 }

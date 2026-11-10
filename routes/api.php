@@ -38,6 +38,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1');
         Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy']);
         Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1');
+        Route::get('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comments']);
+        Route::post('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comment'])->middleware('throttle:30,1');
+        Route::delete('trips/{trip}/posts/{post}/comments/{comment}', [TripPostController::class, 'destroyComment']);
         Route::get('me/profile', [TravelerProfileController::class, 'show']);
         Route::patch('me/profile', [TravelerProfileController::class, 'update']);
         Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1');

@@ -179,6 +179,38 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         repository.deletePost(id, post.id)
         posts = posts.filterNot { it.id == post.id }
     }
+    // Comments for the post whose comment sheet is open.
+    var comments by mutableStateOf<List<PostComment>>(emptyList()); private set
+    var commentsLoading by mutableStateOf(false); private set
+    var commentSending by mutableStateOf(false); private set
+    private fun setCommentCount(postId: Long, count: Int) { posts = posts.map { if (it.id == postId) it.copy(commentsCount = count) else it } }
+    fun loadComments(post: Post) {
+        val tripId = detail?.trip?.id ?: return
+        comments = emptyList(); commentsLoading = true
+        viewModelScope.launch {
+            try { comments = repository.comments(tripId, post.id) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not load comments." }
+            finally { commentsLoading = false }
+        }
+    }
+    fun addComment(post: Post, body: String, done: () -> Unit) {
+        val tripId = detail?.trip?.id ?: return
+        if (body.isBlank() || commentSending) return
+        commentSending = true
+        viewModelScope.launch {
+            try { val (comment, count) = repository.addComment(tripId, post.id, body); comments = comments + comment; setCommentCount(post.id, count); done() }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not post your comment." }
+            finally { commentSending = false }
+        }
+    }
+    fun deleteComment(post: Post, comment: PostComment) {
+        val tripId = detail?.trip?.id ?: return
+        viewModelScope.launch {
+            try { val count = repository.deleteComment(tripId, post.id, comment.id); comments = comments.filterNot { it.id == comment.id }; setCommentCount(post.id, count) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not remove the comment." }
+        }
+    }
+
     /** Hearts update instantly and reconcile with the server, without blocking the screen. */
     fun toggleLike(post: Post) {
         val id = detail?.trip?.id ?: return

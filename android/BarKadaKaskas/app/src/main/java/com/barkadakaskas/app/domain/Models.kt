@@ -9,7 +9,9 @@ data class Member(val id: Long, val name: String, val phone: String? = null, val
                   val emergencyName: String? = null, val emergencyRelationship: String? = null, val emergencyPhone: String? = null)
 data class ProfileDraft(val phone: String, val otherContact: String, val emergencyName: String, val emergencyRelationship: String, val emergencyPhone: String)
 data class PostPhoto(val url: String, val width: Int?, val height: Int?)
-data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean)
+data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean, val commentsCount: Int = 0)
+/** A comment under a photo post. */
+data class PostComment(val id: Long, val body: String, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val canDelete: Boolean)
 data class PostPage(val posts: List<Post>, val nextBefore: Long?)
 data class Category(val id: Long, val name: String)
 data class Stop(val id: Long, val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null, val costMinMinor: Long? = null, val costMaxMinor: Long? = null, val costNote: String? = null, val completedAt: String? = null) {
@@ -82,6 +84,11 @@ interface TravelRepository {
     suspend fun deletePost(tripId: Long, postId: Long)
     /** Toggles the viewer's heart; returns (liked, likesCount). */
     suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>
+    suspend fun comments(tripId: Long, postId: Long): List<PostComment>
+    /** Returns the new comment and the post's comment count. */
+    suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int>
+    /** Returns the post's comment count. */
+    suspend fun deleteComment(tripId: Long, postId: Long, commentId: Long): Int
     /** Removes an expense entered by mistake; only while no payments are recorded (organizer or its creator). */
     suspend fun deleteExpense(tripId: Long, expenseId: Long)
     /** Reads a receipt photo (downscaled JPEG) into an expense draft. */

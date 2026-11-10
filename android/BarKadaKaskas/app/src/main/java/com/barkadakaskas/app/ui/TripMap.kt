@@ -113,20 +113,37 @@ private fun carIcon(context: Context): Bitmap {
 }
 
 /** Follows the device's location (GPS or network) while [enabled]; null until the first fix. */
+/**
+ * GPS and network fixes arrive from both providers; keep a new one only if it is clearly newer or at least as
+ * accurate, so a rough network reading doesn't make the car jump away from a good GPS position.
+ */
+internal fun isBetterFix(candidate: Location, current: Location?): Boolean {
+    if (current == null) return true
+    val age = candidate.time - current.time
+    if (age > 15_000) return true          // much newer: the old fix is stale
+    if (age < -15_000) return false        // much older
+    val accuracyDelta = candidate.accuracy - current.accuracy
+    return when {
+        accuracyDelta <= 0 -> true                                          // more (or as) accurate
+        age > 0 && accuracyDelta <= 30 && candidate.provider == current.provider -> true // newer, similar accuracy
+        else -> false
+    }
+}
+
 @SuppressLint("MissingPermission") // Only called once location permission is granted; failures are ignored.
 @Composable private fun rememberMyLocation(context: Context, enabled: Boolean): Location? {
     var location by remember { mutableStateOf<Location?>(null) }
     DisposableEffect(enabled) {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val listener = object : LocationListener {
-            override fun onLocationChanged(update: Location) { location = update }
+            override fun onLocationChanged(update: Location) { if (isBetterFix(update, location)) location = update }
             override fun onProviderEnabled(provider: String) {}
             override fun onProviderDisabled(provider: String) {}
             @Deprecated("Deprecated in Java") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         }
         if (enabled) runCatching {
             listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter { manager.isProviderEnabled(it) }.forEach { provider ->
-                if (location == null) manager.getLastKnownLocation(provider)?.let { location = it }
+                manager.getLastKnownLocation(provider)?.let { if (isBetterFix(it, location)) location = it }
                 manager.requestLocationUpdates(provider, 3000L, 5f, listener, Looper.getMainLooper())
             }
         }

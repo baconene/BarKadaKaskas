@@ -82,6 +82,7 @@ private val Danger = Color(0xFFA6573E)
 class NavigationActivity : ComponentActivity() {
     private lateinit var navigationView: NavigationView
     private var navigator: Navigator? = null
+    private var navMap: com.google.android.gms.maps.GoogleMap? = null
     private var handedOff = false
     private var started = false
 
@@ -105,9 +106,16 @@ class NavigationActivity : ComponentActivity() {
         val stop = stops.getOrNull(current)
         if (stop?.id != null && !stop.done && tripId != null) askDone = current
     }
-    private val askLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-        if (granted.values.any { it }) acceptTermsThenNavigate() else handOff("Location permission is needed to navigate here.")
+    private val askLocation = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+        when {
+            hasLocationPermission() -> { askNotifications(); acceptTermsThenNavigate() }
+            // "Approximate" location is hundreds of metres off: turn-by-turn needs precise location.
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED -> askForPreciseLocation()
+            else -> handOff("Location permission is needed to navigate here.")
+        }
     }
+    /** Android 13+: lets the navigation service show its notification, which keeps guidance running with the screen off. */
+    private val askNotificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,7 +131,7 @@ class NavigationActivity : ComponentActivity() {
         navigationView = NavigationView(this)
         navigationView.onCreate(savedInstanceState)
         // Live traffic on the navigation map (the route itself is already coloured by traffic).
-        navigationView.getMapAsync { map -> map.isTrafficEnabled = true }
+        navigationView.getMapAsync { map -> map.isTrafficEnabled = true; navMap = map }
         // Google's guidance in the app's colours: forest-green instruction banner, soft-green turn arrows.
         navigationView.setStylingOptions(StylingOptions()
             .primaryDayModeThemeColor(0xFF214E3E.toInt()).secondaryDayModeThemeColor(0xFF2F6250.toInt())
@@ -140,7 +148,7 @@ class NavigationActivity : ComponentActivity() {
             addView(panel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         })
         if (savedInstanceState == null) {
-            if (hasLocationPermission()) acceptTermsThenNavigate()
+            if (hasLocationPermission()) { askNotifications(); acceptTermsThenNavigate() }
             else askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
     }
@@ -151,6 +159,8 @@ class NavigationActivity : ComponentActivity() {
         var expanded by remember { mutableStateOf(stops.size > 1) }
         // Swipe the panel down (or tap its handle) for a compact bar with more map; swipe up for everything.
         var collapsed by remember { mutableStateOf(false) }
+        // Resizing the map (panel shown/hidden) can make Google's camera stop following you; follow again.
+        LaunchedEffect(collapsed, expanded) { kotlinx.coroutines.delay(400); if (!routing && !arrived) followMe() }
         val swipe = Modifier.pointerInput(Unit) {
             var dragged = 0f
             detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = { if (dragged > 40f) collapsed = true else if (dragged < -40f) collapsed = false }) { change, dy -> change.consume(); dragged += dy }
@@ -238,6 +248,11 @@ class NavigationActivity : ComponentActivity() {
             else if (inApp) Icon(Icons.Default.Navigation, "Navigate here", tint = Forest, modifier = Modifier.size(18.dp))
             else Icon(Icons.AutoMirrored.Filled.OpenInNew, "Open in Google Maps", tint = Muted, modifier = Modifier.size(18.dp))
         }
+    }
+
+    /** Keeps the camera on the blue arrow (tilted, heading-up), e.g. after the map was resized by the panel. */
+    private fun followMe() {
+        navMap?.followMyLocation(com.google.android.gms.maps.GoogleMap.CameraPerspective.TILTED)
     }
 
     private fun updateRemaining() {
@@ -339,9 +354,26 @@ class NavigationActivity : ComponentActivity() {
 
     // ---- Navigation ---------------------------------------------------------------------------------------
 
-    private fun hasLocationPermission() =
-        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    /** Turn-by-turn needs precise location; "approximate" alone isn't enough. */
+    private fun hasLocationPermission() = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun askNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) askNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** Only approximate location was allowed: explain, and offer the app's settings where "Use precise location" is. */
+    private fun askForPreciseLocation() {
+        AlertDialog.Builder(this)
+            .setTitle("Turn on precise location")
+            .setMessage("Navigation needs your precise location. Approximate location can be hundreds of metres off, so directions would be wrong.\n\nIn the app's settings, open Permissions → Location and turn on \"Use precise location\".")
+            .setPositiveButton("Open settings") { _, _ ->
+                startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)))
+                finish()
+            }
+            .setNegativeButton("Use Google Maps") { _, _ -> handedOff = false; handOff("Precise location is off.") }
+            .setOnCancelListener { finish() }
+            .show()
+    }
 
     private fun acceptTermsThenNavigate() {
         if (NavigationApi.areTermsAccepted(application)) { startNavigator(); return }
@@ -422,6 +454,7 @@ class NavigationActivity : ComponentActivity() {
                 routing = false; started = true
                 navigator.startGuidance()
                 updateRemaining()
+                followMe()
             } else {
                 routeFailed(if (status == Navigator.RouteStatus.NO_ROUTE_FOUND) "No route found to ${stop.title} in the app." else "In-app navigation couldn't find a route to ${stop.title}.")
             }

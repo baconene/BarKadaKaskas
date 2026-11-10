@@ -5,6 +5,8 @@
     <!-- Only to show "you are here" on the trip map; navigation itself runs in Google Maps. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Android 13+: the navigation service's notification keeps turn-by-turn running with the screen off. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Lets "Open in Maps" / "Navigate" find the Google Maps app on Android 11+. -->
     <queries>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>

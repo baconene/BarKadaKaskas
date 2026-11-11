@@ -38,7 +38,7 @@ class PhotoRestyler
         'tropical' => 'Make the colours feel like a sunny tropical day: bluer water, greener plants, warm sunlight, without looking fake.',
     ];
 
-    /** Styles offered for each kind of photo.
+    /** Styles offered for each kind of photo. */
     public const SUBJECT_STYLES = [
         'portrait' => ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'headshot', 'beach'],
         'photo' => ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'golden-hour', 'postcard', 'enhance', 'brighten', 'blue-sky', 'sunset-sky', 'remove-people', 'tropical'],

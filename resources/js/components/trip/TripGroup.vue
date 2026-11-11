@@ -7,10 +7,12 @@ import TravelerDialog, { type TravelerUser } from '@/components/trip/TravelerDia
 
 type Member = { id: number; user_id?: number; status?: string; user: TravelerUser };
 type Settlement = { id: number; expense_id: number | null; from_member_id: number; to_member_id: number; amount_minor: number; status: string; payment_method: string; paid_at: string | null; confirmed_at: string | null };
+type BetweenLine = { type: 'expense' | 'payment'; expense_id: number | null; label: string; date: string | null; detail: string; amount_minor: number; pending: boolean };
+type Between = { member_id: number; name: string; net_minor: number; lines: BetweenLine[] };
 const props = defineProps<{
     tripId: number; tripName: string; organizerUserId?: number; currency: string; timezone: string;
     members: Member[]; balances: { member_id: number; name: string; net_minor: number }[]; dues: { member_id: number; owes_minor: number; owed_minor: number }[]; settlements: Settlement[];
-    expenses: any[]; currentMemberId: number; isOrganizer: boolean; invitationUrl: string | null;
+    between?: Between[]; expenses: any[]; currentMemberId: number; isOrganizer: boolean; invitationUrl: string | null;
 }>();
 
 const money = (amount: number) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: props.currency }).format(amount / 100);
@@ -29,7 +31,6 @@ function openTraveler(id: number, edit = false) { editingMine.value = edit; view
 // it is what travellers still owe the merchants (or whoever pays them), not each other.
 const unpaidToMerchants = computed(() => props.expenses.filter(e => ['open', 'completed', 'closed'].includes(e.status))
     .reduce((sum, e) => sum + Math.max(0, e.total_minor - (e.payments ?? []).filter((p: { paid_at?: string | null }) => p.paid_at !== null).reduce((t: number, p: { amount_minor: number }) => t + p.amount_minor, 0)), 0));
-const duesOf = (memberId: number) => props.dues.find(d => d.member_id === memberId) ?? { owes_minor: 0, owed_minor: 0 };
 const balanceOf = (memberId: number) => props.balances.find(b => b.member_id === memberId)?.net_minor ?? 0;
 
 // Suggested settlements: a display-only plan that pays off every balance in the fewest transfers (greedy).
@@ -101,8 +102,26 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
             <h2 id="balances-title">Balances</h2>
             <p class="muted">Every recorded expense counts here in full, even before the merchant is paid, so each traveller sees their whole share. Reimbursements count once the recipient confirms.</p>
             <p v-if="unpaidToMerchants > 0" class="unpaid-note">{{ money(unpaidToMerchants) }} of recorded bills isn’t paid to the merchant yet. That part of everyone’s share goes to the merchant (or whoever pays it), so it isn’t in the suggested settlements below.</p>
-            <ul class="balance-list">
-                <li v-for="b in balances" :key="b.member_id"><span>{{ b.name }}<small v-if="duesOf(b.member_id).owes_minor || duesOf(b.member_id).owed_minor" class="dues">Still owes {{ money(duesOf(b.member_id).owes_minor) }} · Owed {{ money(duesOf(b.member_id).owed_minor) }}</small></span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor > 0 ? 'Receives' : b.net_minor < 0 ? 'Owes' : 'Settled' }} {{ money(Math.abs(b.net_minor)) }}</strong></li>
+            <h3 class="sub">Between you and each traveller</h3>
+            <p class="muted fine">From bills someone paid for someone else, minus confirmed repayments. Tap a name for the breakdown.</p>
+            <ul class="between-list">
+                <li v-for="b in between ?? []" :key="b.member_id">
+                    <details>
+                        <summary>
+                            <span class="between-who"><span class="avatar" aria-hidden="true">{{ initials(b.name) }}</span><span>{{ b.name }}<small class="dues">{{ b.net_minor > 0 ? 'owes you' : b.net_minor < 0 ? 'you owe' : 'settled' }} · {{ b.lines.length }} {{ b.lines.length === 1 ? 'item' : 'items' }}</small></span></span>
+                            <strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor === 0 ? 'Settled' : money(Math.abs(b.net_minor)) }}</strong>
+                        </summary>
+                        <ul v-if="b.lines.length" class="breakdown">
+                            <li v-for="(line, i) in b.lines" :key="i" :class="{ pending: line.pending }">
+                                <span><strong>{{ line.label }}</strong><small>{{ [line.date, line.detail].filter(Boolean).join(' · ') }}</small></span>
+                                <span :class="line.pending ? '' : line.amount_minor > 0 ? 'receive' : 'owe'">{{ line.amount_minor > 0 ? '+' : '−' }}{{ money(Math.abs(line.amount_minor)) }}</span>
+                            </li>
+                            <li class="total"><span>{{ b.net_minor > 0 ? `${b.name.split(' ')[0]} owes you` : b.net_minor < 0 ? `You owe ${b.name.split(' ')[0]}` : 'All square' }}</span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ money(Math.abs(b.net_minor)) }}</strong></li>
+                        </ul>
+                        <p v-else class="muted fine">Nothing between you yet.</p>
+                        <button v-if="b.net_minor < 0" type="button" class="btn secondary pay-btn" @click="prefill(b.member_id, -b.net_minor)"><HandCoins :size="14" aria-hidden="true" /> I paid {{ money(-b.net_minor) }}</button>
+                    </details>
+                </li>
             </ul>
             <h3 class="sub">Suggested settlements</h3>
             <p v-if="!suggestions.length" class="muted">Everyone is settled up. 🎉</p>
@@ -155,6 +174,19 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 .tag{font-size:10px;font-weight:700;background:#edf2e6;color:#526936;border-radius:6px;padding:2px 6px}
 .tag.organizer{background:#214e3e;color:#fff}
 .traveler-balance{font-size:13px;font-weight:750;white-space:nowrap}
+.between-list,.breakdown{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.between-list>li{border:1px solid #e3e9e1;border-radius:14px;background:#fff}
+.between-list summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;cursor:pointer;list-style:none;min-height:48px}
+.between-list summary::-webkit-details-marker{display:none}
+.between-who{display:flex;align-items:center;gap:10px;min-width:0}
+.between-who .avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:50%;background:#e8f2d8;color:#214e3e;font-weight:700;font-size:13px}
+.between-list details[open] summary{border-bottom:1px solid #eef2ec}
+.breakdown{padding:10px 12px}
+.breakdown li{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.breakdown li small{display:block;color:#6c7c72;font-size:12px}
+.breakdown li.pending{opacity:.6}
+.breakdown li.total{border-top:1px dashed #d8e0d5;padding-top:8px;font-weight:600}
+.between-list .pay-btn{margin:0 12px 12px}
 .owe{color:#a6573e}
 .receive{color:#3d7650}
 .invite{display:grid;gap:10px;padding-top:4px}

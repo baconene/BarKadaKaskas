@@ -801,20 +801,32 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     if (detail.members.size > 1) Submit("Record money you sent", vm.busy, icon = Icons.AutoMirrored.Filled.Send) { form = true }
-    InfoCard("Everyone") {
-        detail.balances.forEach { balance -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(balance.name, balance.memberId == detail.currentMemberId); Spacer(Modifier.width(12.dp))
+    // Between you and each traveller (newer servers); older servers only send group balances.
+    var opened by remember { mutableStateOf<Long?>(null) }
+    val between = detail.between
+    if (between != null) InfoCard("Between you and each traveller") {
+        Text("From bills someone paid for someone else, minus confirmed repayments. Tap a name for the breakdown.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        if (between.isEmpty()) Text("No one else on this trip yet.", color = Muted)
+        between.forEach { b -> Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { opened = b.memberId }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(b.name, false); Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(if (balance.memberId == detail.currentMemberId) "${balance.name} (you)" else balance.name, fontWeight = FontWeight.Medium)
-                val dues = detail.duesOf(balance.memberId)
-                if (dues.owesMinor > 0 || dues.owedMinor > 0) Text("Still owes ${money(dues.owesMinor, detail.trip.currency)} · Owed ${money(dues.owedMinor, detail.trip.currency)}", color = Muted, style = MaterialTheme.typography.labelSmall)
+                Text(b.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${b.lines.size} ${if (b.lines.size == 1) "item" else "items"} · tap for details", color = Muted, style = MaterialTheme.typography.labelSmall)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(money(abs(balance.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { balance.netMinor < 0 -> Danger; balance.netMinor > 0 -> Forest; else -> Muted })
-                Text(when { balance.netMinor > 0 -> "receives"; balance.netMinor < 0 -> "owes"; else -> "settled" }, color = Muted, style = MaterialTheme.typography.labelSmall)
+                Text(if (b.netMinor == 0L) "Settled" else money(abs(b.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { b.netMinor < 0 -> Danger; b.netMinor > 0 -> Forest; else -> Muted })
+                if (b.netMinor != 0L) Text(if (b.netMinor > 0) "owes you" else "you owe", color = Muted, style = MaterialTheme.typography.labelSmall)
             }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted)
+        } }
+    } else InfoCard("Everyone") {
+        detail.balances.forEach { balance -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Avatar(balance.name, balance.memberId == detail.currentMemberId); Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) { Text(if (balance.memberId == detail.currentMemberId) "${balance.name} (you)" else balance.name, fontWeight = FontWeight.Medium) }
+            Text(money(abs(balance.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { balance.netMinor < 0 -> Danger; balance.netMinor > 0 -> Forest; else -> Muted })
         } }
     }
+    between?.find { it.memberId == opened }?.let { b -> BetweenSheet(b, detail.trip.currency, onPay = { opened = null; form = true }) { opened = null } }
     Text("Payment history", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     if (detail.settlements.isEmpty()) Text("No reimbursements recorded yet.", color = Muted)
     detail.settlements.forEach { payment -> val sender = detail.members.find { it.id == payment.fromMemberId }?.name ?: "Traveler"; val recipient = detail.members.find { it.id == payment.toMemberId }?.name ?: "Traveler"
@@ -829,6 +841,35 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     if (form) SettlementForm(vm, detail) { form = false }
+}
+
+/** The bills and repayments behind what you and one traveller owe each other. */
+@Composable private fun BetweenSheet(b: Between, currency: String, onPay: () -> Unit, close: () -> Unit) {
+    val first = b.name.substringBefore(" ")
+    ModalBottomSheet(onDismissRequest = close, containerColor = Color.White) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("You and ${b.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(when { b.netMinor > 0 -> "$first owes you ${money(b.netMinor, currency)}"; b.netMinor < 0 -> "You owe $first ${money(-b.netMinor, currency)}"; else -> "You're all square" },
+                color = when { b.netMinor < 0 -> Danger; b.netMinor > 0 -> Forest; else -> Muted }, fontWeight = FontWeight.SemiBold)
+            if (b.lines.isEmpty()) Text("Nothing between you yet.", color = Muted)
+            b.lines.forEach { line ->
+                HorizontalDivider(color = Line)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.alpha(if (line.pending) 0.6f else 1f)) {
+                    Icon(if (line.type == "payment") Icons.AutoMirrored.Filled.Send else Icons.AutoMirrored.Filled.ReceiptLong, null, tint = Forest, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(line.label, fontWeight = FontWeight.SemiBold)
+                        Text(listOfNotNull(line.date, line.detail).joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text((if (line.amountMinor > 0) "+" else "−") + money(abs(line.amountMinor), currency), fontWeight = FontWeight.Bold,
+                        color = if (line.pending) Muted else if (line.amountMinor > 0) Forest else Danger)
+                }
+            }
+            HorizontalDivider(color = Line)
+            Row { Text(if (b.netMinor >= 0) "$first owes you" else "You owe $first", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(abs(b.netMinor), currency), fontWeight = FontWeight.Bold) }
+            Text("+ adds to what they owe you, − to what you owe them. Pending repayments count once confirmed.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            if (b.netMinor < 0) Submit("Record money you sent to $first", false, icon = Icons.AutoMirrored.Filled.Send, click = onPay)
+        }
+    }
 }
 
 @Composable private fun GroupTab(vm: TravelViewModel, detail: TripDetail) {

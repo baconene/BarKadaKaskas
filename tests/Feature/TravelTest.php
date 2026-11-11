@@ -89,6 +89,23 @@ class TravelTest extends TestCase
         $headers = ['Authorization' => 'Bearer '.$this->friend->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
         $this->getJson("/api/v1/trips/{$this->trip->id}", $headers)->assertJsonPath('data.dues.1.owes_minor', 10000);
     }
+    public function test_between_shows_what_each_traveller_and_you_owe_each_other(): void
+    {
+        $this->createExpense();         // owner fronted the friend's 50.00
+        $this->createExpense(false);    // nobody paid yet: owed to the merchant, not between travellers
+        $between = fn ($user) => $this->actingAs($user)->get("/trips/{$this->trip->id}")->viewData('page')['props']['between'];
+        $owner = $between($this->owner);
+        $this->assertSame([[$this->friendMember, 5000]], array_map(fn ($b) => [$b['member_id'], $b['net_minor']], $owner));
+        $this->assertSame(['expense', 'Dinner', 5000], [$owner[0]['lines'][0]['type'], $owner[0]['lines'][0]['label'], $owner[0]['lines'][0]['amount_minor']]);
+        $this->assertSame(-5000, $between($this->friend)[0]['net_minor']);
+        // A pending repayment is listed but not counted until the owner confirms it.
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/settlements", ['to_member_id' => $this->ownerMember, 'amount_minor' => 2000, 'payment_method' => 'gcash'])->assertSessionHasNoErrors();
+        $this->assertSame(5000, $between($this->owner)[0]['net_minor']);
+        $this->assertTrue($between($this->owner)[0]['lines'][1]['pending']);
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/settlements/".Settlement::firstOrFail()->id.'/confirm')->assertRedirect();
+        $this->assertSame(3000, $between($this->owner)[0]['net_minor']);
+        $this->assertSame(-3000, $between($this->friend)[0]['net_minor']);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

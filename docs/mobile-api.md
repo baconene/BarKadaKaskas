@@ -152,3 +152,11 @@ Implementation reference: https://github.com/laravel/docs/blob/13.x/sanctum.md
 without trailers), `published_at`, and `min_version_code` (from `ANDROID_MIN_VERSION`; builds below it must update).
 The app checks this when it opens and about every 15 minutes in the background (falling back to GitHub directly),
 notifies once per version, and downloads and installs the APK from inside the app.
+
+## Between you and each traveller
+
+`GET /api/v1/trips/{trip}` includes `between`: for the signed-in traveller, one entry per other traveller with
+`net_minor` (> 0 they owe you, < 0 you owe them) and `lines` (`type` expense|payment, `label`, `date`, `detail`,
+`amount_minor` with the same sign, `pending`). On each recorded bill, whoever paid the merchant more than their share
+fronted money for those who paid less, split in proportion to what each fronted; money not yet paid to the merchant is
+not counted. Confirmed repayments between the two reduce it; pending ones are listed but not counted.

@@ -43,7 +43,10 @@ data class Balance(val memberId: Long, val name: String, val netMinor: Long)
 /** The two sides the net balance hides: still to pay for one's own shares, and still to be paid back by others. */
 data class Dues(val memberId: Long, val owesMinor: Long, val owedMinor: Long)
 data class Settlement(val id: Long, val fromMemberId: Long, val toMemberId: Long, val amountMinor: Long, val method: String, val status: String, val expenseId: Long? = null)
-data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList(), val aiPlanner: Boolean = false) {
+/** What you and one other traveller owe each other: net > 0 they owe you, < 0 you owe them; the bills and repayments behind it. */
+data class BetweenLine(val type: String, val label: String, val date: String?, val detail: String, val amountMinor: Long, val pending: Boolean)
+data class Between(val memberId: Long, val name: String, val netMinor: Long, val lines: List<BetweenLine>)
+data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList(), val aiPlanner: Boolean = false, val between: List<Between>? = null) {
     fun duesOf(memberId: Long): Dues = dues.find { it.memberId == memberId } ?: Dues(memberId, 0, 0)
 }
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")

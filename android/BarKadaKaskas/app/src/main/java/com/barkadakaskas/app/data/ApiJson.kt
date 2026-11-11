@@ -201,6 +201,8 @@ internal object ApiJson {
 
     fun suggestions(body: JSONObject?) = body?.optJSONArray("data").mapObjects { suggestion(it) }.filter { it.title.isNotBlank() && it.startsAt.isNotBlank() }
 
+    fun placeTips(list: JSONArray?) = list.mapObjects { PlaceTip(it.text("title"), it.textOrNull("detail")) }.filter { it.title.isNotBlank() }
+
     fun placePhotos(list: JSONArray?) = list.mapObjects { PlacePhoto(it.imageUrl("url").orEmpty(), it.textOrNull("credit"), it.text("source")) }.filter { it.url.isNotBlank() }
 
     fun changes(body: JSONObject?) = body?.optJSONArray("changes").mapObjects { c ->

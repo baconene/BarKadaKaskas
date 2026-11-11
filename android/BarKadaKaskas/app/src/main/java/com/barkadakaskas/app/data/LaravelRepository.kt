@@ -106,7 +106,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun stopPhotos(tripId: Long, stopId: Long): List<PlacePhoto> =
         request("GET", "/trips/$tripId/itinerary/$stopId/photos", readTimeout = 60_000)?.optJSONArray("data").let { list -> ApiJson.placePhotos(list) }
     override suspend fun stopTips(tripId: Long, stopId: Long): List<PlaceTip> =
-        request("GET", "/trips/$tripId/itinerary/$stopId/tips", readTimeout = 45_000)?.optJSONArray("data").mapObjects { PlaceTip(it.optString("title"), it.optString("detail").takeIf { d -> d.isNotBlank() && d != "null" }) }.filter { it.title.isNotBlank() }
+        ApiJson.placeTips(request("GET", "/trips/$tripId/itinerary/$stopId/tips", readTimeout = 45_000)?.optJSONArray("data"))
     override suspend fun aiQuota(): AiQuota = ApiJson.aiQuota(data(request("GET", "/photos/ai-quota"))) ?: AiQuota(3, 3, 0)
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =

@@ -89,6 +89,14 @@ internal object ApiJson {
         Alert(a.getLong("id"), a.text("type"), a.text("title"), a.textOrNull("body"), a.optLong("trip_id"), a.textOrNull("trip_name"), a.optBoolean("read"), a.text("created_at"))
     }, body?.optInt("unread_count") ?: 0)
 
+    fun highlight(d: JSONObject) = Highlight(
+        date = d.text("date"), dayNumber = d.optInt("day_number"), title = d.text("title"), subtitle = d.text("subtitle"),
+        coverUrl = d.imageUrl("cover_url"), basePhotoUrl = d.imageUrl("base_photo_url"), musicUrl = d.imageUrl("music_url").orEmpty(),
+        coverDuration = d.optDouble("cover_duration", 3.0), outroDuration = d.optDouble("outro_duration", 2.5),
+        slides = d.optJSONArray("slides").mapObjects { s -> HighlightSlide(s.text("time"), s.text("title"), s.textOrNull("location"), s.imageUrl("photo_url").orEmpty(), s.textOrNull("caption"), s.optDouble("duration", 3.0)) },
+        days = d.optJSONArray("days")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+    )
+
     fun aiQuota(json: JSONObject?) = json?.let { AiQuota(it.optInt("limit", 3), it.optInt("remaining", 0), it.optInt("resets_in", 0)) }
 
     fun comments(body: JSONObject?) = body?.optJSONArray("data").mapObjects { comment(it) }

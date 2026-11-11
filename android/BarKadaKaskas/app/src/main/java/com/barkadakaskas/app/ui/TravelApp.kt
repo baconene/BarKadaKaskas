@@ -7,6 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -1002,6 +1006,11 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
         }
     }
     val camera = rememberPostCamera { uri -> picked = picked + uri }
+    var highlightOpen by remember { mutableStateOf(false) }
+    if (vm.posts.isNotEmpty()) OutlinedButton(onClick = { highlightOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp)) {
+        Icon(Icons.Default.Movie, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Day highlight", color = Forest)
+    }
+    if (highlightOpen) HighlightPlayer(vm) { highlightOpen = false }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
             Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Choose photos")
@@ -1281,6 +1290,90 @@ private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): Byt
                 }
                 saving = false
                 done(Uri.fromFile(file))
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen day highlight: cover, the day's stops with their photos (slow zoom, crossfades, captions like
+ * "7:00 AM  Cambugahay Falls"), outro; story progress bars and music. Tap to pause; day chips switch days.
+ */
+@Composable private fun HighlightPlayer(vm: TravelViewModel, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { vm.loadHighlight() }
+    val h = vm.highlight
+    // Parts: 0 = cover, 1..n = slides, n+1 = outro.
+    val durations = h?.let { listOf(it.coverDuration) + it.slides.map { s -> s.duration } + listOf(it.outroDuration) } ?: emptyList()
+    var index by remember(h?.date) { mutableIntStateOf(0) }
+    var playing by remember(h?.date) { mutableStateOf(false) }
+    val progress = remember(h?.date, index) { Animatable(0f) }
+    val player = remember { android.media.MediaPlayer() }
+    var musicReady by remember { mutableStateOf(false) }
+    DisposableEffect(h?.musicUrl) {
+        musicReady = false
+        h?.musicUrl?.takeIf { it.isNotBlank() }?.let { url -> runCatching { player.reset(); player.setDataSource(url); player.setOnPreparedListener { musicReady = true }; player.prepareAsync() } }
+        onDispose { }
+    }
+    DisposableEffect(Unit) { onDispose { runCatching { player.release() } } }
+    LaunchedEffect(playing, musicReady) { runCatching { if (playing && musicReady) player.start() else if (player.isPlaying) player.pause() } }
+    LaunchedEffect(playing, index, h?.date) {
+        if (!playing || durations.isEmpty()) return@LaunchedEffect
+        val remaining = ((1f - progress.value) * durations[index] * 1000).toInt()
+        progress.animateTo(1f, tween(remaining, easing = LinearEasing))
+        if (index < durations.lastIndex) index++ else { playing = false; index = 0; runCatching { player.pause(); player.seekTo(0) } }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = dismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color(0xFF0D1512))) {
+            if (h == null || vm.highlightLoading) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = Color.White); Spacer(Modifier.height(10.dp)); Text("Putting the day together…", color = Color.White)
+            } else if (h.slides.isEmpty()) Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("No photos for this day yet", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Post photos during the day and they'll appear here with the itinerary.", color = Color.White.copy(alpha = 0.8f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            } else {
+                Crossfade(index, animationSpec = tween(600), label = "highlight", modifier = Modifier.fillMaxSize().clickable { playing = !playing }) { part ->
+                    val slide = h.slides.getOrNull(part - 1)
+                    val zoom = remember(part) { Animatable(1.05f) }
+                    LaunchedEffect(part, playing) { if (playing) zoom.animateTo(1.17f, tween((durations[part] * 1000).toInt(), easing = LinearEasing)) }
+                    Box(Modifier.fillMaxSize()) {
+                        NetworkImage(model = slide?.photoUrl ?: (h.coverUrl ?: h.basePhotoUrl), contentDescription = slide?.caption, contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value; translationX = (if (part % 2 == 0) 1 else -1) * 40f * (zoom.value - 1.11f) * 8 })
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)), startY = 900f)))
+                        Column(Modifier.align(Alignment.BottomStart).padding(start = 28.dp, end = 28.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            when {
+                                slide != null -> {
+                                    Surface(color = Forest.copy(alpha = 0.92f), shape = RoundedCornerShape(50)) { Text(slide.time, Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = Color(0xFFE8F2D8), fontWeight = FontWeight.Bold) }
+                                    Text(slide.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+                                    slide.location?.let { Text(it.split(",").take(2).joinToString(","), color = Color.White.copy(alpha = 0.85f)) }
+                                }
+                                part == 0 -> {
+                                    Text("HIGHLIGHTS", color = Color(0xFFCFE0A5), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                                    Text(h.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge)
+                                    Text(h.subtitle, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.titleMedium)
+                                }
+                                else -> Text("That was Day ${h.dayNumber}", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+                            }
+                        }
+                    }
+                }
+                // Story progress bars.
+                Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    durations.indices.forEach { i -> LinearProgressIndicator(progress = { if (i < index) 1f else if (i == index) progress.value else 0f }, modifier = Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)), color = Color.White, trackColor = Color.White.copy(alpha = 0.35f)) }
+                }
+                if (!playing) Box(Modifier.align(Alignment.Center).size(84.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.9f)).clickable { playing = true }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.PlayArrow, "Play highlight", tint = Forest, modifier = Modifier.size(48.dp))
+                }
+            }
+            IconButton(onClick = dismiss, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 18.dp, end = 6.dp)) { Icon(Icons.Default.Close, "Close highlight", tint = Color.White) }
+            if (h != null) Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (h.days.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    itemsIndexed(h.days) { _, day -> FilterChip(day == h.date, { playing = false; vm.loadHighlight(day) }, label = { Text(runCatching { LocalDate.parse(day).format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)) }.getOrDefault(day)) },
+                        colors = FilterChipDefaults.filterChipColors(labelColor = Color.White, selectedContainerColor = Color.White, selectedLabelColor = Forest)) }
+                }
+                if (h.slides.isNotEmpty()) OutlinedButton(onClick = vm::makeHighlightCover, enabled = !vm.highlightCovering, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)) {
+                    if (vm.highlightCovering) CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.Default.AutoAwesome, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp)); Text(if (h.coverUrl != null) "Remake AI cover" else "AI cover")
+                }
             }
         }
     }

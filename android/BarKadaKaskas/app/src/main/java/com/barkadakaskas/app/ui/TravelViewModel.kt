@@ -205,6 +205,30 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         repository.deletePost(id, post.id)
         posts = posts.filterNot { it.id == post.id }
     }
+    // Day highlight (Photos tab).
+    var highlight by mutableStateOf<Highlight?>(null); private set
+    var highlightLoading by mutableStateOf(false); private set
+    var highlightCovering by mutableStateOf(false); private set
+    fun loadHighlight(date: String? = null) {
+        val tripId = detail?.trip?.id ?: return
+        highlightLoading = true
+        viewModelScope.launch {
+            try { highlight = repository.highlight(tripId, date) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not load the highlight." }
+            finally { highlightLoading = false }
+        }
+    }
+    fun makeHighlightCover() {
+        val tripId = detail?.trip?.id ?: return
+        val current = highlight ?: return
+        highlightCovering = true
+        viewModelScope.launch {
+            try { val url = repository.highlightCover(tripId, current.date); highlight = highlight?.copy(coverUrl = url) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not make the cover." }
+            finally { highlightCovering = false }
+        }
+    }
+
     // AI photo edits (3 every 4 hours per traveller, enforced by the server).
     var aiQuota by mutableStateOf<AiQuota?>(null); private set
     var aiEditing by mutableStateOf(false); private set

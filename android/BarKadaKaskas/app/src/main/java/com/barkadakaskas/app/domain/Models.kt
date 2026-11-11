@@ -16,6 +16,10 @@ data class Alert(val id: Long, val type: String, val title: String, val body: St
     val tab: Int get() = when (type) { "expense" -> 1; "comment", "post" -> 2; else -> 0 }
 }
 data class AlertPage(val alerts: List<Alert>, val unreadCount: Int)
+/** A day's highlight: cover, then itinerary stops with that day's photos, then an outro (about 30 s, with music). */
+data class HighlightSlide(val time: String, val title: String, val location: String?, val photoUrl: String, val caption: String?, val duration: Double)
+data class Highlight(val date: String, val dayNumber: Int, val title: String, val subtitle: String, val coverUrl: String?, val basePhotoUrl: String?, val musicUrl: String,
+    val coverDuration: Double, val outroDuration: Double, val slides: List<HighlightSlide>, val days: List<String>)
 /** AI photo edits left in the current window (3 every 4 hours per traveller). */
 data class AiQuota(val limit: Int, val remaining: Int, val resetsInSeconds: Int)
 /** A comment under a photo post. */
@@ -96,6 +100,10 @@ interface TravelRepository {
     /** AI-edits a photo with a template ([style]) or a request ([prompt]); returns the new image and the quota left. */
     suspend fun aiEditPhoto(jpeg: ByteArray, style: String?, prompt: String?): Pair<ByteArray, AiQuota?>
     suspend fun aiQuota(): AiQuota
+    /** The day's highlight ([date] yyyy-MM-dd; today in the trip's time zone when null). */
+    suspend fun highlight(tripId: Long, date: String? = null): Highlight
+    /** Makes the day's AI cover (one AI edit); returns its URL. */
+    suspend fun highlightCover(tripId: Long, date: String): String
     /** Your latest alerts (or only those newer than [after]) and the unread count. */
     suspend fun alerts(after: Long? = null): AlertPage
     /** Marks [ids] (or all, when empty) read; returns the unread count. */

@@ -100,6 +100,9 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         if (image.isBlank()) throw ApiException("The AI sent no image. Try again.")
         return android.util.Base64.decode(image, android.util.Base64.DEFAULT) to ApiJson.aiQuota(body.optJSONObject("ai"))
     }
+    override suspend fun highlight(tripId: Long, date: String?): Highlight = ApiJson.highlight(data(request("GET", "/trips/$tripId/highlights" + (date?.let { "?date=$it" } ?: ""))))
+    override suspend fun highlightCover(tripId: Long, date: String): String =
+        data(request("POST", "/trips/$tripId/highlights/cover?date=$date", readTimeout = 150_000)).getString("cover_url").let { if (it.startsWith("http://")) "https://" + it.removePrefix("http://") else it }
     override suspend fun aiQuota(): AiQuota = ApiJson.aiQuota(data(request("GET", "/photos/ai-quota"))) ?: AiQuota(3, 3, 0)
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =

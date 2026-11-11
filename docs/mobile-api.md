@@ -167,3 +167,10 @@ not counted. Confirmed repayments between the two reduce it; pending ones are li
 (`item_id`, `title`, `from_starts_at`, `from_ends_at`, `starts_at`, `ends_at`, `reason`), for requests like "move the
 busy spots to tomorrow". `POST /trips/{trip}/itinerary/batch` accepts `changes` (`item_id`, `starts_at`, `ends_at`)
 alongside or instead of `items`. The model has 50 seconds; slower answers return 504 with a message.
+
+## Photos of a stop's place
+
+`GET /api/v1/trips/{trip}/itinerary/{item}/photos` returns up to 6 web photos of the place: `url`, `credit` (who to
+credit, if known) and `source` (`Google` or `Wikimedia Commons`). Google Places photos (Places API (New), with
+`GOOGLE_MAPS_BROWSER_KEY`) come first; Wikimedia Commons tops them up when Google has fewer than five. Only links are
+returned (no files are stored); results are cached for a week per place.

@@ -272,7 +272,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
             </div>
         </section>
 
-        <ActivitySheet :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer"
+        <ActivitySheet :trip-id="tripId" :item="openItem" :previous="openIndex > 0 ? stops[openIndex - 1] : null" :leg="openItem ? legResults[openItem.id] ?? null : null" :timezone="timezone" :is-organizer="isOrganizer"
             :done="!!openItem && done.has(openItem.id)" :done-error="doneError" @close="openItem = null" @edit="editFromSheet" @toggle-done="toggleDone" @show-on-map="showOnMap" />
         <AiPlannerSheet v-if="canPlanWithAi" :open="plannerOpen" :trip-id="tripId" :destination="destination ?? 'your trip'" :initial-prompt="aiPrompt" :auto-generate="!!aiPrompt" @close="plannerOpen = false" />
         <StopFormSheet v-if="isOrganizer" :open="formOpen" :trip-id="tripId" :timezone="timezone" :browser-key="googleMaps.browserKey" :default-day="view === 'itinerary' ? selectedDay : today?.day.key ?? null" @close="formOpen = null" />

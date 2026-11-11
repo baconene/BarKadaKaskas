@@ -3,9 +3,10 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { CircleCheck, Circle, Clock, Map as MapIcon, MapPin, Navigation, Pencil, Route, Wallet, X } from 'lucide-vue-next';
 import type { LegResult } from '@/components/ItineraryRouteMap.vue';
 import { costRange, dayKey, transport, type ItineraryStop } from '@/lib/itinerary';
+import { appFetch } from '@/lib/uploads';
 import { googleMapsUrl } from '@/lib/maps';
 
-const props = defineProps<{ item: ItineraryStop | null; previous: ItineraryStop | null; leg: LegResult | null; timezone: string; isOrganizer: boolean; done: boolean; doneError?: string }>();
+const props = defineProps<{ tripId: number; item: ItineraryStop | null; previous: ItineraryStop | null; leg: LegResult | null; timezone: string; isOrganizer: boolean; done: boolean; doneError?: string }>();
 const emit = defineEmits<{ close: []; edit: [item: ItineraryStop]; toggleDone: [id: number]; showOnMap: [id: number] }>();
 const dialog = ref<HTMLDialogElement>();
 
@@ -14,6 +15,21 @@ watch(() => props.item, async item => {
     if (item && !dialog.value?.open) dialog.value?.showModal();
     if (!item && dialog.value?.open) dialog.value.close();
 });
+// Photos of the place from the web (Google Places, then Wikimedia Commons), loaded when the details open.
+type PlacePhoto = { url: string; credit: string | null; source: string };
+const photos = ref<PlacePhoto[]>([]);
+const photosLoading = ref(false);
+const viewing = ref<number | null>(null);
+const photoCache = new Map<number, PlacePhoto[]>();
+watch(() => props.item?.id, async id => {
+    viewing.value = null;
+    if (!id) return;
+    if (photoCache.has(id)) { photos.value = photoCache.get(id)!; return; }
+    photos.value = []; photosLoading.value = true;
+    try { const { data } = await appFetch<{ data: PlacePhoto[] }>(`/trips/${props.tripId}/itinerary/${id}/photos`); photoCache.set(id, data); if (props.item?.id === id) photos.value = data; }
+    catch { /* photos are a nice extra: leave the strip empty */ }
+    finally { photosLoading.value = false; }
+}, { immediate: true });
 // Tapping the dimmed backdrop closes the sheet.
 function backdropClick(event: MouseEvent) { if (event.target === dialog.value) emit('close'); }
 
@@ -45,6 +61,23 @@ const navigateUrl = computed(() => {
                     <h2 :id="`sheet-title-${item.id}`">{{ item.title }}</h2>
                 </div>
                 <button type="button" class="sheet-close" aria-label="Close details" @click="emit('close')"><X :size="18" /></button>
+            </div>
+
+            <div v-if="photosLoading || photos.length" class="place-photos" aria-label="Photos of this place">
+                <template v-if="photosLoading"><span v-for="n in 4" :key="n" class="photo-skeleton" aria-hidden="true" /></template>
+                <button v-for="(p, i) in photos" v-else :key="p.url" type="button" class="place-photo" :aria-label="`Photo ${i + 1} of ${photos.length}${p.credit ? `, by ${p.credit}` : ''}`" @click="viewing = i">
+                    <img :src="p.url" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                </button>
+            </div>
+            <p v-if="photos.length" class="photo-credit">Photos from {{ [...new Set(photos.map(p => p.source))].join(' and ') }}</p>
+            <div v-if="viewing !== null && photos[viewing]" class="photo-viewer" role="dialog" aria-label="Photo" @click.self="viewing = null">
+                <img :src="photos[viewing].url" alt="" referrerpolicy="no-referrer" />
+                <p>{{ viewing + 1 }} / {{ photos.length }}<template v-if="photos[viewing].credit"> · {{ photos[viewing].credit }}</template></p>
+                <div class="viewer-nav">
+                    <button type="button" class="btn secondary" :disabled="viewing === 0" @click="viewing--">Previous</button>
+                    <button type="button" class="btn secondary" @click="viewing = null">Close</button>
+                    <button type="button" class="btn secondary" :disabled="viewing === photos.length - 1" @click="viewing++">Next</button>
+                </div>
             </div>
 
             <a v-if="item.location" class="sheet-place" :href="googleMapsUrl(item.location)" target="_blank" rel="noopener noreferrer"><MapPin :size="15" aria-hidden="true" /> <span>{{ item.location }}</span><span class="sr-only"> (opens Google Maps)</span></a>
@@ -80,6 +113,16 @@ const navigateUrl = computed(() => {
 .sheet-when{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#5d7051}
 .sheet-head h2{font-size:21px;font-weight:750;letter-spacing:-.5px;line-height:1.25;margin-top:4px;overflow-wrap:anywhere}
 .sheet-close{flex-shrink:0;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}
+.place-photos{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -20px;padding:0 20px 4px}
+.place-photo{flex:none;width:200px;height:140px;padding:0;border:0;border-radius:14px;overflow:hidden;background:#e8efe3;scroll-snap-align:start;cursor:zoom-in}
+.place-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-skeleton{flex:none;width:200px;height:140px;border-radius:14px;background:linear-gradient(90deg,#edf2e9,#f7faf4,#edf2e9);background-size:200% 100%;animation:shimmer 1.2s infinite}
+.photo-credit{font-size:11px;color:#8a978f;margin-top:-8px}
+.photo-viewer{position:fixed;inset:0;z-index:5;background:#0d1512f2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px}
+.photo-viewer img{max-width:100%;max-height:72dvh;border-radius:12px;object-fit:contain}
+.photo-viewer p{color:#dfe8da;font-size:12px;text-align:center}
+.viewer-nav{display:flex;gap:8px}
+@keyframes shimmer{to{background-position:-200% 0}}
 .sheet-place{display:flex;gap:7px;align-items:flex-start;font-size:13px;color:#4f6156;line-height:1.5}
 .sheet-place:hover span:first-of-type{text-decoration:underline;text-underline-offset:3px}
 .sheet-place svg{flex-shrink:0;margin-top:2px;color:#72883a}

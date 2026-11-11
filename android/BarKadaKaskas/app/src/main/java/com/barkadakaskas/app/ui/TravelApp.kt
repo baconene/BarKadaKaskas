@@ -620,7 +620,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
     Column {
         current.stops.forEachIndexed { index, stop ->
-            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone, trip.id) }, { vm.toggleStopDone(stop) }) { editing = stop; form = true }
+            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone, trip.id) }, { vm.toggleStopDone(stop) }, { vm.stopPhotos(stop.id) }) { editing = stop; form = true }
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }
@@ -700,7 +700,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     }
 }
 
-@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, edit: () -> Unit) {
+@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, photos: suspend () -> List<PlacePhoto>, edit: () -> Unit) {
     var expanded by rememberSaveable(stop.id) { mutableStateOf(false) }
     val located = guessed?.takeIf { !Itinerary.hasPin(stop) }?.let { stop.copy(latitude = it.first, longitude = it.second) } ?: stop
     val previousLocated = previous
@@ -745,6 +745,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 }
                 AnimatedVisibility(expanded) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PlacePhotoStrip(stop, photos)
                         if (stop.description.isNotBlank()) Text(stop.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                         stop.costNote?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1158,6 +1159,25 @@ private fun postTime(iso: String): String = runCatching {
             }
         }
     }
+}
+
+/** Photos of the stop's place from the web, loaded when its details open; tap one for full screen. */
+@Composable private fun PlacePhotoStrip(stop: Stop, load: suspend () -> List<PlacePhoto>) {
+    var photos by remember(stop.id) { mutableStateOf<List<PlacePhoto>?>(null) }
+    var viewing by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(stop.id) { if (photos == null) photos = load() }
+    val list = photos
+    if (list == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(3) { Box(Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFEDF2E9))) } }
+    else if (list.isNotEmpty()) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(list) { i, p ->
+                NetworkImage(model = p.url, contentDescription = "Photo ${i + 1} of ${stop.title}" + (p.credit?.let { ", by $it" } ?: ""), contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).clickable { viewing = i })
+            }
+        }
+        Text("Photos from ${list.map { it.source }.distinct().joinToString(" and ")}" + (list.firstNotNullOfOrNull { it.credit }?.let { " · $it" } ?: ""), color = Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    viewing?.let { start -> PhotoViewer(list.orEmpty().map { it.url }, start) { viewing = null } }
 }
 
 /** Swipeable full-screen gallery of a post's photos, starting at [start]. */

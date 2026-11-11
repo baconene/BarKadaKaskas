@@ -34,6 +34,7 @@ Route::middleware('auth')->group(function () {
     Route::post('trips/{trip}/itinerary/suggestions', [ItineraryPlanController::class, 'suggest'])->middleware('throttle:10,1')->name('itinerary.suggest');
     Route::post('trips/{trip}/itinerary/batch', [ItineraryPlanController::class, 'store'])->middleware('throttle:20,1')->name('itinerary.batch');
     Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary'])->name('itinerary.update');
+    Route::get('trips/{trip}/itinerary/{item}/photos', [\App\Http\Controllers\ItineraryPhotoController::class, 'show'])->middleware('throttle:60,1')->name('itinerary.photos');
     Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone'])->name('itinerary.done');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');
     Route::get('trips/{trip}/posts', [TripPostController::class, 'index'])->name('posts.index');

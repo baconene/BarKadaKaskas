@@ -61,6 +61,8 @@ data class TravelerDocument(val id: Long, val memberId: Long, val type: String, 
 }
 /** An activity suggested by the AI planner; times are local to the trip ("yyyy-MM-ddTHH:mm"), costs per person in minor units. */
 /** A new time for an activity already planned, suggested by the AI planner (local times, "yyyy-MM-ddTHH:mm"). */
+/** A photo of a stop's place from the web (Google Places or Wikimedia Commons), with its credit. */
+data class PlacePhoto(val url: String, val credit: String?, val source: String)
 data class StopChange(val itemId: Long, val title: String, val fromStartsAt: String, val fromEndsAt: String, val startsAt: String, val endsAt: String, val reason: String?)
 data class PlanSuggestion(val stops: List<StopSuggestion>, val changes: List<StopChange>)
 data class StopSuggestion(val title: String, val location: String?, val description: String?, val startsAt: String, val endsAt: String, val transport: String?, val costMinMinor: Long?, val costMaxMinor: Long?, val costNote: String?)
@@ -113,6 +115,8 @@ interface TravelRepository {
     /** AI-edits a photo with a template ([style]) or a request ([prompt]); returns the new image and the quota left. */
     suspend fun aiEditPhoto(jpeg: ByteArray, style: String?, prompt: String?): Pair<ByteArray, AiQuota?>
     suspend fun aiQuota(): AiQuota
+    /** Photos of a stop's place from the web (empty when none are found). */
+    suspend fun stopPhotos(tripId: Long, stopId: Long): List<PlacePhoto>
     /** The day's highlight ([date] yyyy-MM-dd; today in the trip's time zone when null). */
     suspend fun highlight(tripId: Long, date: String? = null): Highlight
     /** Makes the day's AI cover (one AI edit); returns its URL. */

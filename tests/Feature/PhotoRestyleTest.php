@@ -49,7 +49,7 @@ class PhotoRestyleTest extends TestCase
         Http::fake(['aiplatform.googleapis.com/*' => Http::sequence()
             ->push(['error' => ['status' => 'NOT_FOUND', 'message' => 'model not found']], 404)
             ->push(['candidates' => [['content' => ['parts' => [['text' => 'I cannot do that']]], 'finishReason' => 'STOP']]])]);
-        $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertStatus(502)->assertJsonPath('message', fn ($m) => str_contains($m, 'VERTEX_IMAGE_MODEL'));
+        $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertStatus(503)->assertJsonPath('message', fn ($m) => str_contains($m, 'VERTEX_IMAGE_MODEL'));
         $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertStatus(422);
         config(['services.gemini.api_key' => null]);
         $this->postJson('/api/v1/me/avatar/restyle', ['photo' => UploadedFile::fake()->image('me.jpg'), 'style' => 'sketch'], $this->headers($user))->assertStatus(503);

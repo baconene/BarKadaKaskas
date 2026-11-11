@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Before everything else, so it also sees error responses rendered from exceptions.
+        $middleware->prepend(\App\Http\Middleware\KeepErrorMessages::class);
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

@@ -59,7 +59,9 @@ class TripPlanner
         }
         if ($response->failed()) {
             Log::warning('AI trip planner failed', ['status' => $response->status(), 'error' => $response->json('error.status').': '.$response->json('error.message')]);
-            throw new HttpException(502, 'The AI planner is unavailable right now. Please try again, or add activities by hand.');
+            // Say what Google objected to, so a setup problem (model not enabled, quota, region) can be fixed.
+            $reason = trim((string) ($response->json('error.status') ?: 'HTTP '.$response->status()).': '.mb_substr((string) $response->json('error.message'), 0, 300), ': ');
+            throw new HttpException(502, 'The AI planner is unavailable right now ('.$reason.'). Please try again, or add activities by hand.');
         }
         $text = collect($response->json('candidates.0.content.parts', []))->pluck('text')->filter()->implode('');
         $answer = json_decode($text, true);

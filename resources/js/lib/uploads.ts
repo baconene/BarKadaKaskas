@@ -23,7 +23,7 @@ export async function appFetch<T = unknown>(url: string, options: { method?: str
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
         const firstError = json.errors ? Object.values(json.errors as Record<string, string[]>)[0]?.[0] : undefined;
-        throw new Error(response.status === 419 ? 'Your session expired. Refresh the page and try again.' : firstError ?? json.message ?? ([502, 504].includes(response.status) ? 'The server took too long to answer. Please try again in a moment.' : `Something went wrong (HTTP ${response.status}).`));
+        throw new Error(response.status === 419 ? 'Your session expired. Refresh the page and try again.' : firstError ?? json.message ?? ([502, 504].includes(response.status) ? `The server couldn’t finish that (HTTP ${response.status}). Please try again in a moment.` : `Something went wrong (HTTP ${response.status}).`));
     }
     return json as T;
 }

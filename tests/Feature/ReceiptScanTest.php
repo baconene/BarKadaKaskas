@@ -96,7 +96,7 @@ class ReceiptScanTest extends TestCase
             ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode(['is_receipt' => false, 'category' => 'other', 'items' => [], 'total' => null])]]]]]])
             ->push(['error' => ['status' => 'PERMISSION_DENIED', 'message' => 'nope']], 403)]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertUnprocessable()->assertJsonPath('message', 'That doesn’t look like a receipt. Try a photo of the whole receipt.');
-        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertStatus(502);
+        $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertStatus(503);
 
         config(['services.gemini.api_key' => null]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertStatus(503);
@@ -128,7 +128,7 @@ class ReceiptScanTest extends TestCase
     {
         Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('cURL error 28: Operation timed out'));
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))
-            ->assertStatus(504)->assertJsonPath('message', 'The receipt reader took too long to answer. Try again, or set a faster model (Flash or Flash Lite).');
+            ->assertStatus(503)->assertJsonPath('message', 'The receipt reader took too long to answer. Try again, or set a faster model (Flash or Flash Lite).');
     }
 
     public function test_minimal_thinking_is_requested_and_dropped_when_a_model_rejects_it(): void
@@ -157,6 +157,6 @@ class ReceiptScanTest extends TestCase
     {
         Http::fake(['aiplatform.googleapis.com/*' => Http::response(['error' => ['status' => 'NOT_FOUND', 'message' => 'Publisher model was not found']], 404)]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))
-            ->assertStatus(502)->assertJsonPath('message', fn ($m) => str_contains($m, 'VERTEX_LOCATION'));
+            ->assertStatus(503)->assertJsonPath('message', fn ($m) => str_contains($m, 'VERTEX_LOCATION'));
     }
 }

@@ -147,13 +147,17 @@ jobs:
           name: BarkadaKasKas 0.1.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: true
-          # What's new, shown in the app's update prompt (the commit message; trailers are stripped by the server).
-          body: ${{ github.event.head_commit.message || 'A new build of BarkadaKasKas.' }}
           fail_on_unmatched_files: true
           files: |
             dist/BarkadaKasKas.apk
             dist/BarkadaKasKas.ipa
+          # What's new comes first (the commit message), then "---" and the install help. The app's update prompt
+          # shows only the part before "---", without commit trailers.
           body: |
+            ${{ github.event.head_commit.message || 'A new build of BarkadaKasKas.' }}
+
+            ---
+
             Built from ${{ github.ref_name }} (${{ github.sha }}). Not on Google Play or the App Store; this page is the official download.
 
             **Android:** download `BarkadaKasKas.apk` on your phone, open it, allow "Install unknown apps" for your browser if asked, then tap Install.

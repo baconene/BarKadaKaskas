@@ -38,6 +38,7 @@ class AppVersionController extends Controller
     /** The release notes without commit trailers (co-author lines and the like). */
     private static function notes(string $body): string
     {
+        $body = preg_split('/^\s*---\s*$/m', $body)[0];   // what's new; the install help follows "---"
         $lines = array_filter(preg_split('/\R/', $body), fn ($line) => ! preg_match('/^[A-Za-z-]+: \S/', trim($line)));
         return trim(mb_substr(trim(implode("\n", $lines)), 0, 2000));
     }

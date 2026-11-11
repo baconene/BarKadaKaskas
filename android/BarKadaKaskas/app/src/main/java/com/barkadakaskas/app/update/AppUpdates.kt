@@ -68,7 +68,7 @@ object AppUpdates {
         val match = Regex("""^app-v(\d+\.\d+)\.(\d+)$""").find(json.getString("tag_name")) ?: error("Unknown tag")
         val assets = json.getJSONArray("assets")
         val apk = (0 until assets.length()).map { assets.getJSONObject(it) }.first { it.optString("name") == "BarkadaKasKas.apk" }
-        val notes = json.optString("body").lines().filterNot { Regex("""^[A-Za-z-]+: \S""").containsMatchIn(it.trim()) }.joinToString("\n").trim()
+        val notes = json.optString("body").split(Regex("(?m)^\\s*---\\s*$")).first().lines().filterNot { Regex("""^[A-Za-z-]+: \S""").containsMatchIn(it.trim()) }.joinToString("\n").trim()
         return AppRelease(match.groupValues[2].toInt(), "${match.groupValues[1]}.${match.groupValues[2]}", apk.getString("browser_download_url"), apk.optLong("size"), notes.take(2000), required = false)
     }
 

@@ -55,8 +55,11 @@ class HighlightTest extends TestCase
     /** Posts a photo at a local Manila time on Nov 12 (a different-looking photo each time unless one is given). */
     private function postAt(string $time, User $user, string $caption, ?UploadedFile $photo = null): array
     {
-        static $n = 0; $n++;
-        $photo ??= $this->scene([($n * 70) % 255, 150, (255 - $n * 50) % 255], [30, ($n * 90) % 255, 160], 100 + ($n * 170) % 600, ($n % 3) * 60 - 60);
+        static $n = 0;
+        // Clearly different views (checked to not count as repeats of each other).
+        $views = [[[120, 170, 230], [30, 90, 160], 200, 0], [[240, 150, 90], [60, 40, 80], 600, -80], [[120, 170, 230], [200, 190, 150], 650, 60], [[40, 40, 70], [230, 230, 220], 120, 140]];
+        [$sky, $sea, $sun, $shift] = $views[$n++ % count($views)];
+        $photo ??= $this->scene($sky, $sea, $sun, $shift);
         Carbon::setTestNow(Carbon::parse("2026-11-12 {$time}", 'Asia/Manila'));
         return $this->postJson("/api/v1/trips/{$this->trip->id}/posts", ['caption' => $caption, 'photos' => [$photo]], $this->headers($user))->assertCreated()->json('data');
     }

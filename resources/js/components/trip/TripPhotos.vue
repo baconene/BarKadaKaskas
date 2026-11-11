@@ -75,7 +75,7 @@ function addFiles(event: Event) {
     const room = 10 - picked.value.length;
     if (files.length > room) postError.value = 'You can post up to 10 photos at a time.';
     picked.value = [...picked.value, ...files.slice(0, room).map(file => ({ file, url: URL.createObjectURL(file) }))];
-    if (fileInput.value) fileInput.value.value = '';
+    (event.target as HTMLInputElement).value = ''; // lets the same camera/file be picked again
 }
 function removePicked(index: number) { URL.revokeObjectURL(picked.value[index].url); picked.value.splice(index, 1); }
 // Per-photo editing before posting: crop, filters and AI styles; the edited JPEG replaces the picked file.
@@ -185,6 +185,8 @@ const empty = computed(() => loaded.value && !posts.value.length);
                 <div class="picked">
                     <div v-for="(p, i) in picked" :key="p.url" class="thumb"><img :src="p.url" alt="" /><button type="button" :aria-label="`Remove photo ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button><button type="button" class="edit-thumb" :aria-label="`Edit photo ${i + 1}`" @click="editingIndex = i"><Sparkles :size="13" aria-hidden="true" /> Edit</button></div>
                     <label v-if="picked.length < 10" class="add-thumb"><ImagePlus :size="22" aria-hidden="true" /><span>{{ picked.length ? 'Add more' : 'Choose photos' }}</span><input ref="fileInput" type="file" accept="image/*" multiple class="sr-only" @change="addFiles" /></label>
+                    <!-- Opens the camera straight away on phones (capture); desktops show the file picker. -->
+                    <label v-if="picked.length < 10" class="add-thumb camera"><Camera :size="22" aria-hidden="true" /><span>Take photo</span><input type="file" accept="image/*" capture="environment" class="sr-only" @change="addFiles" /></label>
                 </div>
                 <label class="field">Caption<textarea v-model="caption" rows="3" maxlength="2000" placeholder="Say something about these moments…" /></label>
                 <p v-if="postError" class="error" role="alert">{{ postError }}</p>
@@ -253,6 +255,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .edit-thumb{position:absolute;left:4px;bottom:4px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:0;border-radius:999px;background:#ffffffe6;color:#214e3e;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
 .thumb button:not(.edit-thumb){position:absolute;top:4px;right:4px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:0;background:#172f2acc;color:#fff;cursor:pointer}
 .add-thumb{display:grid;place-content:center;justify-items:center;gap:4px;border:2px dashed #b9c9a6;background:#f5f9ef;color:#507044;font-size:12px;font-weight:650;cursor:pointer}
+.add-thumb.camera{background:#eef6e4;border-style:solid}
 .composer textarea{border:1px solid #d6dfd5;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;resize:vertical}
 .error{color:#9c3e2d;font-size:13px}
 .actions{display:flex;justify-content:flex-end;gap:10px}

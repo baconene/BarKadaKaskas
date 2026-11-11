@@ -52,6 +52,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('me/profile', [TravelerProfileController::class, 'update'])->name('traveler-profile.update');
     Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1')->name('avatar.store');
     Route::post('photos/restyle', [TravelerProfileController::class, 'restyle'])->middleware('throttle:10,1')->name('photos.restyle');
+    Route::get('photos/ai-quota', [TravelerProfileController::class, 'aiQuota']);
     Route::post('me/avatar/restyle', [TravelerProfileController::class, 'restyle'])->middleware('throttle:10,1')->name('avatar.restyle');
     Route::delete('me/avatar', [TravelerProfileController::class, 'destroyAvatar'])->name('avatar.destroy');
     Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store'])->name('expenses.store');

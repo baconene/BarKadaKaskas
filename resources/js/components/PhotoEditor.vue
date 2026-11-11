@@ -50,11 +50,24 @@ const allStyles: Record<string, { label: string; emoji: string }> = {
     headshot: { label: 'Studio headshot', emoji: '📸' }, beach: { label: 'Beach trip', emoji: '🏝️' },
     'golden-hour': { label: 'Golden hour', emoji: '🌅' }, postcard: { label: 'Vintage postcard', emoji: '📮' },
 };
+/** Ready-made AI edits for trip photos: they fix or change one thing and keep the photo real. */
+const edits: { key: string; label: string; emoji: string }[] = [
+    { key: 'enhance', label: 'Enhance', emoji: '✨' }, { key: 'brighten', label: 'Fix lighting', emoji: '💡' },
+    { key: 'blue-sky', label: 'Blue sky', emoji: '☀️' }, { key: 'sunset-sky', label: 'Sunset sky', emoji: '🌇' },
+    { key: 'remove-people', label: 'Remove people behind', emoji: '🧹' }, { key: 'tropical', label: 'Tropical colours', emoji: '🌴' },
+];
+// AI edits left in the current 4-hour window (the server enforces the limit for everyone).
+type Quota = { limit: number; remaining: number; resets_in: number };
+const quota = ref<Quota | null>(null);
+async function loadQuota() { try { quota.value = (await appFetch<{ data: Quota }>('/photos/ai-quota')).data; } catch { /* shown when the next edit answers */ } }
+const noAiLeft = computed(() => quota.value?.remaining === 0);
+const resetsIn = computed(() => { const s = quota.value?.resets_in ?? 0; const h = Math.floor(s / 3600), m = Math.ceil((s % 3600) / 60); return h ? `${h}h ${m}m` : `${Math.max(1, m)} min`; });
 const styleKeys = computed(() => props.subject === 'portrait'
     ? ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'headshot', 'beach']
     : ['cartoon', 'anime', 'watercolor', '3d', 'pop-art', 'sketch', 'golden-hour', 'postcard']);
 const styles = computed(() => styleKeys.value.map(key => ({ key, ...allStyles[key] })));
 const customPrompt = ref('');
+watch(() => tab.value, value => { if (value === 'ai') loadQuota(); });
 const filter = computed(() => [presets.find(p => p.key === preset.value)?.filter ?? '', `brightness(${tune.brightness}%) contrast(${tune.contrast}%) saturate(${tune.saturation}%)`].filter(Boolean).join(' '));
 
 /** On-screen crop frame: fits the dialog and follows the crop shape. */
@@ -152,12 +165,13 @@ async function restyle(style: string | null) {
         body.append('photo', await exportBlob(1024, 0.92), 'photo.jpg');
         if (style) body.append('style', style); else body.append('prompt', customPrompt.value.trim());
         body.append('subject', props.subject);
-        const { data } = await appFetch<{ data: { image: string } }>('/photos/restyle', { method: 'POST', body });
+        const { data, ai } = await appFetch<{ data: { image: string }; ai?: Quota }>('/photos/restyle', { method: 'POST', body });
+        if (ai) quota.value = ai;
         history.value.push(image.value?.src ?? props.source);
         await load(data.image);
         resetAll();
         tab.value = 'crop';
-    } catch (e) { error.value = e instanceof Error ? e.message : 'The AI could not restyle the photo.'; }
+    } catch (e) { error.value = e instanceof Error ? e.message : 'The AI could not restyle the photo.'; loadQuota(); }
     finally { restyling.value = false; }
 }
 async function undoAi() {
@@ -217,14 +231,23 @@ onMounted(async () => {
             </div>
 
             <div v-else class="panel">
-                <p class="muted small">Gemini redraws the photo in a new style. You can keep editing the result and only save if you like it.</p>
+                <p v-if="quota" class="quota" :class="{ out: noAiLeft }"><Sparkles :size="13" aria-hidden="true" /> {{ noAiLeft ? `No AI edits left · next in ${resetsIn}` : `${quota.remaining} of ${quota.limit} AI edits left` }}<template v-if="!noAiLeft && quota.remaining < quota.limit"> · resets in {{ resetsIn }}</template></p>
+                <template v-if="subject === 'photo'">
+                    <h4 class="group">Quick fixes</h4>
+                    <div class="styles" role="group" aria-label="AI edits">
+                        <button v-for="s in edits" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)"><span aria-hidden="true">{{ s.emoji }}</span>{{ s.label }}</button>
+                    </div>
+                    <h4 class="group">Art styles</h4>
+                </template>
+                <p v-else class="muted small">Gemini redraws the photo in a new style. You can keep editing the result and only save if you like it.</p>
                 <div class="styles" role="group" aria-label="AI styles">
-                    <button v-for="s in styles" :key="s.key" type="button" :disabled="restyling" @click="restyle(s.key)"><span aria-hidden="true">{{ s.emoji }}</span>{{ s.label }}</button>
+                    <button v-for="s in styles" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)"><span aria-hidden="true">{{ s.emoji }}</span>{{ s.label }}</button>
                 </div>
                 <form class="custom" @submit.prevent="customPrompt.trim() && restyle(null)">
-                    <input v-model="customPrompt" maxlength="200" placeholder="Or describe a look, e.g. hiking in the mountains" :disabled="restyling" />
-                    <button class="btn" :disabled="restyling || !customPrompt.trim()"><Sparkles :size="15" aria-hidden="true" /> Go</button>
+                    <input v-model="customPrompt" maxlength="200" :placeholder="subject === 'photo' ? 'Or describe a change, e.g. remove the car on the left' : 'Or describe a look, e.g. hiking in the mountains'" :disabled="restyling || noAiLeft" />
+                    <button class="btn" :disabled="restyling || noAiLeft || !customPrompt.trim()"><Sparkles :size="15" aria-hidden="true" /> Go</button>
                 </form>
+                <p class="muted small">Each AI edit counts toward {{ quota?.limit ?? 3 }} every 4 hours. You can keep editing the result and only save if you like it.</p>
                 <button v-if="history.length" type="button" class="btn secondary" @click="undoAi"><Undo2 :size="15" aria-hidden="true" /> Undo last AI style</button>
             </div>
 
@@ -263,6 +286,9 @@ header h2{font-size:19px;font-weight:750}
 .presets button{display:grid;justify-items:center;gap:4px;padding:6px;border:2px solid transparent;border-radius:12px;background:none;font:inherit;font-size:12px;font-weight:650;color:#172f2a;cursor:pointer;flex-shrink:0}
 .presets button[aria-pressed="true"]{border-color:#214e3e}
 .swatch{width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#f2b880,#6aa6a0 55%,#3a6b4f)}
+.quota{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#3d7650;background:#f0f7e8;border-radius:999px;padding:6px 12px;justify-self:start}
+.quota.out{color:#9c3e2d;background:#fff0eb}
+.group{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#76846e;margin-top:4px}
 .styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
 .styles button{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #dfe6da;border-radius:12px;background:#f7f8f4;font:inherit;font-size:13px;font-weight:650;color:#214e3e;cursor:pointer;text-align:left}
 .styles button:hover:not(:disabled){background:#edf4e3}

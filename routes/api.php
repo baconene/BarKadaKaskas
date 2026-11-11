@@ -48,6 +48,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('me/profile', [TravelerProfileController::class, 'update']);
         Route::post('me/avatar', [TravelerProfileController::class, 'storeAvatar'])->middleware('throttle:20,1');
         Route::post('photos/restyle', [TravelerProfileController::class, 'restyle'])->middleware('throttle:10,1');
+        Route::get('photos/ai-quota', [TravelerProfileController::class, 'aiQuota']);
         Route::post('me/avatar/restyle', [TravelerProfileController::class, 'restyle'])->middleware('throttle:10,1');
         Route::delete('me/avatar', [TravelerProfileController::class, 'destroyAvatar']);
         Route::post('trips/{trip}/expenses', [ExpenseController::class, 'store']);

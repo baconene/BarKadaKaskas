@@ -77,4 +77,29 @@ class PhotoRestyleTest extends TestCase
         $this->postJson('/api/v1/photos/restyle', ['photo' => UploadedFile::fake()->image('falls.jpg', 1600, 900), 'style' => 'golden-hour', 'subject' => 'photo'], $this->headers(User::factory()->create()))->assertOk();
         Http::assertSent(fn ($request) => str_contains($request['contents'][0]['parts'][1]['text'], 'travel photo') && str_contains($request['contents'][0]['parts'][1]['text'], 'golden-hour'));
     }
+
+    public function test_edit_templates_keep_the_photo_real(): void
+    {
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['inlineData' => ['mimeType' => 'image/png', 'data' => 'AAAA']]]]]]])]);
+        $user = User::factory()->create();
+        $this->postJson('/api/v1/photos/restyle', ['photo' => UploadedFile::fake()->image('beach.jpg', 1200, 800), 'style' => 'blue-sky', 'subject' => 'photo'], $this->headers($user))->assertOk()->assertJsonPath('ai.remaining', 2);
+        Http::assertSent(fn ($request) => str_contains($request['contents'][0]['parts'][1]['text'], 'Edit this travel photo') && str_contains($request['contents'][0]['parts'][1]['text'], 'clear blue sky'));
+        $this->getJson('/api/v1/photos/ai-quota', $this->headers($user))->assertOk()->assertJsonPath('data.limit', 3)->assertJsonPath('data.remaining', 2)
+            ->assertJsonPath('data.templates.edits', fn ($edits) => in_array('remove-people', $edits, true));
+    }
+
+    public function test_three_ai_edits_per_traveller_every_four_hours(): void
+    {
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['inlineData' => ['mimeType' => 'image/png', 'data' => 'AAAA']]]]]]])]);
+        $user = User::factory()->create();
+        $edit = fn () => $this->postJson('/api/v1/photos/restyle', ['photo' => UploadedFile::fake()->image('a.jpg'), 'style' => 'enhance', 'subject' => 'photo'], $this->headers($user));
+        $edit()->assertOk(); $edit()->assertOk(); $edit()->assertOk()->assertJsonPath('ai.remaining', 0);
+        $edit()->assertStatus(429)->assertJsonPath('ai.remaining', 0)->assertJsonPath('message', fn ($m) => str_contains($m, '3 AI edits'));
+        Http::assertSentCount(3);
+        // Someone else still has their own three.
+        $this->postJson('/api/v1/photos/restyle', ['photo' => UploadedFile::fake()->image('a.jpg'), 'style' => 'enhance', 'subject' => 'photo'], $this->headers(User::factory()->create()))->assertOk();
+        // Four hours later the limit resets.
+        $this->travel(4 * 60 + 1)->minutes();
+        $edit()->assertOk();
+    }
 }

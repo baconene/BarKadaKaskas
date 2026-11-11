@@ -174,3 +174,9 @@ alongside or instead of `items`. The model has 50 seconds; slower answers return
 credit, if known) and `source` (`Google` or `Wikimedia Commons`). Google Places photos (Places API (New), with
 `GOOGLE_MAPS_BROWSER_KEY`) come first; Wikimedia Commons tops them up when Google has fewer than five. Only links are
 returned (no files are stored); results are cached for a week per place.
+
+## Things to do at a stop's place
+
+`GET /api/v1/trips/{trip}/itinerary/{item}/tips` returns about five recommended things to do there (`title`,
+`detail` — a one-line tip), written by Gemini on Vertex AI and cached per place for 30 days. Empty when the AI isn't
+set up or can't answer.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { CircleCheck, Circle, Clock, Map as MapIcon, MapPin, Navigation, Pencil, Route, Wallet, X } from 'lucide-vue-next';
+import { CircleCheck, Circle, Clock, Map as MapIcon, MapPin, Navigation, Pencil, Route, Sparkles, Wallet, X } from 'lucide-vue-next';
 import type { LegResult } from '@/components/ItineraryRouteMap.vue';
 import { costRange, dayKey, transport, type ItineraryStop } from '@/lib/itinerary';
 import { appFetch } from '@/lib/uploads';
@@ -21,6 +21,19 @@ const photos = ref<PlacePhoto[]>([]);
 const photosLoading = ref(false);
 const viewing = ref<number | null>(null);
 const photoCache = new Map<number, PlacePhoto[]>();
+// Recommended things to do at the place (AI, cached on the server per place).
+type Tip = { title: string; detail: string | null };
+const tips = ref<Tip[]>([]);
+const tipsLoading = ref(false);
+const tipCache = new Map<number, Tip[]>();
+watch(() => props.item?.id, async id => {
+    if (!id) return;
+    if (tipCache.has(id)) { tips.value = tipCache.get(id)!; return; }
+    tips.value = []; tipsLoading.value = true;
+    try { const { data } = await appFetch<{ data: Tip[] }>(`/trips/${props.tripId}/itinerary/${id}/tips`); tipCache.set(id, data); if (props.item?.id === id) tips.value = data; }
+    catch { /* optional extra */ }
+    finally { tipsLoading.value = false; }
+}, { immediate: true });
 watch(() => props.item?.id, async id => {
     viewing.value = null;
     if (!id) return;
@@ -95,6 +108,14 @@ const navigateUrl = computed(() => {
                 <div v-if="costRange(item.cost_min_minor, item.cost_max_minor)"><dt><Wallet :size="13" aria-hidden="true" /> Estimated cost</dt><dd><strong>{{ costRange(item.cost_min_minor, item.cost_max_minor) }}</strong> per person<span v-if="item.cost_note" class="cost-note">{{ item.cost_note }}</span></dd></div>
             </dl>
             <div v-if="item.description" class="sheet-notes"><h3>Notes</h3><p>{{ item.description }}</p></div>
+            <div v-if="tipsLoading || tips.length" class="sheet-notes">
+                <h3><Sparkles :size="12" aria-hidden="true" /> Things to do here</h3>
+                <p v-if="tipsLoading" class="tips-loading">Finding the best things to do…</p>
+                <ol v-else class="tips">
+                    <li v-for="t in tips" :key="t.title"><strong>{{ t.title }}</strong><span v-if="t.detail">{{ t.detail }}</span></li>
+                </ol>
+                <p v-if="!tipsLoading" class="photo-credit">Suggested by AI. Check opening hours and conditions before you go.</p>
+            </div>
             <p v-if="doneError" class="sheet-done-error" role="alert">{{ doneError }}</p>
             <p v-else class="sheet-done-note">Everyone on the trip sees what’s done.</p>
 
@@ -133,6 +154,11 @@ const navigateUrl = computed(() => {
 .sheet-facts dd{margin-top:4px;font-size:13px;line-height:1.55}
 .cost-note{display:block;font-size:12px;color:#5f6f66;margin-top:3px}
 .sheet-notes h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#76846e}
+.sheet-notes h3{display:flex;align-items:center;gap:5px}
+.tips{margin:8px 0 0;padding-left:20px;display:grid;gap:8px;font-size:14px;color:#33463d}
+.tips li strong{display:block;color:#172f2a}
+.tips li span{display:block;font-size:13px;line-height:1.5;color:#5f6f66}
+.tips-loading{font-size:13px;color:#8a978f}
 .sheet-notes p{margin-top:6px;white-space:pre-wrap;font-size:14px;line-height:1.7;color:#33463d}
 .sheet-done-note{font-size:11px;color:#8a978f}
 .sheet-done-error{font-size:12px;color:#b42318}

@@ -620,7 +620,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
     Column {
         current.stops.forEachIndexed { index, stop ->
-            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone, trip.id) }, { vm.toggleStopDone(stop) }, { vm.stopPhotos(stop.id) }) { editing = stop; form = true }
+            TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone, trip.id) }, { vm.toggleStopDone(stop) }, { vm.stopPhotos(stop.id) }, { vm.stopTips(stop.id) }) { editing = stop; form = true }
         }
     }
     if (form) StopForm(vm, detail, editing) { form = false }
@@ -700,7 +700,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     }
 }
 
-@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, photos: suspend () -> List<PlacePhoto>, edit: () -> Unit) {
+@Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, photos: suspend () -> List<PlacePhoto>, tips: suspend () -> List<PlaceTip>, edit: () -> Unit) {
     var expanded by rememberSaveable(stop.id) { mutableStateOf(false) }
     val located = guessed?.takeIf { !Itinerary.hasPin(stop) }?.let { stop.copy(latitude = it.first, longitude = it.second) } ?: stop
     val previousLocated = previous
@@ -748,6 +748,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                         PlacePhotoStrip(stop, photos)
                         if (stop.description.isNotBlank()) Text(stop.description, color = Muted, style = MaterialTheme.typography.bodySmall)
                         stop.costNote?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                        PlaceTips(stop, tips)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (stop.location.isNotBlank()) OutlinedButton(onClick = { open(Itinerary.searchUrl(located)) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.Map, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("View on map") }
                             val directions = previousLocated?.takeIf { !Itinerary.samePlace(it, stop) }?.let { Itinerary.directionsUrl(it, located) }
@@ -1156,6 +1157,35 @@ private fun postTime(iso: String): String = runCatching {
             Spacer(Modifier.width(8.dp))
             FilledIconButton(onClick = { vm.addComment(post, body) { body = "" } }, enabled = body.isNotBlank() && !vm.commentSending, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Forest)) {
                 if (vm.commentSending) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.Send, "Post comment", tint = Color.White)
+            }
+        }
+    }
+}
+
+/** Recommended things to do at the stop's place (AI), loaded when its details open. */
+@Composable private fun PlaceTips(stop: Stop, load: suspend () -> List<PlaceTip>) {
+    var tips by remember(stop.id) { mutableStateOf<List<PlaceTip>?>(null) }
+    LaunchedEffect(stop.id) { if (tips == null) tips = load() }
+    val list = tips
+    if (list != null && list.isEmpty()) return
+    Surface(color = Color(0xFFF5F8F1), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Color(0xFFE3EADC))) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, null, tint = Moss, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(5.dp))
+                Text("THINGS TO DO HERE", color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
+            if (list == null) Text("Finding the best things to do…", color = Muted, style = MaterialTheme.typography.bodySmall)
+            else {
+                list.forEachIndexed { i, tip ->
+                    Row {
+                        Text("${i + 1}.", Modifier.width(20.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Column {
+                            Text(tip.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                            tip.detail?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+                Text("Suggested by AI. Check opening hours and conditions before you go.", color = Muted, style = MaterialTheme.typography.labelSmall)
             }
         }
     }

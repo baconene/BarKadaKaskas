@@ -214,6 +214,13 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         return runCatching { repository.stopPhotos(tripId, stopId) }.getOrDefault(emptyList()).also { if (it.isNotEmpty()) stopPhotoCache[stopId] = it }
     }
 
+    private val stopTipCache = mutableMapOf<Long, List<PlaceTip>>()
+    suspend fun stopTips(stopId: Long): List<PlaceTip> {
+        stopTipCache[stopId]?.let { return it }
+        val tripId = detail?.trip?.id ?: return emptyList()
+        return runCatching { repository.stopTips(tripId, stopId) }.getOrDefault(emptyList()).also { if (it.isNotEmpty()) stopTipCache[stopId] = it }
+    }
+
     // Day highlight (Photos tab).
     var highlight by mutableStateOf<Highlight?>(null); private set
     var highlightLoading by mutableStateOf(false); private set

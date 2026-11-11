@@ -45,6 +45,23 @@ class ItineraryPhotosTest extends TestCase
         Http::assertSentCount(4);
     }
 
+    public function test_recommended_activities_come_from_the_ai_and_are_cached(): void
+    {
+        config(['services.gemini.api_key' => 'test-key', 'services.gemini.credentials' => null, 'services.gemini.project' => 'demo', 'services.gemini.model' => 'gemini-2.5-flash']);
+        [$owner, $trip, $item] = $this->setUpTrip();
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['text' => json_encode(['activities' => [
+            ['title' => 'Swing from the rope into the pool', 'detail' => 'Go before 9 AM to beat the crowds.'],
+            ['title' => '  ', 'detail' => 'dropped'],
+            ['title' => 'Ride the bamboo raft'],
+        ]])]]]]]])]);
+        $url = "/trips/{$trip->id}/itinerary/{$item->id}/tips";
+        $tips = $this->actingAs($owner)->getJson($url)->assertOk()->json('data');
+        $this->assertSame([['title' => 'Swing from the rope into the pool', 'detail' => 'Go before 9 AM to beat the crowds.'], ['title' => 'Ride the bamboo raft', 'detail' => null]], $tips);
+        Http::assertSent(fn ($request) => str_contains((string) $request->body(), 'Cambugahay Falls, Lazi, Siquijor'));
+        $this->actingAs($owner)->getJson($url)->assertOk()->assertJsonCount(2, 'data');
+        Http::assertSentCount(1);
+    }
+
     public function test_only_travellers_see_them(): void
     {
         config(['services.google_maps.browser_key' => '']);

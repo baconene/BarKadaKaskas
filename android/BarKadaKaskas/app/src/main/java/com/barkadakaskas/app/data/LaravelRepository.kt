@@ -92,6 +92,15 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun alerts(after: Long?): AlertPage = ApiJson.alertPage(request("GET", "/alerts" + (after?.let { "?after=$it" } ?: "")))
     override suspend fun markAlertsRead(ids: List<Long>): Int =
         request("POST", "/alerts/read", JSONObject().put("ids", JSONArray().apply { ids.forEach { put(it) } }))?.optInt("unread_count") ?: 0
+    override suspend fun aiEditPhoto(jpeg: ByteArray, style: String?, prompt: String?): Pair<ByteArray, AiQuota?> {
+        val fields = buildMap { put("subject", "photo"); style?.let { put("style", it) }; prompt?.takeIf { it.isNotBlank() }?.let { put("prompt", it.trim()) } }
+        val body = request("POST", "/photos/restyle", raw = multipart(fields, listOf(FilePart("photo", "photo.jpg", "image/jpeg", jpeg))), readTimeout = 150_000)
+            ?: throw ApiException("The AI sent no image. Try again.")
+        val image = body.optJSONObject("data")?.optString("image").orEmpty().substringAfter("base64,", "")
+        if (image.isBlank()) throw ApiException("The AI sent no image. Try again.")
+        return android.util.Base64.decode(image, android.util.Base64.DEFAULT) to ApiJson.aiQuota(body.optJSONObject("ai"))
+    }
+    override suspend fun aiQuota(): AiQuota = ApiJson.aiQuota(data(request("GET", "/photos/ai-quota"))) ?: AiQuota(3, 3, 0)
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =
         request("POST", "/trips/$tripId/posts/$postId/comments", JSONObject().put("body", body.trim()))!!.let { ApiJson.comment(it.getJSONObject("data")) to it.optInt("comments_count") }
@@ -215,7 +224,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         404 -> "That item no longer exists. Refresh and try again."
         409, 422 -> message ?: "Please check the details and try again."
         410 -> message ?: "This invitation has expired."
-        429 -> "Too many attempts. Please wait a minute and try again."
+        429 -> message ?: "Too many attempts. Please wait a minute and try again."
         in 500..599 -> "The server had a problem. Please try again later."
         else -> message ?: "Something went wrong (HTTP $status)."
     }

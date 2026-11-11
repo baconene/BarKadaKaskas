@@ -16,6 +16,8 @@ data class Alert(val id: Long, val type: String, val title: String, val body: St
     val tab: Int get() = when (type) { "expense" -> 1; "comment", "post" -> 2; else -> 0 }
 }
 data class AlertPage(val alerts: List<Alert>, val unreadCount: Int)
+/** AI photo edits left in the current window (3 every 4 hours per traveller). */
+data class AiQuota(val limit: Int, val remaining: Int, val resetsInSeconds: Int)
 /** A comment under a photo post. */
 data class PostComment(val id: Long, val body: String, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val canDelete: Boolean)
 data class PostPage(val posts: List<Post>, val nextBefore: Long?)
@@ -91,6 +93,9 @@ interface TravelRepository {
     /** Toggles the viewer's heart; returns (liked, likesCount). */
     suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>
     suspend fun comments(tripId: Long, postId: Long): List<PostComment>
+    /** AI-edits a photo with a template ([style]) or a request ([prompt]); returns the new image and the quota left. */
+    suspend fun aiEditPhoto(jpeg: ByteArray, style: String?, prompt: String?): Pair<ByteArray, AiQuota?>
+    suspend fun aiQuota(): AiQuota
     /** Your latest alerts (or only those newer than [after]) and the unread count. */
     suspend fun alerts(after: Long? = null): AlertPage
     /** Marks [ids] (or all, when empty) read; returns the unread count. */

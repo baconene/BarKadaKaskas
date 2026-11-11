@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -48,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -999,7 +1001,15 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
             Text("Moments shared by the barkada", color = Muted)
         }
     }
-    Submit("Post photos", vm.busy, icon = Icons.Default.AddPhotoAlternate) { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    val camera = rememberPostCamera { uri -> picked = picked + uri }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+            Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Choose photos")
+        }
+        OutlinedButton(onClick = camera, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp)) {
+            Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Take photo", color = Forest)
+        }
+    }
     if (vm.postsLoadedFor == detail.trip.id && vm.posts.isEmpty()) EmptyState(Icons.Default.PhotoCamera, "No photos yet", "Be the first to share a moment from the trip.")
     if (vm.postsLoading && vm.posts.isEmpty()) repeat(2) { PostSkeleton() }
     vm.posts.forEach { post ->
@@ -1121,14 +1131,25 @@ private fun postTime(iso: String): String = runCatching {
     val scope = rememberCoroutineScope()
     var caption by rememberSaveable { mutableStateOf("") }
     var preparing by remember { mutableStateOf(false) }
-    FormSheet("Post photos", vm, dismiss, "${picked.size} photo${if (picked.size == 1) "" else "s"} · everyone on the trip can see this") {
+    var editing by remember { mutableStateOf<Int?>(null) }
+    val addMore = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) change((picked + uris).take(10)) }
+    val camera = rememberPostCamera { uri -> change((picked + uri).take(10)) }
+    editing?.let { index -> picked.getOrNull(index)?.let { uri -> PhotoEditorSheet(vm, uri, { edited -> change(picked.mapIndexed { i, u -> if (i == index) edited else u }); editing = null }) { editing = null } } }
+    FormSheet("Post photos", vm, dismiss, "${picked.size} photo${if (picked.size == 1) "" else "s"} · tap a photo to edit · everyone on the trip can see this") {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(picked, key = { _, uri -> uri.toString() }) { index, uri ->
-                Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp))) {
-                    NetworkImage(model = uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp)).clickable { editing = index }) {
+                    NetworkImage(model = uri, contentDescription = "Edit photo ${index + 1}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     Icon(Icons.Default.Close, "Remove photo", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).clickable { change(picked.filterIndexed { i, _ -> i != index }) }.padding(3.dp))
+                    Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(3.dp)); Text("Edit", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
+        }
+        if (picked.size < 10) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { addMore.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Add more") }
+            OutlinedButton(onClick = camera, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PhotoCamera, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Camera") }
         }
         Field("Caption", caption, { caption = it }, singleLine = false, supporting = "Say something about these moments")
         Submit(if (preparing) "Preparing photos…" else "Post ${picked.size} photo${if (picked.size == 1) "" else "s"}", vm.busy || preparing, picked.isNotEmpty(), Icons.AutoMirrored.Filled.Send) {
@@ -1139,6 +1160,142 @@ private fun postTime(iso: String): String = runCatching {
                 if (jpegs.isEmpty()) Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show() else vm.createPost(caption, jpegs, dismiss)
             }
         }
+    }
+}
+
+// ---- Photo editor (before posting) ----------------------------------------------------------------------
+
+private val photoFilters = listOf("original" to "Original", "warm" to "Warm", "cool" to "Cool", "vivid" to "Vivid", "bw" to "B&W", "vintage" to "Vintage", "fade" to "Fade")
+/** Ready-made AI edits (keep the photo real) and art styles; keys match the server's templates. */
+private val aiEdits = listOf("enhance" to "✨ Enhance", "brighten" to "💡 Fix lighting", "blue-sky" to "☀️ Blue sky", "sunset-sky" to "🌇 Sunset sky", "remove-people" to "🧹 Remove people behind", "tropical" to "🌴 Tropical colours")
+private val aiStyles = listOf("golden-hour" to "🌅 Golden hour", "postcard" to "📮 Vintage postcard", "watercolor" to "🖌️ Watercolor", "cartoon" to "🎨 Cartoon", "anime" to "✨ Anime", "sketch" to "✏️ Sketch")
+
+/** Colour adjustments for a filter preset plus brightness / contrast / saturation (1 = unchanged). */
+private fun photoMatrix(filter: String, brightness: Float, contrast: Float, saturation: Float): android.graphics.ColorMatrix {
+    val m = android.graphics.ColorMatrix()
+    val base = when (filter) { "vivid" -> 1.4f; "bw" -> 0f; "vintage" -> 0.8f; "fade" -> 0.8f; "cool" -> 0.9f; else -> 1f }
+    m.setSaturation(base * saturation)
+    val c = contrast * when (filter) { "vivid" -> 1.1f; "bw" -> 1.12f; "fade" -> 0.85f; "vintage" -> 0.92f; else -> 1f }
+    val b = (brightness - 1f) * 255f + when (filter) { "fade" -> 20f; "vintage" -> 12f; "warm" -> 6f; "cool" -> 8f; else -> 0f }
+    val t = (1f - c) * 128f + b
+    m.postConcat(android.graphics.ColorMatrix(floatArrayOf(c, 0f, 0f, 0f, t, 0f, c, 0f, 0f, t, 0f, 0f, c, 0f, t, 0f, 0f, 0f, 1f, 0f)))
+    when (filter) {
+        "warm" -> m.postConcat(android.graphics.ColorMatrix(floatArrayOf(1.08f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 0.9f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)))
+        "cool" -> m.postConcat(android.graphics.ColorMatrix(floatArrayOf(0.92f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1.1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)))
+        "vintage" -> m.postConcat(android.graphics.ColorMatrix(floatArrayOf(1.05f, 0.1f, 0f, 0f, 0f, 0.05f, 1f, 0.05f, 0f, 0f, 0f, 0.1f, 0.85f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)))
+    }
+    return m
+}
+
+/** The photo with its rotation and colour adjustments applied, as a new bitmap. */
+private fun renderPhoto(source: android.graphics.Bitmap, rotation: Int, matrix: android.graphics.ColorMatrix): android.graphics.Bitmap {
+    val rotated = if (rotation % 360 == 0) source else android.graphics.Bitmap.createBitmap(source, 0, 0, source.width, source.height, android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true)
+    val out = android.graphics.Bitmap.createBitmap(rotated.width, rotated.height, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(out).drawBitmap(rotated, 0f, 0f, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply { colorFilter = android.graphics.ColorMatrixColorFilter(matrix) })
+    return out
+}
+
+private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): ByteArray {
+    val longest = maxOf(bitmap.width, bitmap.height)
+    val scaled = if (longest > maxSide) android.graphics.Bitmap.createScaledBitmap(bitmap, bitmap.width * maxSide / longest, bitmap.height * maxSide / longest, true) else bitmap
+    return java.io.ByteArrayOutputStream().also { scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }.toByteArray()
+}
+
+/**
+ * Edits one photo before posting: rotate, filters, brightness / contrast / saturation, and AI quick fixes or art
+ * styles (3 AI edits every 4 hours, shown here). "Use photo" saves the result to a cache file and hands back its Uri.
+ */
+@Composable private fun PhotoEditorSheet(vm: TravelViewModel, uri: Uri, done: (Uri) -> Unit, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val history = remember { mutableStateListOf<android.graphics.Bitmap>() }
+    var rotation by remember { mutableIntStateOf(0) }
+    var filter by remember { mutableStateOf("original") }
+    var brightness by remember { mutableFloatStateOf(1f) }; var contrast by remember { mutableFloatStateOf(1f) }; var saturation by remember { mutableFloatStateOf(1f) }
+    var tab by remember { mutableIntStateOf(0) }
+    var prompt by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    LaunchedEffect(uri) {
+        bitmap = Photos.jpeg(context, uri, maxSide = 2000)?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+        if (bitmap == null) { Toast.makeText(context, "That photo couldn't be opened.", Toast.LENGTH_LONG).show(); dismiss() }
+    }
+    LaunchedEffect(tab) { if (tab == 1) vm.loadAiQuota() }
+    val matrix = photoMatrix(filter, brightness, contrast, saturation)
+    fun resetAdjustments() { rotation = 0; filter = "original"; brightness = 1f; contrast = 1f; saturation = 1f }
+    fun runAi(style: String?, request: String?) {
+        val current = bitmap ?: return
+        scope.launch {
+            val jpeg = withContext(kotlinx.coroutines.Dispatchers.Default) { jpegBytes(renderPhoto(current, rotation, matrix), maxSide = 1600) }
+            vm.aiEdit(jpeg, style, request) { result ->
+                android.graphics.BitmapFactory.decodeByteArray(result, 0, result.size)?.let { history.add(current); bitmap = it; resetAdjustments(); prompt = "" }
+            }
+        }
+    }
+    val quota = vm.aiQuota
+    val noAiLeft = quota?.remaining == 0
+    FormSheet("Edit photo", vm, { if (!vm.aiEditing && !saving) dismiss() }) {
+        Box(Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF1C2622)), contentAlignment = Alignment.Center) {
+            bitmap?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, Modifier.fillMaxSize().graphicsLayer { rotationZ = rotation.toFloat() }, contentScale = ContentScale.Fit,
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(androidx.compose.ui.graphics.ColorMatrix(matrix.array))) } ?: CircularProgressIndicator(color = Color.White)
+            if (vm.aiEditing) Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(color = Color.White); Spacer(Modifier.height(8.dp)); Text("AI is editing… this can take a minute", color = Color.White) }
+            }
+        }
+        TabRow(selectedTabIndex = tab, containerColor = Color.Transparent, contentColor = Forest) {
+            Tab(tab == 0, { tab = 0 }, text = { Text("Adjust") }, icon = { Icon(Icons.Default.Tune, null) })
+            Tab(tab == 1, { tab = 1 }, text = { Text("AI edit") }, icon = { Icon(Icons.Default.AutoAwesome, null) })
+        }
+        if (tab == 0) {
+            OutlinedButton(onClick = { rotation = (rotation + 90) % 360 }) { Icon(Icons.Default.RotateRight, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Rotate") }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { photoFilters.forEach { (key, label) -> FilterChip(filter == key, { filter = key }, label = { Text(label) }) } }
+            Text("Brightness", style = MaterialTheme.typography.labelLarge); Slider(brightness, { brightness = it }, valueRange = 0.5f..1.5f)
+            Text("Contrast", style = MaterialTheme.typography.labelLarge); Slider(contrast, { contrast = it }, valueRange = 0.5f..1.5f)
+            Text("Saturation", style = MaterialTheme.typography.labelLarge); Slider(saturation, { saturation = it }, valueRange = 0f..2f)
+        } else {
+            quota?.let { q ->
+                val wait = q.resetsInSeconds.let { s -> if (s >= 3600) "${s / 3600}h ${(s % 3600 + 59) / 60}m" else "${maxOf(1, (s + 59) / 60)} min" }
+                Surface(color = if (noAiLeft) Color(0xFFFFF0EB) else Sage, shape = RoundedCornerShape(50)) {
+                    Text(if (noAiLeft) "No AI edits left · next in $wait" else "${q.remaining} of ${q.limit} AI edits left" + if (q.remaining < q.limit) " · resets in $wait" else "",
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = if (noAiLeft) Danger else Forest, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("QUICK FIXES", color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { aiEdits.forEach { (key, label) -> AssistChip({ runAi(key, null) }, { Text(label) }, enabled = !vm.aiEditing && !noAiLeft) } }
+            Text("ART STYLES", color = Moss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { aiStyles.forEach { (key, label) -> AssistChip({ runAi(key, null) }, { Text(label) }, enabled = !vm.aiEditing && !noAiLeft) } }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(prompt, { if (it.length <= 200) prompt = it }, Modifier.weight(1f), placeholder = { Text("Or describe a change, e.g. remove the car on the left") }, enabled = !vm.aiEditing && !noAiLeft, shape = RoundedCornerShape(14.dp))
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(onClick = { runAi(null, prompt) }, enabled = prompt.isNotBlank() && !vm.aiEditing && !noAiLeft, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Forest)) { Icon(Icons.Default.AutoAwesome, "Run AI edit", tint = Color.White) }
+            }
+            if (history.isNotEmpty()) TextButton(onClick = { bitmap = history.removeAt(history.lastIndex); resetAdjustments() }, enabled = !vm.aiEditing) { Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Undo last AI edit") }
+            Text("Each AI edit counts toward ${quota?.limit ?: 3} every 4 hours.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        Submit(if (saving) "Saving…" else "Use photo", vm.aiEditing || saving, bitmap != null, Icons.Default.Check) {
+            val current = bitmap ?: return@Submit
+            saving = true
+            scope.launch {
+                val file = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    java.io.File(context.cacheDir, "camera/edited-${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs(); writeBytes(jpegBytes(renderPhoto(current, rotation, matrix))) }
+                }
+                saving = false
+                done(Uri.fromFile(file))
+            }
+        }
+    }
+}
+
+/** "Take photo" for posts: each shot goes to its own cache file, handed back as a Uri. */
+@Composable private fun rememberPostCamera(onPhoto: (Uri) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf<Uri?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved -> pending?.let { if (saved) onPhoto(it) }; pending = null }
+    return {
+        val file = java.io.File(context.cacheDir, "camera/post-${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs() }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        pending = uri
+        runCatching { launcher.launch(uri) }.onFailure { Toast.makeText(context, "No camera app found on this phone.", Toast.LENGTH_LONG).show() }
     }
 }
 

@@ -89,6 +89,8 @@ internal object ApiJson {
         Alert(a.getLong("id"), a.text("type"), a.text("title"), a.textOrNull("body"), a.optLong("trip_id"), a.textOrNull("trip_name"), a.optBoolean("read"), a.text("created_at"))
     }, body?.optInt("unread_count") ?: 0)
 
+    fun aiQuota(json: JSONObject?) = json?.let { AiQuota(it.optInt("limit", 3), it.optInt("remaining", 0), it.optInt("resets_in", 0)) }
+
     fun comments(body: JSONObject?) = body?.optJSONArray("data").mapObjects { comment(it) }
 
     fun postPage(body: JSONObject) = PostPage(body.optJSONArray("data").mapObjects { post(it) }, body.longOrNull("next_before"))

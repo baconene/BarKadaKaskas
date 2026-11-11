@@ -205,6 +205,21 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         repository.deletePost(id, post.id)
         posts = posts.filterNot { it.id == post.id }
     }
+    // AI photo edits (3 every 4 hours per traveller, enforced by the server).
+    var aiQuota by mutableStateOf<AiQuota?>(null); private set
+    var aiEditing by mutableStateOf(false); private set
+    fun loadAiQuota() { viewModelScope.launch { runCatching { aiQuota = repository.aiQuota() } } }
+    /** Runs an AI edit; [done] gets the new JPEG/PNG bytes. Errors (incl. the limit) show in the app's error banner. */
+    fun aiEdit(jpeg: ByteArray, style: String?, prompt: String?, done: (ByteArray) -> Unit) {
+        if (aiEditing) return
+        aiEditing = true; error = null
+        viewModelScope.launch {
+            try { val (image, quota) = repository.aiEditPhoto(jpeg, style, prompt); quota?.let { aiQuota = it }; done(image) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "The AI couldn't edit the photo."; loadAiQuota() }
+            finally { aiEditing = false }
+        }
+    }
+
     // Comments for the post whose comment sheet is open.
     var comments by mutableStateOf<List<PostComment>>(emptyList()); private set
     var commentsLoading by mutableStateOf(false); private set

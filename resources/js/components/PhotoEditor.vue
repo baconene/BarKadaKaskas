@@ -44,17 +44,17 @@ const presets: { key: string; label: string; filter: string }[] = [
     { key: 'vintage', label: 'Vintage', filter: 'sepia(0.5) contrast(0.92) brightness(1.06) saturate(0.85)' },
     { key: 'fade', label: 'Fade', filter: 'contrast(0.85) brightness(1.1) saturate(0.8)' },
 ];
-const allStyles: Record<string, { label: string; emoji: string }> = {
-    cartoon: { label: 'Cartoon', emoji: '🎨' }, anime: { label: 'Anime', emoji: '✨' }, watercolor: { label: 'Watercolor', emoji: '🖌️' },
-    '3d': { label: '3D animated', emoji: '🧸' }, 'pop-art': { label: 'Pop art', emoji: '💥' }, sketch: { label: 'Sketch', emoji: '✏️' },
-    headshot: { label: 'Studio headshot', emoji: '📸' }, beach: { label: 'Beach trip', emoji: '🏝️' },
-    'golden-hour': { label: 'Golden hour', emoji: '🌅' }, postcard: { label: 'Vintage postcard', emoji: '📮' },
+const allStyles: Record<string, { label: string }> = {
+    cartoon: { label: 'Cartoon' }, anime: { label: 'Anime' }, watercolor: { label: 'Watercolor' },
+    '3d': { label: '3D animated' }, 'pop-art': { label: 'Pop art' }, sketch: { label: 'Sketch' },
+    headshot: { label: 'Studio headshot' }, beach: { label: 'Beach trip' },
+    'golden-hour': { label: 'Golden hour' }, postcard: { label: 'Vintage postcard' },
 };
 /** Ready-made AI edits for trip photos: they fix or change one thing and keep the photo real. */
-const edits: { key: string; label: string; emoji: string }[] = [
-    { key: 'enhance', label: 'Enhance', emoji: '✨' }, { key: 'brighten', label: 'Fix lighting', emoji: '💡' },
-    { key: 'blue-sky', label: 'Blue sky', emoji: '☀️' }, { key: 'sunset-sky', label: 'Sunset sky', emoji: '🌇' },
-    { key: 'remove-people', label: 'Remove people behind', emoji: '🧹' }, { key: 'tropical', label: 'Tropical colours', emoji: '🌴' },
+const edits: { key: string; label: string }[] = [
+    { key: 'enhance', label: 'Enhance' }, { key: 'brighten', label: 'Fix lighting' },
+    { key: 'blue-sky', label: 'Blue sky' }, { key: 'sunset-sky', label: 'Sunset sky' },
+    { key: 'remove-people', label: 'Remove people behind' }, { key: 'tropical', label: 'Tropical colours' },
 ];
 // AI edits left in the current 4-hour window (the server enforces the limit for everyone).
 type Quota = { limit: number; remaining: number; resets_in: number };
@@ -235,13 +235,13 @@ onMounted(async () => {
                 <template v-if="subject === 'photo'">
                     <h4 class="group">Quick fixes</h4>
                     <div class="styles" role="group" aria-label="AI edits">
-                        <button v-for="s in edits" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)"><span aria-hidden="true">{{ s.emoji }}</span>{{ s.label }}</button>
+                        <button v-for="s in edits" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)">{{ s.label }}</button>
                     </div>
                     <h4 class="group">Art styles</h4>
                 </template>
                 <p v-else class="muted small">Gemini redraws the photo in a new style. You can keep editing the result and only save if you like it.</p>
                 <div class="styles" role="group" aria-label="AI styles">
-                    <button v-for="s in styles" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)"><span aria-hidden="true">{{ s.emoji }}</span>{{ s.label }}</button>
+                    <button v-for="s in styles" :key="s.key" type="button" :disabled="restyling || noAiLeft" @click="restyle(s.key)">{{ s.label }}</button>
                 </div>
                 <form class="custom" @submit.prevent="customPrompt.trim() && restyle(null)">
                     <input v-model="customPrompt" maxlength="200" :placeholder="subject === 'photo' ? 'Or describe a change, e.g. remove the car on the left' : 'Or describe a look, e.g. hiking in the mountains'" :disabled="restyling || noAiLeft" />

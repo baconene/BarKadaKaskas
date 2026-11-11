@@ -33,6 +33,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone']);
         Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1');
         Route::get('trips/{trip}/posts', [TripPostController::class, 'index']);
+        Route::get('trips/{trip}/highlights', [\App\Http\Controllers\HighlightController::class, 'show']);
+        Route::post('trips/{trip}/highlights/cover', [\App\Http\Controllers\HighlightController::class, 'cover'])->middleware('throttle:6,1');
         Route::get('trips/{trip}/documents', [TravelerDocumentController::class, 'index']);
         Route::post('trips/{trip}/documents', [TravelerDocumentController::class, 'store'])->middleware('throttle:20,1');
         Route::patch('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'update']);

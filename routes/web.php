@@ -37,6 +37,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone'])->name('itinerary.done');
     Route::post('trips/{trip}/receipt-scans', [ReceiptScanController::class, 'store'])->middleware('throttle:15,1')->name('receipts.scan');
     Route::get('trips/{trip}/posts', [TripPostController::class, 'index'])->name('posts.index');
+    Route::get('trips/{trip}/highlights', [\App\Http\Controllers\HighlightController::class, 'show'])->name('highlights.show');
+    Route::post('trips/{trip}/highlights/cover', [\App\Http\Controllers\HighlightController::class, 'cover'])->middleware('throttle:6,1')->name('highlights.cover');
     Route::get('trips/{trip}/documents', [TravelerDocumentController::class, 'index'])->name('documents.index');
     Route::post('trips/{trip}/documents', [TravelerDocumentController::class, 'store'])->middleware('throttle:20,1')->name('documents.store');
     Route::patch('trips/{trip}/documents/{document}', [TravelerDocumentController::class, 'update'])->name('documents.update');

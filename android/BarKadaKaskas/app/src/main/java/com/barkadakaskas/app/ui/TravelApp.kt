@@ -1167,8 +1167,8 @@ private fun postTime(iso: String): String = runCatching {
 
 private val photoFilters = listOf("original" to "Original", "warm" to "Warm", "cool" to "Cool", "vivid" to "Vivid", "bw" to "B&W", "vintage" to "Vintage", "fade" to "Fade")
 /** Ready-made AI edits (keep the photo real) and art styles; keys match the server's templates. */
-private val aiEdits = listOf("enhance" to "✨ Enhance", "brighten" to "💡 Fix lighting", "blue-sky" to "☀️ Blue sky", "sunset-sky" to "🌇 Sunset sky", "remove-people" to "🧹 Remove people behind", "tropical" to "🌴 Tropical colours")
-private val aiStyles = listOf("golden-hour" to "🌅 Golden hour", "postcard" to "📮 Vintage postcard", "watercolor" to "🖌️ Watercolor", "cartoon" to "🎨 Cartoon", "anime" to "✨ Anime", "sketch" to "✏️ Sketch")
+private val aiEdits = listOf("enhance" to "Enhance", "brighten" to "Fix lighting", "blue-sky" to "Blue sky", "sunset-sky" to "Sunset sky", "remove-people" to "Remove people behind", "tropical" to "Tropical colours")
+private val aiStyles = listOf("golden-hour" to "Golden hour", "postcard" to "Vintage postcard", "watercolor" to "Watercolor", "cartoon" to "Cartoon", "anime" to "Anime", "sketch" to "Sketch")
 
 /** Colour adjustments for a filter preset plus brightness / contrast / saturation (1 = unchanged). */
 private fun photoMatrix(filter: String, brightness: Float, contrast: Float, saturation: Float): android.graphics.ColorMatrix {

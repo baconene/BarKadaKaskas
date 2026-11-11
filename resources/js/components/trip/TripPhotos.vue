@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Heart, ImagePlus, MessageCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MessageCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
 import PostComments from '@/components/trip/PostComments.vue';
+import HighlightPlayer from '@/components/trip/HighlightPlayer.vue';
 import LoadingImage from '@/components/LoadingImage.vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -8,6 +9,8 @@ import { appFetch, shrinkImage } from '@/lib/uploads';
 
 /** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
 type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number };
+// The day highlight (30-second story of today's stops and photos).
+const showHighlight = ref(false);
 // Posts whose comments are open.
 const openComments = ref(new Set<number>());
 function toggleComments(id: number) { const next = new Set(openComments.value); if (next.has(id)) next.delete(id); else next.add(id); openComments.value = next; }
@@ -134,7 +137,10 @@ const empty = computed(() => loaded.value && !posts.value.length);
     <section class="photos" aria-labelledby="photos-title">
         <div class="photos-head">
             <div><h2 id="photos-title">Photos</h2><p class="muted">Moments from {{ tripName }}, shared by the barkada.</p></div>
-            <button v-if="!readOnly" type="button" class="btn post-desktop" @click="openComposer()"><ImagePlus :size="16" aria-hidden="true" /> Post photos</button>
+            <div class="head-actions">
+                <button v-if="posts.length" type="button" class="btn secondary highlight-btn" @click="showHighlight = true"><Clapperboard :size="16" aria-hidden="true" /> Day highlight</button>
+                <button v-if="!readOnly" type="button" class="btn post-desktop" @click="openComposer()"><ImagePlus :size="16" aria-hidden="true" /> Post photos</button>
+            </div>
         </div>
         <p v-if="error" class="error-box" role="alert">{{ error }} <button type="button" class="link" @click="load()">Try again</button></p>
 
@@ -177,6 +183,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <p class="sr-only" role="status">Loading photos…</p>
         </template>
 
+        <HighlightPlayer v-if="showHighlight" :trip-id="tripId" @close="showHighlight = false" />
         <button v-if="!readOnly" type="button" class="post-fab" @click="openComposer()"><ImagePlus :size="20" aria-hidden="true" /> Post photos</button>
 
         <dialog v-if="composing" ref="dialog" class="composer" aria-labelledby="composer-title" @close="onClosed">
@@ -231,6 +238,8 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .skeleton-post .sk-avatar{width:40px;height:40px;border-radius:50%;flex-shrink:0}.sk-line{display:block;height:12px;width:60%;border-radius:6px;margin:3px 0}.sk-line.short{width:30%}.sk-photo{aspect-ratio:4/3;border-radius:0}.sk-foot{padding:14px 16px}
 .more{position:absolute;inset:0;display:grid;place-items:center;background:#172f2a99;color:#fff;font-size:26px;font-weight:800}
 .caption{padding:12px 16px 0;font-size:15px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+.head-actions{display:flex;gap:8px;align-items:center}
+.highlight-btn{min-height:44px}
 .post-foot{display:flex;align-items:center;gap:6px;padding:8px 10px 12px}
 .comment-btn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 12px;border:0;border-radius:999px;background:transparent;color:#4d6158;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
 .comment-btn:hover,.comment-btn[aria-expanded="true"]{background:#f1f5ec;color:#214e3e}

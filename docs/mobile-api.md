@@ -160,3 +160,10 @@ notifies once per version, and downloads and installs the APK from inside the ap
 `amount_minor` with the same sign, `pending`). On each recorded bill, whoever paid the merchant more than their share
 fronted money for those who paid less, split in proportion to what each fronted; money not yet paid to the merchant is
 not counted. Confirmed repayments between the two reduce it; pending ones are listed but not counted.
+
+### AI planner: moving planned activities
+
+`POST /trips/{trip}/itinerary/suggestions` also returns `changes`: new times for activities already planned
+(`item_id`, `title`, `from_starts_at`, `from_ends_at`, `starts_at`, `ends_at`, `reason`), for requests like "move the
+busy spots to tomorrow". `POST /trips/{trip}/itinerary/batch` accepts `changes` (`item_id`, `starts_at`, `ends_at`)
+alongside or instead of `items`. The model has 50 seconds; slower answers return 504 with a message.

@@ -60,6 +60,9 @@ data class TravelerDocument(val id: Long, val memberId: Long, val type: String, 
     }
 }
 /** An activity suggested by the AI planner; times are local to the trip ("yyyy-MM-ddTHH:mm"), costs per person in minor units. */
+/** A new time for an activity already planned, suggested by the AI planner (local times, "yyyy-MM-ddTHH:mm"). */
+data class StopChange(val itemId: Long, val title: String, val fromStartsAt: String, val fromEndsAt: String, val startsAt: String, val endsAt: String, val reason: String?)
+data class PlanSuggestion(val stops: List<StopSuggestion>, val changes: List<StopChange>)
 data class StopSuggestion(val title: String, val location: String?, val description: String?, val startsAt: String, val endsAt: String, val transport: String?, val costMinMinor: Long?, val costMaxMinor: Long?, val costNote: String?)
 data class StopDraft(val title: String, val location: String, val description: String, val startsAt: String, val endsAt: String, val transport: String?, val latitude: Double? = null, val longitude: Double? = null)
 /** One receipt line in an itemized split, shared equally by [memberIds]. */
@@ -86,7 +89,7 @@ interface TravelRepository {
     /** Ticks an activity off for everyone on the trip, or undoes it. Any traveller on the trip may do this. */
     suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean)
     /** Organizer: the AI planner drafts activities for [prompt]; nothing is saved. */
-    suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion>
+    suspend fun suggestStops(tripId: Long, prompt: String): PlanSuggestion
     /** Documents on the trip this traveller may see (shared ones, plus their own and, for the organizer, everyone's). */
     suspend fun documents(tripId: Long): List<TravelerDocument>
     suspend fun uploadDocument(tripId: Long, type: String, label: String, visibility: String, bytes: ByteArray, mimeType: String, fileName: String): TravelerDocument
@@ -95,7 +98,7 @@ interface TravelRepository {
     /** The file's bytes (sent with the session token; documents are never public). */
     suspend fun documentFile(filePath: String): ByteArray
     /** Organizer: adds the approved suggestions to the itinerary in one go. */
-    suspend fun addStops(tripId: Long, stops: List<StopSuggestion>)
+    suspend fun addStops(tripId: Long, stops: List<StopSuggestion>, changes: List<StopChange> = emptyList())
     suspend fun createExpense(tripId: Long, draft: ExpenseDraft)
     suspend fun updateProfile(draft: ProfileDraft)
     suspend fun uploadAvatar(jpeg: ByteArray)

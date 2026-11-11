@@ -6,16 +6,18 @@ import { costRange, dayLabel, transport } from '@/lib/itinerary';
 import { appFetch } from '@/lib/uploads';
 
 /**
- * AI trip planner: describe the trip, review the suggested activities, untick any you don't want, and add the
- * rest to the itinerary in one go. Nothing is saved until "Add" is pressed.
+ * AI trip planner: describe the trip (or what to fix), review the suggested new activities and moves of planned
+ * ones, untick any you don't want, and apply the rest in one go. Nothing is saved until "Apply" is pressed.
  */
 type Suggestion = { title: string; location: string | null; description: string | null; starts_at: string; ends_at: string; transport_mode: string | null; cost_min_minor: number | null; cost_max_minor: number | null; cost_note: string | null };
+type Change = { item_id: number; title: string; from_starts_at: string; from_ends_at: string; starts_at: string; ends_at: string; reason: string | null };
 const props = defineProps<{ open: boolean; tripId: number; destination: string; initialPrompt?: string | null; autoGenerate?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const dialog = ref<HTMLDialogElement>();
 const prompt = ref('');
 const suggestions = ref<(Suggestion & { keep: boolean })[]>([]);
+const changes = ref<(Change & { keep: boolean })[]>([]);
 const generating = ref(false);
 const saving = ref(false);
 const error = ref('');
@@ -34,13 +36,21 @@ async function generate() {
     generating.value = true; error.value = '';
     const body = new FormData(); body.append('prompt', prompt.value.trim());
     try {
-        const { data } = await appFetch<{ data: Suggestion[] }>(`/trips/${props.tripId}/itinerary/suggestions`, { method: 'POST', body });
-        suggestions.value = data.map(s => ({ ...s, keep: true }));
+        const result = await appFetch<{ data: Suggestion[]; changes?: Change[] }>(`/trips/${props.tripId}/itinerary/suggestions`, { method: 'POST', body });
+        suggestions.value = result.data.map(s => ({ ...s, keep: true }));
+        changes.value = (result.changes ?? []).map(c => ({ ...c, keep: true }));
     } catch (e) { error.value = e instanceof Error ? e.message : 'The AI planner could not answer. Try again.'; }
     finally { generating.value = false; }
 }
 
 const kept = computed(() => suggestions.value.filter(s => s.keep));
+const keptChanges = computed(() => changes.value.filter(c => c.keep));
+const hasResults = computed(() => suggestions.value.length > 0 || changes.value.length > 0);
+const shortDay = (local: string) => new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${local.slice(0, 10)}T00:00:00Z`));
+const applyLabel = computed(() => {
+    const parts = [keptChanges.value.length ? `move ${keptChanges.value.length}` : '', kept.value.length ? `add ${kept.value.length}` : ''].filter(Boolean);
+    return parts.length ? `${parts.join(' and ').replace(/^./, c => c.toUpperCase())} ${keptChanges.value.length + kept.value.length === 1 ? 'activity' : 'activities'}` : 'Nothing selected';
+});
 const days = computed(() => {
     const groups = new Map<string, (typeof suggestions.value)[number][]>();
     suggestions.value.forEach(s => { const key = s.starts_at.slice(0, 10); groups.set(key, [...(groups.get(key) ?? []), s]); });
@@ -50,15 +60,16 @@ const clock = (local: string) => { const [h, m] = local.slice(11, 16).split(':')
 function setDay(key: string, keep: boolean) { suggestions.value.forEach(s => { if (s.starts_at.startsWith(key)) s.keep = keep; }); }
 
 async function add() {
-    if (!kept.value.length || saving.value) return;
+    if ((!kept.value.length && !keptChanges.value.length) || saving.value) return;
     saving.value = true; error.value = '';
     const body = new FormData();
     kept.value.forEach((s, i) => {
         (Object.keys(s) as (keyof Suggestion)[]).forEach(field => { const value = s[field]; if (value !== null && value !== undefined) body.append(`items[${i}][${field}]`, String(value)); });
     });
+    keptChanges.value.forEach((c, i) => { body.append(`changes[${i}][item_id]`, String(c.item_id)); body.append(`changes[${i}][starts_at]`, c.starts_at); body.append(`changes[${i}][ends_at]`, c.ends_at); });
     try {
         await appFetch(`/trips/${props.tripId}/itinerary/batch`, { method: 'POST', body });
-        suggestions.value = []; prompt.value = '';
+        suggestions.value = []; changes.value = []; prompt.value = '';
         router.reload({ only: ['trip'] });
         emit('close');
     } catch (e) { error.value = e instanceof Error ? e.message : 'Could not add the activities. Try again.'; }
@@ -75,15 +86,28 @@ async function add() {
             </header>
 
             <form class="ask" @submit.prevent="generate">
-                <label class="field">What kind of trip is it?
-                    <textarea v-model="prompt" rows="3" maxlength="2000" required placeholder="e.g. Beaches and waterfalls, budget-friendly, local food, we arrive by ferry on day 1 around 3 PM" />
+                <label class="field">What should the planner do?
+                    <textarea v-model="prompt" rows="3" maxlength="2000" required placeholder="e.g. Beaches and waterfalls, budget-friendly, local food. Or: move the busy weekend spots on Nov 12 to Nov 13" />
                 </label>
-                <button class="btn" :disabled="generating || prompt.trim().length < 3"><LoaderCircle v-if="generating" :size="16" class="spin" aria-hidden="true" /><Sparkles v-else :size="16" aria-hidden="true" /> {{ generating ? 'Planning… this can take a minute' : suggestions.length ? 'Suggest again' : 'Suggest an itinerary' }}</button>
+                <button class="btn" :disabled="generating || prompt.trim().length < 3"><LoaderCircle v-if="generating" :size="16" class="spin" aria-hidden="true" /><Sparkles v-else :size="16" aria-hidden="true" /> {{ generating ? 'Planning… this can take up to a minute' : hasResults ? 'Suggest again' : 'Suggest' }}</button>
             </form>
             <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-            <template v-if="suggestions.length">
-                <p class="muted">Untick anything you don’t want. You can edit each activity after it’s added.</p>
+            <template v-if="hasResults">
+                <p class="muted">Untick anything you don’t want. You can edit each activity afterwards.</p>
+                <section v-if="changes.length" class="day">
+                    <h3>Changes to your plan</h3>
+                    <label v-for="c in changes" :key="c.item_id" class="item" :class="{ off: !c.keep }">
+                        <input v-model="c.keep" type="checkbox" />
+                        <span class="time">Move</span>
+                        <span class="body">
+                            <strong>{{ c.title }}</strong>
+                            <small><s>{{ shortDay(c.from_starts_at) }} {{ clock(c.from_starts_at) }}</s> → <b>{{ shortDay(c.starts_at) }} {{ clock(c.starts_at) }}–{{ clock(c.ends_at) }}</b></small>
+                            <small v-if="c.reason" class="notes">{{ c.reason }}</small>
+                        </span>
+                    </label>
+                </section>
+                <p v-if="suggestions.length && changes.length" class="muted">New activities</p>
                 <section v-for="day in days" :key="day.key" class="day">
                     <h3>{{ day.label }} <span class="day-tools"><button type="button" class="link" @click="setDay(day.key, true)">All</button> · <button type="button" class="link" @click="setDay(day.key, false)">None</button></span></h3>
                     <label v-for="(s, i) in day.items" :key="`${day.key}-${i}`" class="item" :class="{ off: !s.keep }">
@@ -98,7 +122,7 @@ async function add() {
                     </label>
                 </section>
                 <div class="actions">
-                    <button type="button" class="btn" :disabled="saving || !kept.length" @click="add">{{ saving ? 'Adding…' : `Add ${kept.length} ${kept.length === 1 ? 'activity' : 'activities'} to the itinerary` }}</button>
+                    <button type="button" class="btn" :disabled="saving || (!kept.length && !keptChanges.length)" @click="add">{{ saving ? 'Saving…' : applyLabel }}</button>
                     <button type="button" class="btn secondary" :disabled="saving" @click="emit('close')">Cancel</button>
                 </div>
             </template>

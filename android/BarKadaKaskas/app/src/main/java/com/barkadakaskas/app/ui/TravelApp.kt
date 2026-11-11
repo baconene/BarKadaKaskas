@@ -634,15 +634,30 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     // Opened from "create trip" with a request: start suggesting straight away.
     LaunchedEffect(Unit) { if (vm.pendingAiPrompt != null && vm.suggestions.isEmpty()) vm.suggest(prompt) }
     val approved = vm.suggestions.filterIndexed { i, _ -> keep.getOrElse(i) { true } }
+    val keepChange = remember(vm.stopChanges) { mutableStateListOf<Boolean>().apply { repeat(vm.stopChanges.size) { add(true) } } }
+    val approvedChanges = vm.stopChanges.filterIndexed { i, _ -> keepChange.getOrElse(i) { true } }
+    fun when_(local: String) = runCatching { java.time.LocalDateTime.parse(local).format(DateTimeFormatter.ofPattern("EEE MMM d, h:mm a", Locale.ENGLISH)) }.getOrDefault(local)
     fun clock(local: String) = runCatching { java.time.LocalDateTime.parse(local).format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)) }.getOrDefault(local.takeLast(5))
-    FormSheet("Plan ${detail.trip.destination} with AI", vm, { if (!vm.planning) { vm.clearSuggestions(); dismiss() } }, "Describe the trip; you approve what gets added.") {
-        Field("What kind of trip is it?", prompt, { prompt = it }, singleLine = false, supporting = "e.g. Beaches and waterfalls, budget-friendly, local food, arriving by ferry on day 1 around 3 PM")
+    FormSheet("Plan ${detail.trip.destination} with AI", vm, { if (!vm.planning) { vm.clearSuggestions(); dismiss() } }, "Describe the trip or what to fix; you approve every change.") {
+        Field("What should the planner do?", prompt, { prompt = it }, singleLine = false, supporting = "e.g. Beaches and waterfalls, budget-friendly. Or: move the busy weekend spots on Nov 12 to Nov 13")
         Button(onClick = { vm.suggest(prompt) }, enabled = !vm.planning && !vm.busy && prompt.trim().length >= 3, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-            if (vm.planning) { CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Planning… this can take a minute") }
-            else { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (vm.suggestions.isEmpty()) "Suggest an itinerary" else "Suggest again") }
+            if (vm.planning) { CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Planning… up to a minute") }
+            else { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (vm.suggestions.isEmpty() && vm.stopChanges.isEmpty()) "Suggest" else "Suggest again") }
         }
-        if (vm.suggestions.isNotEmpty()) {
-            Text("Untick anything you don't want. You can edit each activity after it's added.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        if (vm.suggestions.isNotEmpty() || vm.stopChanges.isNotEmpty()) {
+            Text("Untick anything you don't want. You can edit each activity afterwards.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            if (vm.stopChanges.isNotEmpty()) Text("Changes to your plan", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+            vm.stopChanges.forEachIndexed { i, c ->
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { keepChange[i] = !keepChange[i] }.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                    Checkbox(keepChange.getOrElse(i) { true }, { keepChange[i] = it })
+                    Column(Modifier.weight(1f).padding(top = 10.dp).alpha(if (keepChange.getOrElse(i) { true }) 1f else 0.45f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Move · ${c.title}", fontWeight = FontWeight.SemiBold)
+                        Text("${when_(c.fromStartsAt)} → ${when_(c.startsAt)}", color = Moss, style = MaterialTheme.typography.labelMedium)
+                        c.reason?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+            if (vm.suggestions.isNotEmpty() && vm.stopChanges.isNotEmpty()) Text("New activities", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
             vm.suggestions.withIndex().groupBy { it.value.startsAt.take(10) }.forEach { (date, entries) ->
                 Text(runCatching { LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)) }.getOrDefault(date), fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
                 entries.forEach { (i, s) ->
@@ -658,7 +673,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                     }
                 }
             }
-            Submit("Add ${approved.size} ${if (approved.size == 1) "activity" else "activities"} to the itinerary", vm.busy, approved.isNotEmpty(), Icons.Default.Check) { vm.addSuggestions(approved, dismiss) }
+            val label = listOfNotNull(approvedChanges.size.takeIf { it > 0 }?.let { "move $it" }, approved.size.takeIf { it > 0 }?.let { "add $it" }).joinToString(" and ").replaceFirstChar { it.uppercase() }
+            Submit(if (label.isBlank()) "Nothing selected" else "$label ${if (approved.size + approvedChanges.size == 1) "activity" else "activities"}", vm.busy, approved.isNotEmpty() || approvedChanges.isNotEmpty(), Icons.Default.Check) { vm.addSuggestions(approved, approvedChanges, dismiss) }
         }
     }
 }

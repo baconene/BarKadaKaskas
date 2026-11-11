@@ -201,7 +201,13 @@ internal object ApiJson {
 
     fun suggestions(body: JSONObject?) = body?.optJSONArray("data").mapObjects { suggestion(it) }.filter { it.title.isNotBlank() && it.startsAt.isNotBlank() }
 
-    fun batchBody(stops: List<StopSuggestion>) = JSONObject().put("items", org.json.JSONArray().apply {
+    fun changes(body: JSONObject?) = body?.optJSONArray("changes").mapObjects { c ->
+        StopChange(c.optLong("item_id"), c.text("title"), c.text("from_starts_at"), c.text("from_ends_at"), c.text("starts_at"), c.text("ends_at"), c.textOrNull("reason"))
+    }.filter { it.itemId > 0 && it.startsAt.isNotBlank() }
+
+    fun batchBody(stops: List<StopSuggestion>, changes: List<StopChange> = emptyList()) = JSONObject().put("changes", org.json.JSONArray().apply {
+        changes.forEach { c -> put(JSONObject().put("item_id", c.itemId).put("starts_at", c.startsAt).put("ends_at", c.endsAt)) }
+    }).put("items", org.json.JSONArray().apply {
         stops.forEach { s -> put(JSONObject().put("title", s.title).put("location", s.location ?: JSONObject.NULL).put("description", s.description ?: JSONObject.NULL)
             .put("starts_at", s.startsAt).put("ends_at", s.endsAt).put("transport_mode", s.transport ?: JSONObject.NULL)
             .put("cost_min_minor", s.costMinMinor ?: JSONObject.NULL).put("cost_max_minor", s.costMaxMinor ?: JSONObject.NULL).put("cost_note", s.costNote ?: JSONObject.NULL)) }

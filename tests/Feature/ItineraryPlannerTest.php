@@ -72,12 +72,31 @@ class ItineraryPlannerTest extends TestCase
         $this->assertDatabaseCount('itinerary_items', 2);
     }
 
+    public function test_the_planner_can_move_planned_activities_and_they_are_applied_on_approval(): void
+    {
+        $item = fn ($title, $start, $done = false) => $this->trip->itineraryItems()->create(['title' => $title, 'starts_at' => \Carbon\CarbonImmutable::parse("2026-11-11 {$start}", 'Asia/Manila')->utc(), 'ends_at' => \Carbon\CarbonImmutable::parse("2026-11-11 {$start}", 'Asia/Manila')->addHours(2)->utc(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $this->owner->id, 'completed_at' => $done ? now() : null]);
+        $beach = $item('Salagdoong Beach', '09:00'); $done = $item('Breakfast', '07:00', true);
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['text' => json_encode(['activities' => [], 'changes' => [
+            ['item_id' => $beach->id, 'starts_at' => '2026-11-12T09:00', 'ends_at' => '2026-11-12T11:00', 'reason' => 'Busy on weekends; go on a weekday'],
+            ['item_id' => $done->id, 'starts_at' => '2026-11-12T07:00', 'ends_at' => '2026-11-12T08:00'],   // done: left alone
+            ['item_id' => 999999, 'starts_at' => '2026-11-12T07:00', 'ends_at' => '2026-11-12T08:00'],     // not on this trip
+        ]])]]], 'finishReason' => 'STOP']]])]);
+        $response = $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/suggestions", ['prompt' => 'Fix the itinerary: move the busy beach to tomorrow'], $this->headers($this->owner))->assertOk();
+        $this->assertSame([], $response->json('data'));
+        $this->assertSame([['item_id' => $beach->id, 'title' => 'Salagdoong Beach', 'from_starts_at' => '2026-11-11T09:00', 'from_ends_at' => '2026-11-11T11:00', 'starts_at' => '2026-11-12T09:00', 'ends_at' => '2026-11-12T11:00', 'reason' => 'Busy on weekends; go on a weekday']], $response->json('changes'));
+        Http::assertSent(fn ($request) => str_contains($request->body(), '#'.$beach->id.' '));
+
+        $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/batch", ['changes' => [['item_id' => $beach->id, 'starts_at' => '2026-11-12T09:00', 'ends_at' => '2026-11-12T11:00']]], $this->headers($this->owner))->assertCreated();
+        $this->assertSame('2026-11-12 01:00', $beach->fresh()->starts_at->format('Y-m-d H:i'));
+        $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/batch", ['changes' => [['item_id' => 999999, 'starts_at' => '2026-11-12T09:00', 'ends_at' => '2026-11-12T11:00']]], $this->headers($this->owner))->assertJsonValidationErrors('changes.0.item_id');
+    }
+
     public function test_only_the_organizer_plans_and_errors_are_readable(): void
     {
         $this->fakeGemini([]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/suggestions", ['prompt' => 'Beaches'], $this->headers($this->friend))->assertForbidden();
         $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/batch", ['items' => [['title' => 'X', 'starts_at' => '2026-11-11T09:00', 'ends_at' => '2026-11-11T10:00']]], $this->headers($this->friend))->assertForbidden();
-        $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/suggestions", ['prompt' => 'Beaches'], $this->headers($this->owner))->assertUnprocessable()->assertJsonPath('message', 'The AI planner could not suggest activities for that. Try describing the trip differently.');
+        $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/suggestions", ['prompt' => 'Beaches'], $this->headers($this->owner))->assertUnprocessable()->assertJsonPath('message', 'The AI planner could not suggest anything for that. Try describing what you want differently.');
 
         config(['services.gemini.api_key' => null]);
         $this->postJson("/api/v1/trips/{$this->trip->id}/itinerary/suggestions", ['prompt' => 'Beaches'], $this->headers($this->owner))->assertStatus(503);

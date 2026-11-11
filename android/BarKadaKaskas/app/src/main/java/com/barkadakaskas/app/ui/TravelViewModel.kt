@@ -145,19 +145,20 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
     // AI trip planner (organizer). Suggestions are only a draft until addSuggestions saves the approved ones.
     var pendingAiPrompt by mutableStateOf<String?>(null)
     var suggestions by mutableStateOf<List<StopSuggestion>>(emptyList()); private set
+    var stopChanges by mutableStateOf<List<StopChange>>(emptyList()); private set
     var planning by mutableStateOf(false); private set
     fun suggest(prompt: String) {
         val tripId = detail?.trip?.id ?: return
         if (planning || prompt.isBlank()) return
         planning = true; error = null
         viewModelScope.launch {
-            try { suggestions = repository.suggestStops(tripId, prompt) }
+            try { val plan = repository.suggestStops(tripId, prompt); suggestions = plan.stops; stopChanges = plan.changes }
             catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "The AI planner could not answer. Try again." }
             finally { planning = false }
         }
     }
-    fun clearSuggestions() { suggestions = emptyList() }
-    fun addSuggestions(approved: List<StopSuggestion>, done: () -> Unit) = mutate({ suggestions = emptyList(); done() }) { repo, current -> repo.addStops(current.trip.id, approved) }
+    fun clearSuggestions() { suggestions = emptyList(); stopChanges = emptyList() }
+    fun addSuggestions(approved: List<StopSuggestion>, changes: List<StopChange>, done: () -> Unit) = mutate({ clearSuggestions(); done() }) { repo, current -> repo.addStops(current.trip.id, approved, changes) }
     fun mutate(done: () -> Unit = {}, action: suspend (TravelRepository, TripDetail) -> Unit) = launch {
         val current = detail ?: return@launch
         action(repository, current)

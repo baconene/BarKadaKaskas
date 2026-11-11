@@ -75,9 +75,9 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         finally { connection.disconnect() }
     }
 
-    override suspend fun suggestStops(tripId: Long, prompt: String): List<StopSuggestion> =
-        ApiJson.suggestions(request("POST", "/trips/$tripId/itinerary/suggestions", JSONObject().put("prompt", prompt.trim()), readTimeout = 100_000))
-    override suspend fun addStops(tripId: Long, stops: List<StopSuggestion>) { request("POST", "/trips/$tripId/itinerary/batch", ApiJson.batchBody(stops)) }
+    override suspend fun suggestStops(tripId: Long, prompt: String): PlanSuggestion =
+        request("POST", "/trips/$tripId/itinerary/suggestions", JSONObject().put("prompt", prompt.trim()), readTimeout = 100_000).let { PlanSuggestion(ApiJson.suggestions(it), ApiJson.changes(it)) }
+    override suspend fun addStops(tripId: Long, stops: List<StopSuggestion>, changes: List<StopChange>) { request("POST", "/trips/$tripId/itinerary/batch", ApiJson.batchBody(stops, changes)) }
     override suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean) { request("PATCH", "/trips/$tripId/itinerary/$stopId/done", JSONObject().put("done", done)) }
 
     override suspend fun createExpense(tripId: Long, draft: ExpenseDraft) { request("POST", "/trips/$tripId/expenses", ApiJson.expenseBody(draft)) }

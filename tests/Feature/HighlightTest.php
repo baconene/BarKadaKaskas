@@ -93,7 +93,27 @@ class HighlightTest extends TestCase
         $this->getJson("/api/v1/trips/{$this->trip->id}/highlights", $this->headers(User::factory()->create()))->assertForbidden();
     }
 
-    public function test_repeated_scenery_is_shown_once(): void
+    public function test_the_reel_has_a_scene_per_stop_with_the_trip_there(): void
+    {
+        config(['services.google_maps.browser_key' => '']);   // no maps: scenes still come, without a route map
+        foreach ([['07:00', 'Cambugahay Falls', null], ['12:00', 'Lunch at Baha Bar', 'tricycle']] as [$time, $title, $mode]) {
+            $this->trip->itineraryItems()->create(['title' => $title, 'transport_mode' => $mode, 'starts_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->utc(), 'ends_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->addHour()->utc(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $this->owner->id]);
+        }
+        $best = $this->postAt('07:20', $this->owner, 'Jump!');
+        $this->postAt('07:50', $this->friend, 'Swim');
+        $this->postAt('12:30', $this->friend, 'Kinilaw');
+        $this->postJson("/api/v1/trips/{$this->trip->id}/posts/{$best['id']}/like", [], $this->headers($this->friend))->assertOk();
+
+        $scenes = $this->getJson("/api/v1/trips/{$this->trip->id}/highlights?date=2026-11-12", $this->headers($this->owner))->assertOk()->json('data.scenes');
+        $this->assertSame(['Cambugahay Falls', 'Lunch at Baha Bar'], array_column($scenes, 'title'));
+        $this->assertNull($scenes[0]['travel']);   // the day's first stop
+        $this->assertSame(['mode' => 'tricycle', 'label' => 'By tricycle', 'from' => 'Cambugahay Falls', 'map' => null, 'duration' => 2.6], $scenes[1]['travel']);
+        $this->assertSame(['Swim'], array_column($scenes[0]['photos'], 'caption'));   // "Jump!" is the cover
+        $this->assertSame(['Kinilaw'], array_column($scenes[1]['photos'], 'caption'));
+        $this->assertNotEmpty($scenes[1]['photos'][0]['by']);
+    }
+
+        public function test_repeated_scenery_is_shown_once(): void
     {
         $this->postAt('08:00', $this->owner, 'Beach', $this->scene([120, 170, 230], [30, 90, 160], 200));
         $this->postAt('08:01', $this->friend, 'Beach again', $this->scene([120, 170, 230], [30, 90, 160], 205, 8, 12)); // same view, a little brighter

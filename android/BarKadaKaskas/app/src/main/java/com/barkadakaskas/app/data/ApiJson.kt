@@ -96,7 +96,14 @@ internal object ApiJson {
         coverDuration = d.optDouble("cover_duration", 3.0), outroDuration = d.optDouble("outro_duration", 2.5),
         slides = d.optJSONArray("slides").mapObjects { s -> HighlightSlide(s.text("time"), s.text("title"), s.textOrNull("location"), s.imageUrl("photo_url").orEmpty(), s.textOrNull("caption"), s.optDouble("duration", 3.0)) },
         days = d.optJSONArray("days")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
-    )
+    ).let { h -> if (!d.has("scenes")) h else h.copy(scenes = d.optJSONArray("scenes").mapObjects { s ->
+        HighlightScene(s.text("time"), s.text("title"), s.textOrNull("location"),
+            s.optJSONObject("travel")?.let { t -> val map = t.optJSONObject("map")
+                HighlightTravel(t.text("mode"), t.text("label"), t.text("from"), map?.imageUrl("url"),
+                    map?.optJSONObject("from")?.optDouble("x")?.toFloat() ?: 0f, map?.optJSONObject("from")?.optDouble("y")?.toFloat() ?: 0f,
+                    map?.optJSONObject("to")?.optDouble("x")?.toFloat() ?: 0f, map?.optJSONObject("to")?.optDouble("y")?.toFloat() ?: 0f, t.optDouble("duration", 2.6)) },
+            s.optJSONArray("photos").mapObjects { p -> HighlightPhoto(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.textOrNull("by"), p.optDouble("duration", 2.0)) })
+    }) }
 
     fun aiQuota(json: JSONObject?) = json?.let { AiQuota(it.optInt("limit", 3), it.optInt("remaining", 0), it.optInt("resets_in", 0)) }
 

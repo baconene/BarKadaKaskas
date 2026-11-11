@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\TravelerProfileController as Ai;
 use App\Models\{Trip, TripPostPhoto};
 use App\Support\{ImageFingerprint, PublicImages};
+use App\Services\HighlightMaps;
 use App\Services\Vertex\PhotoRestyler;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -21,9 +22,12 @@ use Illuminate\Support\Str;
  */
 class HighlightController extends Controller
 {
+    private const TRAVEL = 2.6;
+    private const TRANSPORT_LABELS = ['car' => 'By car', 'van' => 'By van', 'taxi' => 'By taxi', 'motorcycle' => 'By motorcycle', 'tricycle' => 'By tricycle',
+        'walking' => 'On foot', 'bicycle' => 'By bike', 'transit' => 'By bus / transit', 'ferry' => 'By boat', 'flight' => 'By plane', 'other' => 'On the way'];
     private const LENGTH = 30.0; private const COVER = 3.0; private const OUTRO = 2.5; private const MAX_PHOTOS = 12;
 
-    public function show(Request $request, Trip $trip)
+    public function show(Request $request, Trip $trip, HighlightMaps $maps)
     {
         Gate::authorize('view', $trip);
         $date = $this->date($request, $trip);
@@ -45,6 +49,7 @@ class HighlightController extends Controller
                 'location' => $stop?->location,
                 'photo_url' => $photo['url'],
                 'caption' => $photo['caption'],
+                'by' => $photo['by'],
                 'stop_id' => $stop?->id,
             ];
         }
@@ -53,6 +58,7 @@ class HighlightController extends Controller
         usort($slides, fn ($a, $b) => ($order[$a['stop_id']] ?? PHP_INT_MAX) <=> ($order[$b['stop_id']] ?? PHP_INT_MAX));
         $each = $slides ? max(1.8, (self::LENGTH - self::COVER - self::OUTRO) / count($slides)) : 0;
         $slides = array_map(fn ($s) => $s + ['duration' => round($each, 2)], $slides);
+        $scenes = $this->scenes($trip, $items, $slides, $maps);
 
         $start = CarbonImmutable::parse($trip->starts_on->format('Y-m-d'));
         $day = $start->diffInDays(CarbonImmutable::parse($date)) + 1;
@@ -77,6 +83,7 @@ class HighlightController extends Controller
             'music_url' => asset('audio/highlight-travel.mp3'),
             'cover_duration' => self::COVER, 'outro_duration' => self::OUTRO,
             'slides' => array_values($slides),
+            'scenes' => $scenes,
             'stops' => $items->map(fn ($i) => ['time' => $i->starts_at->setTimezone($trip->timezone)->format('g:i A'), 'title' => $i->title])->values(),
             'days' => $days,
         ]]);
@@ -128,11 +135,47 @@ class HighlightController extends Controller
     /** Photos posted that day, with a score from the post's hearts and comments. */
     private function dayPhotos(Trip $trip, CarbonImmutable $from, CarbonImmutable $to)
     {
-        $posts = $trip->posts()->whereBetween('created_at', [$from, $to])->with('photos')->withCount(['likes', 'comments'])->get();
+        $posts = $trip->posts()->whereBetween('created_at', [$from, $to])->with(['photos', 'member.user'])->withCount(['likes', 'comments'])->get();
         return $posts->flatMap(fn ($post) => $post->photos->map(fn (TripPostPhoto $photo) => [
             'url' => PublicImages::url($photo->path), 'path' => $photo->path, 'caption' => $post->caption,
+            'by' => $post->member?->user ? \App\Services\Alerts::firstName($post->member->user) : null,
             'posted_at' => $post->created_at, 'score' => $post->likes_count * 2 + $post->comments_count - $photo->position * 0.1,
         ]))->values();
+    }
+
+    /**
+     * The reel: one scene per stop that has photos, in itinerary order. Each scene starts with the trip there from the
+     * stop before (its transport and, when both places are known, a map to draw the route on), then the photos in
+     * quick cuts. Photos are a little quicker than in the plain slideshow so the whole thing stays short.
+     */
+    private function scenes(Trip $trip, $items, array $slides, HighlightMaps $maps): array
+    {
+        if (! $slides) { return []; }
+        $photoTime = max(1.4, min(3.0, (self::LENGTH - self::COVER - self::OUTRO) / count($slides)));
+        $scenes = [];
+        foreach (collect($slides)->groupBy(fn ($s) => $s['stop_id'] ?? 0) as $stopId => $group) {
+            $index = $items->search(fn ($item) => $item->id === $stopId);
+            $stop = $index === false ? null : $items[$index];
+            $previous = $index ? $items[$index - 1] : null;
+            $travel = null;
+            if ($stop && $previous) {
+                $to = $maps->position($stop, $trip); $from = $maps->position($previous, $trip);
+                $travel = [
+                    'mode' => $stop->transport_mode ?: 'car',
+                    'label' => self::TRANSPORT_LABELS[$stop->transport_mode ?: 'other'] ?? 'On the way',
+                    'from' => $previous->title,
+                    'map' => $from && $to && ($from !== $to) ? $maps->route($from, $to) : null,
+                    'duration' => self::TRAVEL,
+                ];
+            }
+            $first = $group->first();
+            $scenes[] = [
+                'stop_id' => $stop?->id, 'time' => $first['time'], 'title' => $first['title'], 'location' => $first['location'],
+                'travel' => $travel,
+                'photos' => $group->map(fn ($s) => ['url' => $s['photo_url'], 'caption' => $s['caption'], 'by' => $s['by'], 'duration' => round($photoTime, 2)])->values()->all(),
+            ];
+        }
+        return $scenes;
     }
 
     /** Drops photos that look like one already kept (best first), so the same scenery isn't shown twice. */

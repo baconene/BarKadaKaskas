@@ -19,9 +19,14 @@ data class AlertPage(val alerts: List<Alert>, val unreadCount: Int)
 /** A day's highlight: cover, then itinerary stops with that day's photos, then an outro (about 30 s, with music). */
 data class HighlightSlide(val time: String, val title: String, val location: String?, val photoUrl: String, val caption: String?, val duration: Double)
 /** The cover's caption: "Day 3 of 8", trip name, full date, place, first → last stop, and counts. */
+/** The reel: per stop, the trip there (transport, and a map with both stops' positions 0–1 on it), then its photos. */
+data class HighlightTravel(val mode: String, val label: String, val from: String, val mapUrl: String?, val fromX: Float, val fromY: Float, val toX: Float, val toY: Float, val duration: Double)
+data class HighlightPhoto(val url: String, val caption: String?, val by: String?, val duration: Double)
+data class HighlightScene(val time: String, val title: String, val location: String?, val travel: HighlightTravel?, val photos: List<HighlightPhoto>)
 data class HighlightCover(val eyebrow: String, val title: String, val date: String, val destination: String?, val route: String?, val stats: String)
 data class Highlight(val date: String, val dayNumber: Int, val title: String, val subtitle: String, val coverUrl: String?, val basePhotoUrl: String?, val cover: HighlightCover?, val musicUrl: String,
-    val coverDuration: Double, val outroDuration: Double, val slides: List<HighlightSlide>, val days: List<String>)
+    val coverDuration: Double, val outroDuration: Double, val slides: List<HighlightSlide>, val days: List<String>,
+    val scenes: List<HighlightScene> = slides.map { HighlightScene(it.time, it.title, it.location, null, listOf(HighlightPhoto(it.photoUrl, it.caption, null, it.duration))) })
 /** AI photo edits left in the current window (3 every 4 hours per traveller). */
 data class AiQuota(val limit: Int, val remaining: Int, val resetsInSeconds: Int)
 /** A comment under a photo post. */

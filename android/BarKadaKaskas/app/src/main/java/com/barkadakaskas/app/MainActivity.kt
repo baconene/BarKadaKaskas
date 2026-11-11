@@ -40,7 +40,15 @@ class MainActivity : ComponentActivity() {
                 addOnNewIntentListener(listener)
                 onDispose { removeOnNewIntentListener(listener) }
             }
+            // New app versions: a prompt on opening (and from the update notification) with download and install.
+            var showUpdate by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(intent?.getBooleanExtra(com.barkadakaskas.app.update.AppUpdates.EXTRA_SHOW_UPDATE, false) == true) }
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                val listener = androidx.core.util.Consumer<android.content.Intent> { if (it.getBooleanExtra(com.barkadakaskas.app.update.AppUpdates.EXTRA_SHOW_UPDATE, false)) showUpdate = true }
+                addOnNewIntentListener(listener)
+                onDispose { removeOnNewIntentListener(listener) }
+            }
             TravelApp(vm)
+            com.barkadakaskas.app.update.UpdatePrompt(forceShow = showUpdate) { showUpdate = false; intent?.removeExtra(com.barkadakaskas.app.update.AppUpdates.EXTRA_SHOW_UPDATE) }
         }
     }
 

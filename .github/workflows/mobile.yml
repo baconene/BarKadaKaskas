@@ -147,6 +147,8 @@ jobs:
           name: BarkadaKasKas 0.1.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           make_latest: true
+          # What's new, shown in the app's update prompt (the commit message; trailers are stripped by the server).
+          body: ${{ github.event.head_commit.message || 'A new build of BarkadaKasKas.' }}
           fail_on_unmatched_files: true
           files: |
             dist/BarkadaKasKas.apk

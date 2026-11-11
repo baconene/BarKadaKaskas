@@ -4,4 +4,6 @@
     <cache-path name="camera" path="camera/" />
     <!-- Traveller documents opened in another app (PDF viewer, gallery); overwritten on each open. -->
     <cache-path name="documents" path="documents/" />
+    <!-- Downloaded app updates, handed to Android's installer. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

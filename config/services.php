@@ -24,6 +24,9 @@ return [
         'download_url' => env('ANDROID_DOWNLOAD_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.apk',
         'ios_download_url' => env('IOS_DOWNLOAD_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases/latest/download/BarkadaKasKas.ipa',
         'releases_url' => env('ANDROID_RELEASES_URL') ?: 'https://github.com/baconene/BarKadaKaskas/releases',
+        // In-app updates: where the releases come from, and the oldest build still allowed without updating.
+        'repository' => env('ANDROID_RELEASES_REPO') ?: 'baconene/BarKadaKaskas',
+        'min_version' => (int) env('ANDROID_MIN_VERSION', 0),
     ],
 
     // Password for the organizer account created by SiquijorTripSeeder (only used when the account does not exist yet).

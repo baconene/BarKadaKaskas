@@ -8,6 +8,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::post('auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::get('invitations/{token}', [TripController::class, 'invitation'])->middleware('throttle:60,1');
+    Route::get('app/android', [\App\Http\Controllers\AppVersionController::class, 'android'])->middleware('throttle:60,1');
 
     Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
         Route::get('auth/me', [AuthController::class, 'me']);

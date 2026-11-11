@@ -144,3 +144,11 @@ rate limits; honor `Retry-After`. Do not automatically retry financial writes
 after ambiguous network failures: refresh first to avoid duplicates.
 
 Implementation reference: https://github.com/laravel/docs/blob/13.x/sanctum.md
+
+## App updates (Android)
+
+`GET /api/v1/app/android` (no login) returns the newest Android build from the repository's latest GitHub release
+(cached 10 minutes): `version_code`, `version_name`, `apk_url`, `size` (bytes), `notes` (the release's commit message
+without trailers), `published_at`, and `min_version_code` (from `ANDROID_MIN_VERSION`; builds below it must update).
+The app checks this when it opens and about every 15 minutes in the background (falling back to GitHub directly),
+notifies once per version, and downloads and installs the APK from inside the app.

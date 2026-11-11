@@ -67,6 +67,8 @@ object AlertNotifications {
 /** The background check behind [AlertNotifications]. */
 class AlertsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        // New app version: one phone notification per version.
+        runCatching { com.barkadakaskas.app.update.AppUpdates.check(applicationContext)?.let { com.barkadakaskas.app.update.AppUpdates.notifyOnce(applicationContext, it) } }
         val repository = LaravelRepository(TokenStore(applicationContext))
         if (!repository.hasSession) return Result.success()
         return try {

@@ -118,7 +118,15 @@ private fun arcPoint(a: Offset, b: Offset, mode: String, t: Float): Offset {
         if (index < parts.lastIndex) index++ else { playing = false; index = 0; runCatching { player.pause(); player.seekTo(0) } }
     }
 
-    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // Full screen behind the status and navigation bars, but told their sizes (decorFitsSystemWindows = false), so the
+    // bars, buttons and captions below keep clear of the clock, camera cut-out and the phone's back/home buttons.
+    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val view = androidx.compose.ui.platform.LocalView.current
+        SideEffect {
+            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { window ->
+                androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
+            }
+        }
         Box(Modifier.fillMaxSize().background(ReelDark)) {
             if (h == null || vm.highlightLoading) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = Color.White); Spacer(Modifier.height(10.dp)); Text("Putting the day together…", color = Color.White)
@@ -144,7 +152,7 @@ private fun arcPoint(a: Offset, b: Offset, mode: String, t: Float): Offset {
                 }
             }
             IconButton(onClick = dismiss, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 18.dp, end = 6.dp)) { Icon(Icons.Default.Close, "Close highlight", tint = Color.White) }
-            if (h != null && !playing) Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (h != null && !playing) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, ReelDark.copy(alpha = 0.9f)))).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 28.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (h.days.size > 1) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(h.days) { day -> FilterChip(day == h.date, { vm.loadHighlight(day) }, label = { Text(runCatching { LocalDate.parse(day).format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)) }.getOrDefault(day)) },
                         colors = FilterChipDefaults.filterChipColors(labelColor = Color.White, selectedContainerColor = Color.White, selectedLabelColor = ReelGreen)) }
@@ -176,7 +184,7 @@ private fun arcPoint(a: Offset, b: Offset, mode: String, t: Float): Offset {
         NetworkImage(model = h.coverUrl ?: h.basePhotoUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom })
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)), startY = 600f)))
         val c = h.cover
-        Column(Modifier.align(Alignment.BottomStart).padding(start = 28.dp, end = 28.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 28.dp, end = 28.dp, bottom = 48.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("HIGHLIGHTS · " + (c?.eyebrow ?: "Day ${h.dayNumber}").uppercase(), color = Color(0xFFCFE0A5), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
             Text(c?.title ?: h.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge)
             Text(c?.date ?: h.subtitle, color = Color.White.copy(alpha = 0.95f), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
@@ -295,7 +303,7 @@ private fun arcPoint(a: Offset, b: Offset, mode: String, t: Float): Offset {
             if (scene.photos.size > 1) Text("${part.photo + 1}/${scene.photos.size}", color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
         }
         // Who posted it and the caption, bottom left like a reel.
-        Column(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 18.dp, end = 18.dp, bottom = 90.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 18.dp, end = 18.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             photo.by?.let { name ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(34.dp).clip(CircleShape).background(ReelMint), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase(), color = ReelGreen, fontWeight = FontWeight.ExtraBold) }

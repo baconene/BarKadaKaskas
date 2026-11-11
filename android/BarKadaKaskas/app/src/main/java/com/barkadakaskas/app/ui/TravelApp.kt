@@ -1106,7 +1106,7 @@ private fun postTime(iso: String): String = runCatching {
 /** Swipeable full-screen gallery of a post's photos, starting at [start]. */
 @Composable private fun PhotoViewer(urls: List<String>, start: Int, close: () -> Unit) {
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = start) { urls.size }
-    androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             androidx.compose.foundation.pager.HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

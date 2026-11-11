@@ -19,9 +19,11 @@ class PlacePhotos
     /** @return list<array{url: string, credit: ?string, source: string}> */
     public function for(ItineraryItem $item, Trip $trip): array
     {
-        $place = trim($item->location ?: $item->title);
-        if ($place === '') { return []; }
-        $query = str_contains(mb_strtolower($place), mb_strtolower((string) $trip->destination)) ? $place : trim($item->title.', '.$place.', '.$trip->destination, ', ');
+        // The place's name plus where it is ("Cambugahay Falls, Lazi, Siquijor"), adding the destination when missing.
+        $parts = array_values(array_unique(array_filter([trim($item->title), trim((string) $item->location)])));
+        if (! $parts) { return []; }
+        $query = implode(', ', $parts);
+        if ($trip->destination && ! str_contains(mb_strtolower($query), mb_strtolower($trip->destination))) { $query .= ', '.$trip->destination; }
         return Cache::remember('place-photos:v1:'.md5(mb_strtolower($query)), now()->addDays(7), function () use ($query, $item) {
             $photos = $this->google($query, $item);
             if (count($photos) < 5) { $photos = [...$photos, ...$this->wikimedia($item->title, $query, self::WANT - count($photos))]; }

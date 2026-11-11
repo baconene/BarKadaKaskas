@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\TravelerProfileController as Ai;
 use App\Models\{Trip, TripPostPhoto};
-use App\Support\PublicImages;
+use App\Support\{ImageFingerprint, PublicImages};
 use App\Services\Vertex\PhotoRestyler;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -13,7 +13,9 @@ use Illuminate\Support\Str;
 
 /**
  * A day's highlight (about 30 seconds, story style): a cover, then the day's itinerary stops in order, each with the
- * photos posted around that time, picked by hearts and comments; music on top. The players (web and mobile) render
+ * photos posted around that time, picked by hearts and comments, with near-duplicate shots (the same scenery posted
+ * twice, burst shots) left out; music on top. The cover uses the day's best photo, which then isn't repeated in the
+ * slides, and carries the trip name, date and the day's key details. The players (web and mobile) render
  * it; the web can also record it as a video file. The cover can be made with the AI image model from the day's best
  * photo; it is kept for everyone on the trip.
  */
@@ -28,7 +30,10 @@ class HighlightController extends Controller
         [$from, $to] = $this->range($trip, $date);
         $photos = $this->dayPhotos($trip, $from, $to);
         $items = $trip->itineraryItems()->whereBetween('starts_at', [$from, $to])->orderBy('starts_at')->orderBy('id')->get();
-        $picked = $photos->sortByDesc('score')->take(self::MAX_PHOTOS);
+        $unique = $this->distinct($photos->sortByDesc('score')->values());
+        $coverPhoto = $unique->first();
+        // The cover shows the best photo; the slides use the rest (unless it's the only one).
+        $picked = ($unique->count() > 1 ? $unique->slice(1) : $unique)->take(self::MAX_PHOTOS);
 
         // Each photo belongs to the stop that had started when it was posted (or the first stop, if posted earlier).
         $slides = [];
@@ -56,7 +61,19 @@ class HighlightController extends Controller
             'date' => $date, 'day_number' => (int) $day, 'day_count' => (int) $start->diffInDays(CarbonImmutable::parse($trip->ends_on->format('Y-m-d'))) + 1,
             'title' => $trip->name, 'subtitle' => 'Day '.(int) $day.' · '.CarbonImmutable::parse($date)->format('D, M j'),
             'cover_url' => ($path = Cache::get($this->coverKey($trip, $date))) && Storage::disk('local')->exists($path) ? PublicImages::url($path) : null,
-            'base_photo_url' => $picked->first()['url'] ?? null,
+            'base_photo_url' => $coverPhoto['url'] ?? null,
+            'cover' => [
+                'eyebrow' => 'Day '.(int) $day.' of '.((int) $start->diffInDays(CarbonImmutable::parse($trip->ends_on->format('Y-m-d'))) + 1),
+                'title' => $trip->name,
+                'date' => CarbonImmutable::parse($date)->format('l, F j, Y'),
+                'destination' => $trip->destination,
+                'route' => $items->count() > 1 ? $items->first()->title.' → '.$items->last()->title : ($items->first()?->title),
+                'stats' => collect([
+                    $items->count() ? $items->count().' '.($items->count() === 1 ? 'stop' : 'stops') : null,
+                    $photos->count().' '.($photos->count() === 1 ? 'photo' : 'photos'),
+                    ($n = $trip->members()->where('status', 'active')->count()).' '.($n === 1 ? 'traveller' : 'travellers'),
+                ])->filter()->implode(' · '),
+            ],
             'music_url' => asset('audio/highlight-travel.mp3'),
             'cover_duration' => self::COVER, 'outro_duration' => self::OUTRO,
             'slides' => array_values($slides),
@@ -71,7 +88,7 @@ class HighlightController extends Controller
         Gate::authorize('view', $trip);
         $date = $this->date($request, $trip);
         [$from, $to] = $this->range($trip, $date);
-        $best = $this->dayPhotos($trip, $from, $to)->sortByDesc('score')->first();
+        $best = $this->dayPhotos($trip, $from, $to)->sortByDesc('score')->first();   // the same photo the highlight's cover uses
         abort_unless($best, 422, 'Post a photo on this day first.');
         $key = 'photo-ai:'.$request->user()->id;
         if (RateLimiter::tooManyAttempts($key, Ai::AI_LIMIT)) {
@@ -116,6 +133,19 @@ class HighlightController extends Controller
             'url' => PublicImages::url($photo->path), 'path' => $photo->path, 'caption' => $post->caption,
             'posted_at' => $post->created_at, 'score' => $post->likes_count * 2 + $post->comments_count - $photo->position * 0.1,
         ]))->values();
+    }
+
+    /** Drops photos that look like one already kept (best first), so the same scenery isn't shown twice. */
+    private function distinct($photos)
+    {
+        $kept = [];
+        foreach ($photos as $photo) {
+            if (count($kept) > self::MAX_PHOTOS) { break; }
+            $print = ImageFingerprint::of($photo['path']);
+            if (collect($kept)->contains(fn ($k) => ImageFingerprint::similar($k['print'], $print))) { continue; }
+            $kept[] = $photo + ['print' => $print];
+        }
+        return collect($kept);
     }
 
     /** Trip days (in the trip's time zone) that have photos, newest first. */

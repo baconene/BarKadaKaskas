@@ -39,11 +39,26 @@ class HighlightTest extends TestCase
         return ['Authorization' => 'Bearer '.$user->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
     }
 
-    /** Posts a photo at a local Manila time on Nov 12. */
-    private function postAt(string $time, User $user, string $caption): array
+    /** A simple JPEG "scene": sky, sea, sun and a tree; different arguments give different-looking photos. */
+    private function scene(array $sky, array $sea, int $sunX, int $shift = 0, int $bright = 0): UploadedFile
     {
+        $im = imagecreatetruecolor(800, 600);
+        $tone = fn (array $c) => imagecolorallocate($im, ...array_map(fn ($v) => min(255, $v + $bright), $c));
+        imagefilledrectangle($im, 0, 0, 800, 270 + $shift, $tone($sky));
+        imagefilledrectangle($im, 0, 270 + $shift, 800, 600, $tone($sea));
+        imagefilledellipse($im, $sunX, 120 + $shift, 90, 90, imagecolorallocate($im, 255, 230, 120));
+        imagefilledrectangle($im, 480, 180 + $shift, 560, 540, imagecolorallocate($im, 40, 90, 40));
+        ob_start(); imagejpeg($im, null, 85);
+        return UploadedFile::fake()->createWithContent('p.jpg', (string) ob_get_clean());
+    }
+
+    /** Posts a photo at a local Manila time on Nov 12 (a different-looking photo each time unless one is given). */
+    private function postAt(string $time, User $user, string $caption, ?UploadedFile $photo = null): array
+    {
+        static $n = 0; $n++;
+        $photo ??= $this->scene([($n * 70) % 255, 150, (255 - $n * 50) % 255], [30, ($n * 90) % 255, 160], 100 + ($n * 170) % 600, ($n % 3) * 60 - 60);
         Carbon::setTestNow(Carbon::parse("2026-11-12 {$time}", 'Asia/Manila'));
-        return $this->postJson("/api/v1/trips/{$this->trip->id}/posts", ['caption' => $caption, 'photos' => [UploadedFile::fake()->image('p.jpg', 800, 600)]], $this->headers($user))->assertCreated()->json('data');
+        return $this->postJson("/api/v1/trips/{$this->trip->id}/posts", ['caption' => $caption, 'photos' => [$photo]], $this->headers($user))->assertCreated()->json('data');
     }
 
     public function test_the_day_highlight_follows_the_itinerary_with_that_days_photos(): void
@@ -60,15 +75,33 @@ class HighlightTest extends TestCase
 
         $data = $this->getJson("/api/v1/trips/{$this->trip->id}/highlights?date=2026-11-12", $this->headers($this->owner))->assertOk()->json('data');
         $this->assertSame('Day 3 · Thu, Nov 12', $data['subtitle']);
-        $this->assertSame(['7:00 AM', '7:00 AM', '12:00 PM'], array_column($data['slides'], 'time'));
-        $this->assertSame(['Cambugahay Falls', 'Cambugahay Falls', 'Lunch at Baha Bar'], array_column($data['slides'], 'title'));
-        $this->assertSame(['Early start', 'Falls', 'Lunch!'], array_column($data['slides'], 'caption'));
+        // The liked lunch photo is the cover, so it isn't repeated in the slides.
+        $this->assertSame($lunch['photos'][0]['url'] ?? $data['base_photo_url'], $data['base_photo_url']);
+        $this->assertSame(['7:00 AM', '7:00 AM'], array_column($data['slides'], 'time'));
+        $this->assertSame(['Cambugahay Falls', 'Cambugahay Falls'], array_column($data['slides'], 'title'));
+        $this->assertSame(['Early start', 'Falls'], array_column($data['slides'], 'caption'));
+        $this->assertSame(['eyebrow' => 'Day 3 of 8', 'title' => 'Siquijor Barkada Trip', 'date' => 'Thursday, November 12, 2026', 'destination' => 'Siquijor',
+            'route' => 'Cambugahay Falls → Lunch at Baha Bar', 'stats' => '2 stops · 3 photos · 2 travellers'], $data['cover']);
         $this->assertEqualsWithDelta(30, $data['cover_duration'] + $data['outro_duration'] + array_sum(array_column($data['slides'], 'duration')), 0.1);
         $this->assertStringEndsWith('/audio/highlight-travel.mp3', $data['music_url']);
         $this->assertSame(['2026-11-13', '2026-11-12'], $data['days']);
         $this->assertNull($data['cover_url']);
 
         $this->getJson("/api/v1/trips/{$this->trip->id}/highlights", $this->headers(User::factory()->create()))->assertForbidden();
+    }
+
+    public function test_repeated_scenery_is_shown_once(): void
+    {
+        $this->postAt('08:00', $this->owner, 'Beach', $this->scene([120, 170, 230], [30, 90, 160], 200));
+        $this->postAt('08:01', $this->friend, 'Beach again', $this->scene([120, 170, 230], [30, 90, 160], 205, 8, 12)); // same view, a little brighter
+        $this->postAt('09:00', $this->friend, 'Sunset', $this->scene([240, 150, 90], [60, 40, 80], 600, -80));
+        $this->postAt('10:00', $this->owner, 'Sand', $this->scene([120, 170, 230], [200, 190, 150], 650, 60));
+
+        $data = $this->getJson("/api/v1/trips/{$this->trip->id}/highlights?date=2026-11-12", $this->headers($this->owner))->assertOk()->json('data');
+        $shown = array_merge([$data['base_photo_url']], array_column($data['slides'], 'photo_url'));
+        $this->assertCount(3, $shown);                       // cover + 2 slides; "Beach again" left out
+        $this->assertCount(3, array_unique($shown));         // and nothing appears twice
+        $this->assertNotContains('Beach again', array_column($data['slides'], 'caption'));
     }
 
     public function test_the_ai_cover_is_made_once_and_shared(): void

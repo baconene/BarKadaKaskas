@@ -9,7 +9,8 @@ import { appFetch } from '@/lib/uploads';
  * plays it here and records it as a video file ("Save video").
  */
 type Slide = { time: string; title: string; location: string | null; photo_url: string; caption: string | null; duration: number };
-type Highlight = { date: string; day_number: number; title: string; subtitle: string; cover_url: string | null; base_photo_url: string | null; music_url: string; cover_duration: number; outro_duration: number; slides: Slide[]; days: string[] };
+type CoverInfo = { eyebrow: string; title: string; date: string; destination: string | null; route: string | null; stats: string };
+type Highlight = { date: string; day_number: number; title: string; subtitle: string; cover_url: string | null; base_photo_url: string | null; cover?: CoverInfo; music_url: string; cover_duration: number; outro_duration: number; slides: Slide[]; days: string[] };
 const props = defineProps<{ tripId: number }>();
 const emit = defineEmits<{ close: [] }>();
 
@@ -84,18 +85,27 @@ function part(ctx: CanvasRenderingContext2D, p: Part, local: number) {
         if (p.slide.location) text(ctx, p.slide.location.split(',').slice(0, 2).join(','), 56, y + 52, 28, 500, 'rgba(255,255,255,.85)');
         return;
     }
-    const bg = images.get((h.cover_url ?? h.base_photo_url) || '');
-    cover(ctx, bg, t, p.kind === 'cover' ? 0 : 1);
     if (p.kind === 'cover') {
-        shade(ctx, H * 0.35, 0.8);
-        ctx.font = '800 26px Inter, system-ui, sans-serif'; ctx.fillStyle = '#cfe0a5'; ctx.fillText('HIGHLIGHTS', 56, H - 380);
-        const y = text(ctx, h.title, 56, H - 300, 72, 800);
-        text(ctx, h.subtitle, 56, y + 64, 34, 600, 'rgba(255,255,255,.9)');
+        cover(ctx, images.get((h.cover_url ?? h.base_photo_url) || ''), t, 0);
+        shade(ctx, H * 0.3, 0.85);
+        const c = h.cover;
+        // Caption block, bottom up: stats, route, place; date and title above.
+        ctx.font = '800 26px Inter, system-ui, sans-serif'; ctx.fillStyle = '#cfe0a5';
+        ctx.fillText(`HIGHLIGHTS · ${(c?.eyebrow ?? `Day ${h.day_number}`).toUpperCase()}`, 56, H - 520);
+        let y = text(ctx, c?.title ?? h.title, 56, H - 450, 68, 800);
+        y = text(ctx, c?.date ?? h.subtitle, 56, y + 58, 34, 600, 'rgba(255,255,255,.95)');
+        ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(56, y + 30, 80, 4);
+        if (c?.destination) y = text(ctx, c.destination, 56, y + 82, 30, 600, '#fff');
+        if (c?.route) y = text(ctx, c.route, 56, y + 44, 28, 500, 'rgba(255,255,255,.85)');
+        if (c?.stats) text(ctx, c.stats, 56, y + 44, 26, 500, 'rgba(232,242,216,.9)');
     } else {
-        ctx.fillStyle = 'rgba(23,47,42,.55)'; ctx.fillRect(0, 0, W, H);
+        // Outro on a plain background (no photo repeated).
+        const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#214e3e'); g.addColorStop(1, '#0d1512');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
         ctx.textAlign = 'center';
-        text(ctx, `That was Day ${h.day_number}`, W / 2, H / 2 - 20, 60, 800, '#fff', W - 120);
-        text(ctx, 'BarkadaKasKas', W / 2, H / 2 + 50, 30, 600, '#cfe0a5', W - 120);
+        text(ctx, `That was Day ${h.day_number}`, W / 2, H / 2 - 40, 60, 800, '#fff', W - 120);
+        if (h.cover?.title) text(ctx, h.cover.title, W / 2, H / 2 + 30, 32, 600, 'rgba(255,255,255,.85)', W - 120);
+        text(ctx, 'BarkadaKasKas', W / 2, H / 2 + 90, 28, 600, '#cfe0a5', W - 120);
         ctx.textAlign = 'left';
     }
 }

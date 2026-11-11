@@ -1336,9 +1336,12 @@ private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): Byt
                     val zoom = remember(part) { Animatable(1.05f) }
                     LaunchedEffect(part, playing) { if (playing) zoom.animateTo(1.17f, tween((durations[part] * 1000).toInt(), easing = LinearEasing)) }
                     Box(Modifier.fillMaxSize()) {
-                        NetworkImage(model = slide?.photoUrl ?: (h.coverUrl ?: h.basePhotoUrl), contentDescription = slide?.caption, contentScale = ContentScale.Crop,
+                        val outro = slide == null && part != 0
+                        // The outro is a plain background, so no photo is shown twice.
+                        if (outro) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Forest, Color(0xFF0D1512)))))
+                        else NetworkImage(model = slide?.photoUrl ?: (h.coverUrl ?: h.basePhotoUrl), contentDescription = slide?.caption, contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom.value; scaleY = zoom.value; translationX = (if (part % 2 == 0) 1 else -1) * 40f * (zoom.value - 1.11f) * 8 })
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)), startY = 900f)))
+                        if (!outro) Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = if (part == 0) 0.85f else 0.75f)), startY = if (part == 0) 600f else 900f)))
                         Column(Modifier.align(Alignment.BottomStart).padding(start = 28.dp, end = 28.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             when {
                                 slide != null -> {
@@ -1347,11 +1350,20 @@ private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): Byt
                                     slide.location?.let { Text(it.split(",").take(2).joinToString(","), color = Color.White.copy(alpha = 0.85f)) }
                                 }
                                 part == 0 -> {
-                                    Text("HIGHLIGHTS", color = Color(0xFFCFE0A5), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
-                                    Text(h.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge)
-                                    Text(h.subtitle, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.titleMedium)
+                                    val c = h.cover
+                                    Text("HIGHLIGHTS · " + (c?.eyebrow ?: "Day ${h.dayNumber}").uppercase(), color = Color(0xFFCFE0A5), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                                    Text(c?.title ?: h.title, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge)
+                                    Text(c?.date ?: h.subtitle, color = Color.White.copy(alpha = 0.95f), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                                    Box(Modifier.padding(vertical = 4.dp).width(40.dp).height(2.dp).background(Color.White.copy(alpha = 0.45f)))
+                                    c?.destination?.let { Text(it, color = Color.White, fontWeight = FontWeight.SemiBold) }
+                                    c?.route?.let { Text(it, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium) }
+                                    c?.stats?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color(0xFFE8F2D8), style = MaterialTheme.typography.bodySmall) }
                                 }
-                                else -> Text("That was Day ${h.dayNumber}", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+                                else -> Column(Modifier.fillMaxWidth().padding(bottom = 160.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("That was Day ${h.dayNumber}", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+                                    Text(h.cover?.title ?: h.title, color = Color.White.copy(alpha = 0.85f))
+                                    Text("BarkadaKasKas", color = Color(0xFFCFE0A5), fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }

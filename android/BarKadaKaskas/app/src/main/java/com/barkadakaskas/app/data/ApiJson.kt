@@ -91,7 +91,8 @@ internal object ApiJson {
 
     fun highlight(d: JSONObject) = Highlight(
         date = d.text("date"), dayNumber = d.optInt("day_number"), title = d.text("title"), subtitle = d.text("subtitle"),
-        coverUrl = d.imageUrl("cover_url"), basePhotoUrl = d.imageUrl("base_photo_url"), musicUrl = d.imageUrl("music_url").orEmpty(),
+        coverUrl = d.imageUrl("cover_url"), basePhotoUrl = d.imageUrl("base_photo_url"),
+        cover = d.optJSONObject("cover")?.let { c -> HighlightCover(c.text("eyebrow"), c.text("title"), c.text("date"), c.textOrNull("destination"), c.textOrNull("route"), c.text("stats")) }, musicUrl = d.imageUrl("music_url").orEmpty(),
         coverDuration = d.optDouble("cover_duration", 3.0), outroDuration = d.optDouble("outro_duration", 2.5),
         slides = d.optJSONArray("slides").mapObjects { s -> HighlightSlide(s.text("time"), s.text("title"), s.textOrNull("location"), s.imageUrl("photo_url").orEmpty(), s.textOrNull("caption"), s.optDouble("duration", 3.0)) },
         days = d.optJSONArray("days")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),

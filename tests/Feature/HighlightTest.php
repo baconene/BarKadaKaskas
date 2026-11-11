@@ -64,7 +64,7 @@ class HighlightTest extends TestCase
     public function test_the_day_highlight_follows_the_itinerary_with_that_days_photos(): void
     {
         foreach ([['07:00', 'Cambugahay Falls'], ['12:00', 'Lunch at Baha Bar']] as [$time, $title]) {
-            $this->trip->itineraryItems()->create(['title' => $title, 'starts_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->utc(), 'ends_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->addHour()->utc(), 'timezone' => 'Asia/Manila']);
+            $this->trip->itineraryItems()->create(['title' => $title, 'starts_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->utc(), 'ends_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->addHour()->utc(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $this->owner->id]);
         }
         $lunch = $this->postAt('12:30', $this->owner, 'Lunch!');
         $this->postAt('07:40', $this->friend, 'Falls');

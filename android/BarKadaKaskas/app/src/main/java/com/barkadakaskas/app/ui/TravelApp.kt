@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1199,10 +1200,13 @@ private fun postTime(iso: String): String = runCatching {
     val list = photos
     if (list == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(3) { Box(Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFEDF2E9))) } }
     else if (list.isNotEmpty()) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(list) { i, p ->
-                NetworkImage(model = p.url, contentDescription = "Photo ${i + 1} of ${stop.title}" + (p.credit?.let { ", by $it" } ?: ""), contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).clickable { viewing = i })
+        // A plain scrolling Row with fixed-size images: the stop card sizes itself to its content (intrinsic height),
+        // which lazy lists can't report, so a LazyRow here crashes.
+        Row(Modifier.fillMaxWidth().height(104.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            list.forEachIndexed { i, p ->
+                Box(Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).clickable { viewing = i }) {
+                    NetworkImage(model = p.url, contentDescription = "Photo ${i + 1} of ${stop.title}" + (p.credit?.let { ", by $it" } ?: ""), contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+                }
             }
         }
         Text("Photos from ${list.map { it.source }.distinct().joinToString(" and ")}" + (list.firstNotNullOfOrNull { it.credit }?.let { " · $it" } ?: ""), color = Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -1039,6 +1039,8 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
 
 /** Tumblr-style photo feed for the trip. Everyone on the trip can post photos with a caption and leave hearts. */
 @Composable private fun PhotosTab(vm: TravelViewModel, detail: TripDetail) {
+    var placingPost by remember { mutableStateOf<Post?>(null) }
+    placingPost?.let { post -> PostPlaceSheet(vm, detail, post) { placingPost = null } }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var picked by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -1074,7 +1076,15 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
             Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(post.authorName, url = post.authorAvatarUrl, size = 38); Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) { Text(post.authorName, fontWeight = FontWeight.SemiBold); Text(postTime(post.createdAt), color = Muted, style = MaterialTheme.typography.bodySmall) }
+                Column(Modifier.weight(1f)) {
+                    Text(post.authorName, fontWeight = FontWeight.SemiBold); Text(postTime(post.createdAt), color = Muted, style = MaterialTheme.typography.bodySmall)
+                    // Where the photos were taken; the poster or organizer can tap it to change it.
+                    if (post.placeName != null || post.canEditPlace) Row(Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = post.canEditPlace) { placingPost = post }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Place, null, tint = Moss, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(3.dp))
+                        Text(post.placeName ?: "Add a place", color = if (post.placeName != null) Color(0xFF4F6156) else Moss, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (post.canEditPlace) { Spacer(Modifier.width(3.dp)); Icon(Icons.Default.Edit, "Change place", tint = Muted, modifier = Modifier.size(12.dp)) }
+                    }
+                }
                 if (post.canDelete) IconButton(onClick = { vm.deletePost(post) }, enabled = !vm.busy) { Icon(Icons.Default.Delete, "Delete post", tint = Muted) }
             }
             PhotoGrid(post.photos) { url -> viewing = post.photos.map { it.url } to post.photos.indexOfFirst { it.url == url }.coerceAtLeast(0) }
@@ -1254,6 +1264,27 @@ private fun postTime(iso: String): String = runCatching {
             Text("Everyone on the trip sees what's done.", color = Muted, style = MaterialTheme.typography.labelSmall)
             if (canEdit) OutlinedButton(onClick = edit, modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Edit activity") }
         }
+    }
+}
+
+/** "Where was this?": type a place, pick an itinerary stop, or remove the place from a post. */
+@Composable private fun PostPlaceSheet(vm: TravelViewModel, detail: TripDetail, post: Post, close: () -> Unit) {
+    var name by remember(post.id) { mutableStateOf(if (post.placeStopId == null) post.placeName.orEmpty() else "") }
+    val zone = runCatching { java.time.ZoneId.of(detail.trip.timezone) }.getOrDefault(java.time.ZoneId.systemDefault())
+    FormSheet("Where was this?", vm, close, "Shown on the post; the day highlight puts these photos at the stop you pick.") {
+        Field("Type a place", name, { name = it }, supporting = "e.g. Lazi Church")
+        Submit("Save place", vm.busy, name.isNotBlank()) { vm.setPostPlace(post, null, name.trim(), false, close) }
+        if (detail.stops.isNotEmpty()) Text("Or pick a stop from the itinerary", color = Color(0xFF76846E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        detail.stops.forEach { stop ->
+            val chosen = post.placeStopId == stop.id
+            Surface(onClick = { vm.setPostPlace(post, stop.id, null, false, close) }, enabled = !vm.busy, shape = RoundedCornerShape(12.dp), color = if (chosen) Sage else Color.White, border = BorderStroke(1.dp, if (chosen) Forest else Line)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp)) {
+                    Text(stop.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(runCatching { java.time.OffsetDateTime.parse(stop.startsAt).atZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH)) }.getOrDefault(""), color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if (post.placeName != null) OutlinedButton(onClick = { vm.setPostPlace(post, null, null, true, close) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Text("Remove place") }
     }
 }
 

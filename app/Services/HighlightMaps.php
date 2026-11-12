@@ -22,14 +22,35 @@ class HighlightMaps
     public function position(ItineraryItem $item, Trip $trip): ?array
     {
         if ($item->latitude !== null && $item->longitude !== null) { return [(float) $item->latitude, (float) $item->longitude]; }
+        return $this->geocode(trim(($item->location ?: $item->title).', '.$trip->destination, ', '));
+    }
+
+    /** Coordinates for a place name or address (Google Geocoding, cached). @return array{0: float, 1: float}|null */
+    public function geocode(string $query): ?array
+    {
         $key = config('services.google_maps.browser_key');
-        $query = trim(($item->location ?: $item->title).', '.$trip->destination, ', ');
-        if (! $key || $query === '') { return null; }
+        if (! $key || trim($query) === '') { return null; }
         return Cache::rememberForever('geo:v1:'.md5(mb_strtolower($query)), function () use ($key, $query) {
             try {
                 $result = Http::connectTimeout(5)->timeout(8)->get('https://maps.googleapis.com/maps/api/geocode/json', ['address' => $query, 'key' => $key])->json('results.0.geometry.location');
             } catch (\Throwable) { return null; }
             return isset($result['lat'], $result['lng']) ? [(float) $result['lat'], (float) $result['lng']] : null;
+        }) ?: null;
+    }
+
+    /** The town and province at a point, e.g. "San Juan, Siquijor" (Google reverse geocoding, cached). */
+    public function townAt(float $lat, float $lng): ?string
+    {
+        $key = config('services.google_maps.browser_key');
+        if (! $key) { return null; }
+        return Cache::rememberForever('town:v1:'.round($lat, 3).','.round($lng, 3), function () use ($key, $lat, $lng) {
+            try {
+                $parts = Http::connectTimeout(5)->timeout(8)->get('https://maps.googleapis.com/maps/api/geocode/json', ['latlng' => "{$lat},{$lng}", 'key' => $key])->json('results.0.address_components', []);
+            } catch (\Throwable) { return null; }
+            $pick = fn (string $type) => collect($parts)->first(fn ($c) => in_array($type, $c['types'] ?? [], true))['long_name'] ?? null;
+            $town = $pick('locality') ?? $pick('administrative_area_level_3');
+            $area = $pick('administrative_area_level_2') ?? $pick('administrative_area_level_1');
+            return implode(', ', array_values(array_unique(array_filter([$town, $area])))) ?: null;
         }) ?: null;
     }
 

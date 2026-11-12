@@ -44,8 +44,9 @@ class HighlightController extends Controller
         $positions = $items->mapWithKeys(fn ($item) => [$item->id => $maps->position($item, $trip)]);
         $slides = [];
         foreach ($picked->sortBy('at') as $photo) {
-            $stop = null;
-            if ($photo['latitude'] !== null) {
+            // A stop chosen on the post wins; then the nearest stop to where the photo was taken; then by time.
+            $stop = $photo['stop_id'] ? $items->firstWhere('id', $photo['stop_id']) : null;
+            if (! $stop && $photo['latitude'] !== null) {
                 $near = $items->map(fn ($item) => [$item, ($p = $positions[$item->id]) ? self::meters($photo['latitude'], $photo['longitude'], $p[0], $p[1]) : INF])
                     ->filter(fn ($pair) => $pair[1] <= 1500)->sortBy(fn ($pair) => $pair[1])->first();
                 $stop = $near[0] ?? null;
@@ -150,7 +151,7 @@ class HighlightController extends Controller
             'url' => PublicImages::url($photo->path), 'path' => $photo->path, 'caption' => $post->caption,
             'by' => $post->member?->user ? \App\Services\Alerts::firstName($post->member->user) : null,
             'posted_at' => $post->created_at, 'at' => $photo->taken_at ?? $post->created_at,
-            'latitude' => $photo->latitude, 'longitude' => $photo->longitude,
+            'latitude' => $photo->latitude, 'longitude' => $photo->longitude, 'stop_id' => $post->itinerary_item_id,
             'score' => $post->likes_count * 2 + $post->comments_count - $photo->position * 0.1,
         ]))->filter(fn ($photo) => $photo['at']->between($from, $to))->values();
     }

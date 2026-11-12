@@ -138,6 +138,33 @@ class HighlightTest extends TestCase
         $this->assertSame('Salagdoong Beach', $slides['Beach pic']['title'] ?? null);
     }
 
+    public function test_posts_show_a_place_that_the_poster_can_change(): void
+    {
+        config(['services.google_maps.browser_key' => '']);
+        $mk = fn ($time, $title, $lat, $lng) => $this->trip->itineraryItems()->create(['title' => $title, 'latitude' => $lat, 'longitude' => $lng, 'starts_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->utc(), 'ends_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->addHours(2)->utc(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $this->owner->id]);
+        $falls = $mk('08:00', 'Cambugahay Falls', 9.1405, 123.6227);
+        $beach = $mk('13:00', 'Salagdoong Beach', 9.2208, 123.6731);
+        Carbon::setTestNow(Carbon::parse('2026-11-12 09:00', 'Asia/Manila'));
+        $post = $this->post("/api/v1/trips/{$this->trip->id}/posts", ['photos' => [$this->scene([120, 170, 230], [30, 90, 160], 200)], 'latitude' => 9.1408, 'longitude' => 123.6229],
+            $this->headers($this->owner) + ['Accept' => 'application/json'])->assertCreated()->json('data');
+        $this->assertSame(['name' => 'Cambugahay Falls', 'itinerary_item_id' => $falls->id], $post['place']);   // nearest stop
+        $this->assertTrue($post['can_edit_place']);
+
+        $url = "/api/v1/trips/{$this->trip->id}/posts/{$post['id']}/place";
+        $this->patchJson($url, ['name' => 'Somewhere'], $this->headers($this->friend))->assertForbidden();    // not theirs
+        $this->patchJson($url, ['itinerary_item_id' => $beach->id], $this->headers($this->owner))->assertOk()->assertJsonPath('data.place.name', 'Salagdoong Beach');
+        $photo = \App\Models\TripPostPhoto::where('trip_post_id', $post['id'])->firstOrFail();
+        $this->assertSame([9.2208, 123.6731, 'manual'], [$photo->latitude, $photo->longitude, $photo->location_source]);
+        // The chosen stop decides the highlight, even though the photo was taken in the morning.
+        $cover = $this->postAt('09:30', $this->friend, 'Cover');
+        $this->postJson("/api/v1/trips/{$this->trip->id}/posts/{$cover['id']}/like", [], $this->headers($this->owner))->assertOk();   // the cover, so ours is a slide
+        $this->assertSame('Salagdoong Beach', collect($this->getJson("/api/v1/trips/{$this->trip->id}/highlights?date=2026-11-12", $this->headers($this->owner))->json('data.slides'))->firstWhere('caption', null)['title'] ?? null);
+
+        $this->patchJson($url, ['name' => 'Lazi Church'], $this->headers($this->owner))->assertOk()->assertJsonPath('data.place', ['name' => 'Lazi Church', 'itinerary_item_id' => null]);
+        $this->patchJson($url, ['clear' => true], $this->headers($this->owner))->assertOk()->assertJsonPath('data.place', null);
+        $this->patchJson($url, [], $this->headers($this->owner))->assertStatus(422);
+    }
+
     public function test_repeated_scenery_is_shown_once(): void
     {
         $this->postAt('08:00', $this->owner, 'Beach', $this->scene([120, 170, 230], [30, 90, 160], 200));

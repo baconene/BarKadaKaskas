@@ -52,6 +52,7 @@ class TripPostController extends Controller
             }
             return $post;
         });
+        try { app(\App\Services\PostPlaces::class)->guess($post, $trip); } catch (\Throwable) { /* the place is a nice extra */ }
         $post->load(['photos', 'member.user:id,name,avatar_path'])->loadCount(['likes', 'comments']);
         $post->liked = false;
         $count = $post->photos->count();
@@ -181,6 +182,27 @@ class TripPostController extends Controller
             'comments_count' => (int) ($post->comments_count ?? 0),
             'liked' => (bool) $post->liked,
             'can_delete' => $this->canDelete($post, $trip, $memberId, $request),
+            'place' => $post->place_name ? ['name' => $post->place_name, 'itinerary_item_id' => $post->itinerary_item_id] : null,
+            'can_edit_place' => $this->canDelete($post, $trip, $memberId, $request),
         ];
+    }
+
+    /** Changes the place shown on a post (the poster or the organizer): an itinerary stop, a typed place, or none. */
+    public function place(Request $request, Trip $trip, TripPost $post, \App\Services\PostPlaces $places)
+    {
+        abort_unless($post->trip_id === $trip->id, 404);
+        Gate::authorize('view', $trip);
+        $memberId = $this->memberId($request, $trip);
+        abort_unless($this->canDelete($post, $trip, $memberId, $request), 403, 'Only the person who posted this or the organizer can change its place.');
+        $data = $request->validate([
+            'itinerary_item_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('itinerary_items', 'id')->where('trip_id', $trip->id)],
+            'name' => 'nullable|string|max:200',
+            'clear' => 'sometimes|boolean',
+        ]);
+        abort_unless(! empty($data['clear']) || ! empty($data['itinerary_item_id']) || trim((string) ($data['name'] ?? '')) !== '', 422, 'Choose a stop, type a place, or remove the place.');
+        $places->change($post, $trip, $data);
+        $post->refresh()->load(['photos', 'member.user:id,name,avatar_path'])->loadCount(['likes', 'comments']);
+        $post->liked = $post->likes()->where('trip_member_id', $memberId)->exists();
+        return response()->json(['data' => $this->present($post, $trip, $memberId, $request)]);
     }
 }

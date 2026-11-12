@@ -201,6 +201,12 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         posts = listOf(repository.createPost(id, caption, jpegs, places, here)) + posts
         done()
     }
+    fun setPostPlace(post: Post, stopId: Long?, name: String?, clear: Boolean, done: () -> Unit) = launch {
+        val id = detail?.trip?.id ?: return@launch
+        val updated = repository.setPostPlace(id, post.id, stopId, name, clear)
+        posts = posts.map { if (it.id == post.id) it.copy(placeName = updated.placeName, placeStopId = updated.placeStopId) else it }
+        done()
+    }
     fun deletePost(post: Post) = launch {
         val id = detail?.trip?.id ?: return@launch
         repository.deletePost(id, post.id)

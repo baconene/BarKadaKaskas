@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MessageCircle, Sparkles, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MapPin, MessageCircle, Pencil, Sparkles, Trash2, X } from 'lucide-vue-next';
 import PostComments from '@/components/trip/PostComments.vue';
 import HighlightPlayer from '@/components/trip/HighlightPlayer.vue';
 import LoadingImage from '@/components/LoadingImage.vue';
@@ -9,13 +9,35 @@ import { appFetch, shrinkImage } from '@/lib/uploads';
 import { currentPosition, readPhotoLocation } from '@/lib/photoLocation';
 
 /** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
-type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number };
+type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number; place?: { name: string; itinerary_item_id: number | null } | null; can_edit_place?: boolean };
 // The day highlight (30-second story of today's stops and photos).
 const showHighlight = ref(false);
 // Posts whose comments are open.
 const openComments = ref(new Set<number>());
 function toggleComments(id: number) { const next = new Set(openComments.value); if (next.has(id)) next.delete(id); else next.add(id); openComments.value = next; }
-const props = defineProps<{ tripId: number; tripName: string; readOnly?: boolean }>();
+const props = defineProps<{ tripId: number; tripName: string; readOnly?: boolean; stops?: { id: number; title: string; starts_at: string }[]; timezone?: string }>();
+
+// The place on a post: shown under the poster's name; the poster or organizer can pick a stop, type a place, or remove it.
+const placing = ref<Post | null>(null);
+const placeName = ref('');
+const placeError = ref('');
+const placeBusy = ref(false);
+const stopDay = (iso: string) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: props.timezone || 'Asia/Manila' }).format(new Date(iso));
+function editPlace(post: Post) { placing.value = post; placeName.value = post.place && !post.place.itinerary_item_id ? post.place.name : ''; placeError.value = ''; }
+async function savePlace(choice: { itinerary_item_id?: number; name?: string; clear?: boolean }) {
+    if (!placing.value || placeBusy.value) return;
+    placeBusy.value = true; placeError.value = '';
+    const body = new FormData(); body.append('_method', 'PATCH');
+    if (choice.itinerary_item_id) body.append('itinerary_item_id', String(choice.itinerary_item_id));
+    if (choice.name) body.append('name', choice.name);
+    if (choice.clear) body.append('clear', '1');
+    try {
+        const { data } = await appFetch<{ data: Post }>(`/trips/${props.tripId}/posts/${placing.value.id}/place`, { method: 'POST', body });
+        const i = posts.value.findIndex(p => p.id === data.id); if (i >= 0) posts.value[i] = { ...posts.value[i], place: data.place };
+        placing.value = null;
+    } catch (e) { placeError.value = e instanceof Error ? e.message : 'Could not change the place.'; }
+    finally { placeBusy.value = false; }
+}
 
 const posts = ref<Post[]>([]);
 const nextBefore = ref<number | null>(null);
@@ -161,7 +183,9 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <header class="post-head">
                 <img v-if="post.author.avatar_url" :src="post.author.avatar_url" alt="" class="avatar" />
                 <span v-else class="avatar initials" aria-hidden="true">{{ initials(post.author.name) }}</span>
-                <span class="who"><strong>{{ post.author.name }}</strong><time :datetime="post.created_at">{{ when(post.created_at) }}</time></span>
+                <span class="who"><strong>{{ post.author.name }}</strong><time :datetime="post.created_at">{{ when(post.created_at) }}</time>
+                    <button v-if="post.place || post.can_edit_place" type="button" class="place" :disabled="!post.can_edit_place" :aria-label="post.place ? `Place: ${post.place.name}${post.can_edit_place ? ', change' : ''}` : 'Add a place'" @click="editPlace(post)"><MapPin :size="12" aria-hidden="true" /> {{ post.place?.name ?? 'Add a place' }}<Pencil v-if="post.can_edit_place" :size="11" aria-hidden="true" class="place-edit" /></button>
+                </span>
                 <button v-if="post.can_delete" type="button" class="icon-btn" :aria-label="'Delete post by ' + post.author.name" @click="remove(post)"><Trash2 :size="16" /></button>
             </header>
             <div class="post-photos" :class="gridClass(post.photos.length)">
@@ -218,6 +242,24 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <button type="button" class="icon-btn close-viewer" aria-label="Close photo" @click="viewing = null"><X :size="22" /></button>
             <div v-if="viewing.photos.length > 1" class="dots" aria-hidden="true"><span v-for="(_, i) in viewing.photos" :key="i" :class="{ on: i === viewing.index }" /></div>
         </div>
+            <div v-if="placing" class="place-sheet" role="dialog" aria-modal="true" aria-labelledby="place-title" @click.self="placing = null">
+            <div class="place-card">
+                <h3 id="place-title"><MapPin :size="16" aria-hidden="true" /> Where was this?</h3>
+                <form class="place-type" @submit.prevent="placeName.trim() && savePlace({ name: placeName.trim() })">
+                    <input v-model="placeName" maxlength="200" placeholder="Type a place, e.g. Lazi Church" aria-label="Place name" />
+                    <button class="btn" :disabled="placeBusy || !placeName.trim()">Save</button>
+                </form>
+                <p v-if="stops?.length" class="place-label">Or pick a stop from the itinerary</p>
+                <ul v-if="stops?.length" class="place-stops">
+                    <li v-for="s in stops" :key="s.id"><button type="button" :aria-pressed="placing.place?.itinerary_item_id === s.id" :disabled="placeBusy" @click="savePlace({ itinerary_item_id: s.id })"><strong>{{ s.title }}</strong><small>{{ stopDay(s.starts_at) }}</small></button></li>
+                </ul>
+                <p v-if="placeError" class="error" role="alert">{{ placeError }}</p>
+                <div class="place-actions">
+                    <button v-if="placing.place" type="button" class="btn secondary" :disabled="placeBusy" @click="savePlace({ clear: true })">Remove place</button>
+                    <button type="button" class="btn secondary" @click="placing = null">Cancel</button>
+                </div>
+            </div>
+        </div>
     </section>
 </template>
 
@@ -232,6 +274,24 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .who{display:grid;flex:1;min-width:0}
 .who strong{font-size:14px}
 .who time{font-size:12px;color:#738178}
+.place{display:inline-flex;align-items:center;gap:4px;justify-self:start;max-width:100%;margin-top:2px;padding:0;border:0;background:none;color:#4f6156;font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.place:disabled{cursor:default}
+.place svg{flex:none;color:#72883a}
+.place-edit{opacity:.6}
+.place-sheet{position:fixed;inset:0;z-index:70;background:#10221a66;display:flex;align-items:flex-end;justify-content:center}
+@media(min-width:640px){.place-sheet{align-items:center}}
+.place-card{width:min(520px,100%);max-height:85dvh;overflow:auto;background:#fffefb;border-radius:20px 20px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));display:grid;gap:12px}
+@media(min-width:640px){.place-card{border-radius:20px}}
+.place-card h3{display:flex;align-items:center;gap:6px;font-size:17px;font-weight:750}
+.place-type{display:flex;gap:8px}
+.place-type input{flex:1;min-width:0}
+.place-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#76846e}
+.place-stops{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:40dvh;overflow:auto}
+.place-stops button{display:grid;width:100%;text-align:left;padding:10px 12px;border:1px solid #e3eadc;border-radius:12px;background:#fff;font:inherit;cursor:pointer}
+.place-stops button[aria-pressed="true"]{border-color:#214e3e;background:#eef5e6}
+.place-stops small{color:#738178;font-size:12px}
+.place-actions{display:flex;gap:8px;justify-content:flex-end}
+.error{color:#b42318;font-size:13px}
 .icon-btn{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;border:0;background:transparent;color:#738178;cursor:pointer}
 .icon-btn:hover{background:#f2f6ec;color:#9c3e2d}
 .post-photos{display:grid;gap:3px;background:#eef2e9}

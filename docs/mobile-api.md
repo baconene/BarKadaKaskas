@@ -204,3 +204,11 @@ are empty and `summary` null when the day has no activities or the AI isn't avai
 local time `Y-m-d H:i:s`). The server falls back to the uploaded file's own EXIF, then the phone's location. Day
 highlights put each photo at the nearest itinerary stop within 1.5 km of where it was taken, and use the capture time
 (not the posting time) for the day and the time-based fallback.
+
+## A post's place
+
+Posts include `place` (`name`, `itinerary_item_id`, or null) and `can_edit_place`. The place is guessed when posting:
+the nearest itinerary stop within 1.5 km of where the photos were taken, else the town (Google reverse geocoding).
+`PATCH /api/v1/trips/{trip}/posts/{post}/place` (poster or organizer) takes `itinerary_item_id` (a stop), `name` (a
+typed place, geocoded for the photos' position when possible) or `clear: true`, and returns the post. When the place is
+a stop, the day highlight puts the post's photos at that stop.

@@ -49,6 +49,7 @@ Route::middleware('auth')->group(function () {
     Route::get('trips/{trip}/documents/{document}/file', [TravelerDocumentController::class, 'file'])->name('documents.file');
     Route::post('trips/{trip}/posts', [TripPostController::class, 'store'])->middleware('throttle:30,1')->name('posts.store');
     Route::delete('trips/{trip}/posts/{post}', [TripPostController::class, 'destroy'])->name('posts.destroy');
+    Route::patch('trips/{trip}/posts/{post}/place', [TripPostController::class, 'place'])->name('posts.place');
     Route::post('trips/{trip}/posts/{post}/like', [TripPostController::class, 'like'])->middleware('throttle:120,1')->name('posts.like');
     Route::get('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comments'])->name('posts.comments');
     Route::post('trips/{trip}/posts/{post}/comments', [TripPostController::class, 'comment'])->middleware('throttle:30,1')->name('posts.comment');

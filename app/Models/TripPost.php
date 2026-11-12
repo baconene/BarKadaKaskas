@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany};
 
 class TripPost extends Model
 {
-    protected $fillable = ['trip_id', 'trip_member_id', 'caption'];
+    protected $fillable = ['trip_id', 'trip_member_id', 'caption', 'place_name', 'itinerary_item_id'];
     public function trip(): BelongsTo { return $this->belongsTo(Trip::class); }
     public function member(): BelongsTo { return $this->belongsTo(TripMember::class, 'trip_member_id'); }
     public function photos(): HasMany { return $this->hasMany(TripPostPhoto::class)->orderBy('position'); }

@@ -9,7 +9,9 @@ data class Member(val id: Long, val name: String, val phone: String? = null, val
                   val emergencyName: String? = null, val emergencyRelationship: String? = null, val emergencyPhone: String? = null)
 data class ProfileDraft(val phone: String, val otherContact: String, val emergencyName: String, val emergencyRelationship: String, val emergencyPhone: String)
 data class PostPhoto(val url: String, val width: Int?, val height: Int?)
-data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean, val commentsCount: Int = 0)
+data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean, val commentsCount: Int = 0,
+    /** Where the photos were taken (an itinerary stop or a typed place); the poster or organizer may change it. */
+    val placeName: String? = null, val placeStopId: Long? = null, val canEditPlace: Boolean = false)
 /** Something another traveller did on one of your trips (comment, photos, expense, itinerary change). */
 data class Alert(val id: Long, val type: String, val title: String, val body: String?, val tripId: Long, val tripName: String?, val read: Boolean, val createdAt: String) {
     /** The trip tab the alert opens: Itinerary 0, Expenses 1, Photos 2. */
@@ -112,6 +114,8 @@ interface TravelRepository {
     suspend fun posts(tripId: Long, before: Long? = null): PostPage
     /** [jpegs] are downscaled photos (1 to 10). */
     suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>, places: List<com.barkadakaskas.app.data.PhotoPlace?> = emptyList(), here: Pair<Double, Double>? = null): Post
+    /** Changes a post's place: an itinerary stop, a typed place, or none ([clear]). */
+    suspend fun setPostPlace(tripId: Long, postId: Long, stopId: Long?, name: String?, clear: Boolean): Post
     suspend fun deletePost(tripId: Long, postId: Long)
     /** Toggles the viewer's heart; returns (liked, likesCount). */
     suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>

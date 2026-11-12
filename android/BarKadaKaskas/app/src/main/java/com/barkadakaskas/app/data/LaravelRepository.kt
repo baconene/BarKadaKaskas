@@ -96,6 +96,10 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         }
         return ApiJson.post(data(request("POST", "/trips/$tripId/posts", raw = multipart(fields, jpegs.mapIndexed { i, bytes -> FilePart("photos[]", "photo-${i + 1}.jpg", "image/jpeg", bytes) }))))
     }
+    override suspend fun setPostPlace(tripId: Long, postId: Long, stopId: Long?, name: String?, clear: Boolean): Post {
+        val body = JSONObject().apply { stopId?.let { put("itinerary_item_id", it) }; name?.let { put("name", it) }; if (clear) put("clear", true) }
+        return ApiJson.post(data(request("PATCH", "/trips/$tripId/posts/$postId/place", body)))
+    }
     override suspend fun deletePost(tripId: Long, postId: Long) { request("DELETE", "/trips/$tripId/posts/$postId") }
     override suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int> = data(request("POST", "/trips/$tripId/posts/$postId/like")).let { it.optBoolean("liked") to it.optInt("likes_count") }
     override suspend fun alerts(after: Long?): AlertPage = ApiJson.alertPage(request("GET", "/alerts" + (after?.let { "?after=$it" } ?: "")))

@@ -226,7 +226,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
  <button type="button" v-if="!cancelled" class="fab" aria-label="Add expense" @click="newExpense"><Plus :size="24"/></button>
  </section>
 
- <TripPhotos v-if="screen==='photos'" :trip-id="trip.id" :trip-name="trip.name"/>
+ <TripPhotos v-if="screen==='photos'" :trip-id="trip.id" :trip-name="trip.name" :stops="trip.itinerary_items.map(i=>({id:i.id,title:i.title,starts_at:i.starts_at}))" :timezone="trip.timezone"/>
  <TripGroup v-if="screen==='group'" :trip-id="trip.id" :trip-name="trip.name" :organizer-user-id="trip.organizer_user_id" :currency="trip.currency_code" :timezone="trip.timezone" :members="trip.members" :balances="balances" :dues="dues" :between="between" :settlements="trip.settlements" :expenses="trip.expenses" :current-member-id="currentMemberId" :is-organizer="isOrganizer" :invitation-url="invitationUrl"/>
 </TravelLayout>
 </template>

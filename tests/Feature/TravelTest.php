@@ -323,6 +323,43 @@ class TravelTest extends TestCase
         $this->assertSame([0, 0], array_column($rows, 'remaining_minor'));
     }
 
+    public function test_a_share_marked_paid_can_be_marked_unpaid(): void
+    {
+        $expense = $this->createExpense();
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}/shares";
+        // Recorded as a separate new payment: undoing removes it.
+        $this->post("{$url}/paid", ['member_id' => $this->friendMember, 'version' => 1])->assertSessionHasNoErrors();
+        $this->actingAs($this->friend)->post("{$url}/unpaid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasErrors('share'); // not theirs to undo
+        $this->actingAs($this->owner)->post("{$url}/unpaid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('settlements', 0);
+        $this->assertSame([5000, -5000], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        // Applied from a GCash reimbursement the friend really sent: undoing gives the reimbursement back.
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/settlements", ['to_member_id' => $this->ownerMember, 'amount_minor' => 8000, 'payment_method' => 'gcash'])->assertSessionHasNoErrors();
+        $general = Settlement::firstOrFail();
+        $this->actingAs($this->owner)->post("{$url}/paid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version, 'settlement_id' => $general->id])->assertSessionHasNoErrors();
+        $this->assertSame(3000, $general->fresh()->amount_minor);   // 50.00 applied to the bill, 30.00 left over
+        $this->post("{$url}/unpaid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->assertSame([8000, null], [$general->fresh()->amount_minor, $general->fresh()->expense_id]);
+        $this->assertDatabaseCount('settlements', 1);
+        $this->assertDatabaseHas('activity_logs', ['subject_id' => $expense->id, 'action' => 'share_unpaid']);
+    }
+
+    public function test_organizer_changes_who_shares_an_expense(): void
+    {
+        $expense = $this->createExpense();
+        $url = "/trips/{$this->trip->id}/expenses/{$expense->id}/participants";
+        $this->actingAs($this->friend)->put($url, ['member_ids' => [$this->ownerMember], 'version' => 1])->assertForbidden();
+        $this->actingAs($this->owner)->put($url, ['member_ids' => [$this->ownerMember], 'version' => 1])->assertSessionHasNoErrors();
+        $this->assertSame([$this->ownerMember => 10001], $expense->allocations()->pluck('amount_minor', 'trip_member_id')->map(fn ($v) => (int) $v)->all());
+        $this->assertSame([0, 0], array_column((new TripBalances)->calculate($this->trip), 'net_minor'));
+        $this->put($url, ['member_ids' => [$this->ownerMember, $this->friendMember], 'version' => 2])->assertSessionHasNoErrors();
+        $this->assertSame(10001, (int) $expense->allocations()->sum('amount_minor'));
+        // Someone who already paid back their share can't be removed until it's marked unpaid.
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => 3])->assertSessionHasNoErrors();
+        $this->put($url, ['member_ids' => [$this->ownerMember], 'version' => $expense->fresh()->version])->assertSessionHasErrors('member_ids');
+        $this->put($url, ['member_ids' => [], 'version' => $expense->fresh()->version])->assertSessionHasErrors('member_ids');
+    }
+
     public function test_paid_expense_cancellation_requires_explicit_void_and_preserves_history(): void
     {
         $expense = $this->createExpense();

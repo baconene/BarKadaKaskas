@@ -1685,6 +1685,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
 
 @Composable private fun ExpenseSheet(vm: TravelViewModel, detail: TripDetail, expense: Expense, dismiss: () -> Unit) {
     var action by remember { mutableStateOf<String?>(null) }; var reason by remember { mutableStateOf("") }; var voidPayments by remember { mutableStateOf(false) }; var selectedShare by remember { mutableStateOf<Share?>(null) }; var source by remember { mutableStateOf("") }; var payer by remember { mutableStateOf(detail.currentMemberId.toString()) }; var paymentAmount by remember { mutableStateOf("") }
+    var undoShare by remember { mutableStateOf<Share?>(null) }
     FormSheet(expense.title, vm, dismiss, listOf(expense.category, expense.merchant).filter { it.isNotBlank() }.joinToString(" · ")) {
         Row(verticalAlignment = Alignment.CenterVertically) { Text(money(expense.totalMinor, detail.trip.currency), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Forest); Status(expense.status) }
         Text("Assigned shares", fontWeight = FontWeight.Bold)
@@ -1693,7 +1694,10 @@ private data class LineState(val description: String, val amountMinor: Long, val
             Column(Modifier.weight(1f)) { Text(member?.name ?: "Traveler", fontWeight = FontWeight.Medium); Text(if (share.remainingMinor <= 0) "Paid / covered" else "${money(share.remainingMinor, detail.trip.currency)} remaining", style = MaterialTheme.typography.bodySmall, color = if (share.remainingMinor <= 0) Forest else Muted) }
             Text(money(share.amountMinor, detail.trip.currency), fontWeight = FontWeight.SemiBold)
             val mayConfirm = detail.isOrganizer || expense.payments.any { it.memberId == detail.currentMemberId }
+            // Repayments recorded against this bill from this traveller that you may undo (organizer, or ones made to you).
+            val mayUndo = detail.settlements.any { it.expenseId == expense.id && it.fromMemberId == share.memberId && it.status == "confirmed" && (detail.isOrganizer || it.toMemberId == detail.currentMemberId) }
             if (mayConfirm && share.remainingMinor > 0 && expense.status in listOf("open", "completed", "closed")) TextButton(onClick = { selectedShare = share; source = "" }, enabled = !vm.busy) { Text("Mark paid") }
+            else if (share.remainingMinor <= 0 && mayUndo && expense.status != "cancelled") TextButton(onClick = { undoShare = share }, enabled = !vm.busy) { Text("Mark unpaid", color = Danger) }
             else if (share.remainingMinor <= 0) Icon(Icons.Default.CheckCircle, "Paid", tint = Forest, modifier = Modifier.padding(start = 8.dp).size(20.dp))
         } }
         HorizontalDivider(color = Line)
@@ -1708,10 +1712,20 @@ private data class LineState(val description: String, val amountMinor: Long, val
             if (expense.status == "completed") Button(onClick = { action = "closed" }, Modifier.fillMaxWidth()) { Text("Close expense") }
             // Payers stay editable until reimbursements are recorded against the bill (they went to those payers).
             if (expense.status in listOf("open", "completed") && detail.settlements.none { it.expenseId == expense.id }) OutlinedButton(onClick = { action = "payers" }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Change who paid") }
+            if (expense.status in listOf("open", "completed")) OutlinedButton(onClick = { action = "participants" }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Group, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Edit who shares") }
         }
         if (canManage || canDelete) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (canManage && expense.status in listOf("open", "completed")) OutlinedButton(onClick = { action = "cancelled" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Block, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Cancel") }
             if (canDelete) OutlinedButton(onClick = { action = "delete" }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger)) { Icon(Icons.Default.Delete, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Delete") }
+        }
+        undoShare?.let { share ->
+            val who = detail.members.find { it.id == share.memberId }?.name ?: "Traveler"
+            HorizontalDivider(); Text("Mark $who's share as unpaid?", fontWeight = FontWeight.Bold)
+            Text("The repayment recorded for this bill is undone. If it came from a reimbursement $who really sent, that goes back to being a general reimbursement.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.mutate({ undoShare = null }) { repo, current -> repo.markShareUnpaid(current.trip.id, expense, share.memberId) } }, enabled = !vm.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Mark unpaid") }
+                OutlinedButton(onClick = { undoShare = null }, modifier = Modifier.weight(1f)) { Text("Keep as paid") }
+            }
         }
         selectedShare?.let { share ->
             val who = detail.members.find { it.id == share.memberId }?.name ?: "Traveler"
@@ -1744,6 +1758,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
                     TextButton(onClick = { action = null }, modifier = Modifier.fillMaxWidth()) { Text("Keep expense") }
                 }
                 "payers" -> PayersEditor(vm, detail, expense) { action = null }
+                "participants" -> ParticipantsEditor(vm, detail, expense) { action = null }
                 "payment" -> { Choice("Paid by", payer, detail.members.map { it.id.toString() to it.name }, { payer = it }); Field("Amount (${detail.trip.currency})", paymentAmount, { paymentAmount = it }, number = true); Submit("Record payment", vm.busy, amount(paymentAmount) != null) { vm.mutate({ action = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, payer.toLong(), amount(paymentAmount)!!) } } }
                 else -> {
                     Text(if (target == "closed") "Close this expense? Further expense edits will be locked." else if (target == "completed") "Confirm the merchant has been paid in full. Friends may still owe reimbursements." else "Cancel this expense? Its spending will be excluded from balances.")
@@ -1753,6 +1768,27 @@ private data class LineState(val description: String, val amountMinor: Long, val
             }
         }
     }
+}
+
+/** Organizer picks who shares the bill (e.g. removes a traveller who didn't join); the total is split again among them. */
+@Composable private fun ParticipantsEditor(vm: TravelViewModel, detail: TripDetail, expense: Expense, done: () -> Unit) {
+    val selected = remember(expense.id, expense.version) { mutableStateListOf<Long>().apply { addAll(expense.shares.filter { it.amountMinor > 0 }.map { it.memberId }.distinct()) } }
+    Text("Who shares this expense?", fontWeight = FontWeight.Bold)
+    Text(when (expense.splitMethod) {
+        "equal" -> "The ${money(expense.totalMinor, detail.trip.currency)} is split equally among everyone ticked."
+        "shares" -> "Everyone keeps their number of shares; newly added travellers get 1."
+        else -> "This bill was split by ${if (expense.splitMethod == "itemized") "receipt items" else expense.splitMethod}; saving splits it equally among everyone ticked."
+    }, color = Muted, style = MaterialTheme.typography.bodySmall)
+    detail.members.forEach { member ->
+        val on = member.id in selected
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { if (on) selected.remove(member.id) else selected.add(member.id) }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(on, { if (it) selected.add(member.id) else selected.remove(member.id) })
+            Text(member.name, Modifier.weight(1f))
+            if (on && expense.splitMethod == "equal" && selected.isNotEmpty()) Text(money(expense.totalMinor / selected.size, detail.trip.currency), color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    Submit("Save who shares", vm.busy, selected.isNotEmpty()) { vm.mutate(done) { repo, current -> repo.setExpenseParticipants(current.trip.id, expense, selected.toList()) } }
+    TextButton(onClick = done, modifier = Modifier.fillMaxWidth()) { Text("Back") }
 }
 
 /** Organizer corrects who paid the merchant and how much; leave it empty if nobody has paid yet. Shares stay as they are. */

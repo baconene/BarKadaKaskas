@@ -122,6 +122,12 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         request("PATCH", "/trips/$tripId/expenses/${expense.id}/status", body)
     }
 
+    override suspend fun markShareUnpaid(tripId: Long, expense: Expense, memberId: Long) {
+        request("POST", "/trips/$tripId/expenses/${expense.id}/shares/unpaid", JSONObject().put("member_id", memberId).put("version", expense.version))
+    }
+    override suspend fun setExpenseParticipants(tripId: Long, expense: Expense, memberIds: List<Long>) {
+        request("PUT", "/trips/$tripId/expenses/${expense.id}/participants", JSONObject().put("version", expense.version).put("member_ids", org.json.JSONArray(memberIds)))
+    }
     override suspend fun markSharePaid(tripId: Long, expense: Expense, memberId: Long, settlementId: Long?, newPayment: Boolean) {
         val body = JSONObject().put("member_id", memberId).put("version", expense.version).put("settlement_id", settlementId ?: JSONObject.NULL).put("new_payment", newPayment)
         request("POST", "/trips/$tripId/expenses/${expense.id}/shares/paid", body)

@@ -192,6 +192,55 @@ class ExpenseController extends Controller
         $shares->markPaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version'], isset($data['settlement_id']) ? (int) $data['settlement_id'] : null, (bool) ($data['new_payment'] ?? false));
         return $this->respond($request, $expense);
     }
+    public function shareUnpaid(Request $request, Trip $trip, Expense $expense, \App\Services\ExpenseShares $shares)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        $data = $request->validate(['member_id' => 'required|integer', 'version' => 'required|integer']);
+        $shares->markUnpaid($expense, (int) $data['member_id'], $request->user(), (int) $data['version']);
+        return $this->respond($request, $expense);
+    }
+
+    /**
+     * Organizer changes who shares a bill (e.g. removes a traveller who didn't join) and the total is split again among
+     * them. Equal and "shares" splits keep everyone's weights (newcomers get 1); exact, percentage and itemized splits
+     * become equal, since the old amounts no longer add up. Travellers with a repayment recorded against this bill
+     * can't be removed until it is marked unpaid.
+     */
+    public function participants(Request $request, Trip $trip, Expense $expense, SplitCalculator $splitter)
+    {
+        abort_unless($expense->trip_id === $trip->id, 404);
+        Gate::authorize('plan', $trip);
+        $data = $request->validate([
+            'version' => 'required|integer|min:1',
+            'member_ids' => 'required|array|min:1', 'member_ids.*' => ['integer', 'distinct', Rule::in($trip->members()->pluck('id')->all())],
+        ], ['member_ids.required' => 'Choose at least one traveller to share this expense.']);
+        DB::transaction(function () use ($data, $expense, $request, $splitter, $trip) {
+            $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $fail = fn ($message) => throw ValidationException::withMessages(['member_ids' => $message]);
+            if (in_array($expense->status, [ExpenseStatus::Closed, ExpenseStatus::Cancelled], true)) { $fail('Closed and cancelled expenses cannot be changed.'); }
+            if ($expense->version !== (int) $data['version']) { $fail('This expense changed. Refresh and try again.'); }
+            if ($expense->adjustments()->exists()) { $fail('This expense has separate adjustments; edit it on the web.'); }
+            $current = $expense->allocations()->get();
+            $removed = $current->pluck('trip_member_id')->unique()->diff($data['member_ids']);
+            $paidBack = $expense->settlements()->whereIn('from_member_id', $removed)->where('status', 'confirmed')->pluck('from_member_id')->unique();
+            if ($paidBack->isNotEmpty()) {
+                $names = $trip->members()->with('user')->whereIn('id', $paidBack)->get()->map(fn ($m) => $m->user->name)->implode(', ');
+                $fail("{$names} already paid back their share of this bill. Mark it unpaid first.");
+            }
+            $keepWeights = in_array($expense->split_method, ['equal', 'shares'], true);
+            $weights = $current->whereNull('expense_item_id')->groupBy('trip_member_id')->map(fn ($rows) => max(1, (int) $rows->first()->basis_value));
+            $method = $keepWeights ? $expense->split_method : 'equal';
+            $before = $current->toArray();
+            $expense->allocations()->delete();
+            if (! $keepWeights) { $expense->items()->delete(); }
+            $expense->update(['split_method' => $method, 'version' => $expense->version + 1]);
+            $this->writeAllocations($expense, ['split_method' => $method, 'total_minor' => $expense->total_minor, 'items' => [],
+                'allocations' => array_map(fn ($id) => ['trip_member_id' => $id, 'weight' => $method === 'shares' ? ($weights[$id] ?? 1) : 1], $data['member_ids'])], $splitter);
+            ActivityLog::create(['trip_id' => $expense->trip_id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'expense', 'subject_id' => $expense->id, 'action' => 'participants_changed', 'before' => $before, 'after' => $expense->allocations()->get()->toArray()]);
+        });
+        return $this->respond($request, $expense);
+    }
+
     public function payment(Request $request, Trip $trip, Expense $expense)
     {
         abort_unless($expense->trip_id === $trip->id, 404); Gate::authorize('update', $trip);

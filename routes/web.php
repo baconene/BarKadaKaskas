@@ -64,6 +64,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'destroy'])->name('expenses.destroy');
     Route::patch('trips/{trip}/expenses/{expense}', [ExpenseController::class, 'update'])->name('expenses.update');
     Route::post('trips/{trip}/expenses/{expense}/shares/paid', [ExpenseController::class, 'sharePaid'])->name('expenses.share-paid');
+    Route::post('trips/{trip}/expenses/{expense}/shares/unpaid', [ExpenseController::class, 'shareUnpaid'])->name('expenses.share-unpaid');
+    Route::put('trips/{trip}/expenses/{expense}/participants', [ExpenseController::class, 'participants'])->name('expenses.participants');
     Route::patch('trips/{trip}/expenses/{expense}/status', [ExpenseController::class, 'status'])->name('expenses.status');
     Route::post('trips/{trip}/expenses/{expense}/payments', [ExpenseController::class, 'payment'])->name('expenses.payment');
     Route::put('trips/{trip}/expenses/{expense}/payers', [ExpenseController::class, 'payers'])->name('expenses.payers');

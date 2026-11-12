@@ -187,3 +187,12 @@ set up or can't answer.
 `stops`, `summary`, `outfit` (what to wear), `bring` (things and equipment), `tips` and `available`, written by Gemini
 from that day's itinerary. Cached per day and plan, so it is rewritten when the day's activities change; the lists
 are empty and `summary` null when the day has no activities or the AI isn't available.
+
+## Undo "Mark as paid" and change who shares a bill
+
+- `POST /api/v1/trips/{trip}/expenses/{expense}/shares/unpaid` (`member_id`, `version`): undoes the repayments recorded
+  against the bill from that traveller. One that came from an existing trip reimbursement goes back to being that
+  reimbursement; one recorded as a separate new payment is removed. The organizer, or the traveller who received it.
+- `PUT /api/v1/trips/{trip}/expenses/{expense}/participants` (`member_ids`, `version`), organizer: who shares the bill;
+  the total is split again (equal and "shares" splits keep weights; others become equal). Travellers with a repayment
+  recorded against the bill can't be removed until it is marked unpaid.

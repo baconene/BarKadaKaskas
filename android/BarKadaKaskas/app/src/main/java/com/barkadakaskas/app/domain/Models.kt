@@ -143,6 +143,10 @@ interface TravelRepository {
     suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft
     suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String? = null, voidPayments: Boolean = false)
     suspend fun markSharePaid(tripId: Long, expense: Expense, memberId: Long, settlementId: Long? = null, newPayment: Boolean = false)
+    /** Undoes "Mark as paid" for a traveller's share (the organizer, or the traveller who received the repayment). */
+    suspend fun markShareUnpaid(tripId: Long, expense: Expense, memberId: Long)
+    /** Organizer: who shares the bill; the total is split again among them. */
+    suspend fun setExpenseParticipants(tripId: Long, expense: Expense, memberIds: List<Long>)
     suspend fun recordMerchantPayment(tripId: Long, expense: Expense, memberId: Long, amountMinor: Long)
     /** Organizer replaces who paid the merchant ([payments] = member id to amount; empty means unpaid). Shares are unchanged. */
     suspend fun setExpensePayers(tripId: Long, expense: Expense, payments: List<Payment>)

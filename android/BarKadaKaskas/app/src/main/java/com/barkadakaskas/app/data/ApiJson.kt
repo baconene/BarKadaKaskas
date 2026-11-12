@@ -201,6 +201,11 @@ internal object ApiJson {
 
     fun suggestions(body: JSONObject?) = body?.optJSONArray("data").mapObjects { suggestion(it) }.filter { it.title.isNotBlank() && it.startsAt.isNotBlank() }
 
+    fun dayPrep(d: JSONObject): DayPrep? {
+        val strings = { name: String -> d.optJSONArray(name)?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList() }
+        return DayPrep(d.textOrNull("summary"), strings("outfit"), strings("bring"), strings("tips")).takeIf { it.summary != null || it.outfit.isNotEmpty() || it.bring.isNotEmpty() }
+    }
+
     fun placeTips(list: JSONArray?) = list.mapObjects { PlaceTip(it.text("title"), it.textOrNull("detail")) }.filter { it.title.isNotBlank() }
 
     fun placePhotos(list: JSONArray?) = list.mapObjects { PlacePhoto(it.imageUrl("url").orEmpty(), it.textOrNull("credit"), it.text("source")) }.filter { it.url.isNotBlank() }

@@ -214,6 +214,14 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         return runCatching { repository.stopPhotos(tripId, stopId) }.getOrDefault(emptyList()).also { if (it.isNotEmpty()) stopPhotoCache[stopId] = it }
     }
 
+    // "Prep for the day", remembered per day and plan while the trip is open.
+    private val dayPrepCache = mutableMapOf<String, DayPrep?>()
+    suspend fun dayPrep(date: String, signature: String): DayPrep? {
+        val key = "$date|$signature"
+        if (dayPrepCache.containsKey(key)) return dayPrepCache[key]
+        val tripId = detail?.trip?.id ?: return null
+        return runCatching { repository.dayPrep(tripId, date) }.getOrNull().also { if (it != null) dayPrepCache[key] = it }
+    }
     private val stopTipCache = mutableMapOf<Long, List<PlaceTip>>()
     suspend fun stopTips(stopId: Long): List<PlaceTip> {
         stopTipCache[stopId]?.let { return it }

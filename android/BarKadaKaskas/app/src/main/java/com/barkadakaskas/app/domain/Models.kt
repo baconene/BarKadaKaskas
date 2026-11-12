@@ -63,6 +63,8 @@ data class TravelerDocument(val id: Long, val memberId: Long, val type: String, 
 /** A new time for an activity already planned, suggested by the AI planner (local times, "yyyy-MM-ddTHH:mm"). */
 /** A photo of a stop's place from the web (Google Places or Wikimedia Commons), with its credit. */
 /** A recommended thing to do at a stop's place (AI suggestion). */
+/** "Prep for the day" from the itinerary (AI): summary, what to wear, what to bring, tips. */
+data class DayPrep(val summary: String?, val outfit: List<String>, val bring: List<String>, val tips: List<String>)
 data class PlaceTip(val title: String, val detail: String?)
 data class PlacePhoto(val url: String, val credit: String?, val source: String)
 data class StopChange(val itemId: Long, val title: String, val fromStartsAt: String, val fromEndsAt: String, val startsAt: String, val endsAt: String, val reason: String?)
@@ -121,6 +123,8 @@ interface TravelRepository {
     suspend fun stopPhotos(tripId: Long, stopId: Long): List<PlacePhoto>
     /** Recommended things to do at a stop's place (empty when the AI isn't available). */
     suspend fun stopTips(tripId: Long, stopId: Long): List<PlaceTip>
+    /** "Prep for the day" for [date] (yyyy-MM-dd); null when the AI isn't available or the day is empty. */
+    suspend fun dayPrep(tripId: Long, date: String): DayPrep?
     /** The day's highlight ([date] yyyy-MM-dd; today in the trip's time zone when null). */
     suspend fun highlight(tripId: Long, date: String? = null): Highlight
     /** Makes the day's AI cover (one AI edit); returns its URL. */

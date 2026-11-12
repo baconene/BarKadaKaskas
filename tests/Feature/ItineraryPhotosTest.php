@@ -62,6 +62,25 @@ class ItineraryPhotosTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_day_prep_summarises_what_to_wear_and_bring_and_follows_plan_changes(): void
+    {
+        config(['services.gemini.api_key' => 'test-key', 'services.gemini.credentials' => null, 'services.gemini.project' => 'demo', 'services.gemini.model' => 'gemini-2.5-flash']);
+        [$owner, $trip, $item] = $this->setUpTrip();
+        $item->update(['starts_at' => \Carbon\CarbonImmutable::parse('2026-11-12 09:00', 'Asia/Manila')->utc(), 'ends_at' => \Carbon\CarbonImmutable::parse('2026-11-12 11:00', 'Asia/Manila')->utc()]);
+        Http::fake(['aiplatform.googleapis.com/*' => Http::response(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+            'summary' => 'A waterfall morning.', 'outfit' => ['Swimsuit under quick-dry clothes', ''], 'bring' => ['Dry bag', 'Cash for entrance'], 'tips' => ['Go early'],
+        ])]]]]]])]);
+        $url = "/trips/{$trip->id}/itinerary-day?date=2026-11-12";
+        $this->actingAs($owner)->getJson($url)->assertOk()->assertJson(['data' => ['date' => '2026-11-12', 'stops' => 1, 'summary' => 'A waterfall morning.', 'outfit' => ['Swimsuit under quick-dry clothes'], 'bring' => ['Dry bag', 'Cash for entrance'], 'tips' => ['Go early']]]);
+        Http::assertSent(fn ($request) => str_contains((string) $request->body(), '9:00 AM') && str_contains((string) $request->body(), 'Cambugahay Falls'));
+        $this->actingAs($owner)->getJson($url)->assertOk();
+        Http::assertSentCount(1);                                   // cached
+        $item->update(['title' => 'Cambugahay Falls and Lazi Church']);
+        $this->actingAs($owner)->getJson($url)->assertOk();
+        Http::assertSentCount(2);                                   // the plan changed: rewritten
+        $this->actingAs($owner)->getJson("/trips/{$trip->id}/itinerary-day?date=2026-11-11")->assertOk()->assertJsonPath('data.stops', 0)->assertJsonPath('data.summary', null);
+    }
+
     public function test_only_travellers_see_them(): void
     {
         config(['services.google_maps.browser_key' => '']);

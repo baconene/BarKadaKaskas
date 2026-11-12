@@ -180,3 +180,10 @@ returned (no files are stored); results are cached for a week per place.
 `GET /api/v1/trips/{trip}/itinerary/{item}/tips` returns about five recommended things to do there (`title`,
 `detail` — a one-line tip), written by Gemini on Vertex AI and cached per place for 30 days. Empty when the AI isn't
 set up or can't answer.
+
+## Prep for the day
+
+`GET /api/v1/trips/{trip}/itinerary-day?date=YYYY-MM-DD` (default today in the trip's time zone) returns `date`,
+`stops`, `summary`, `outfit` (what to wear), `bring` (things and equipment), `tips` and `available`, written by Gemini
+from that day's itinerary. Cached per day and plan, so it is rewritten when the day's activities change; the lists
+are empty and `summary` null when the day has no activities or the AI isn't available.

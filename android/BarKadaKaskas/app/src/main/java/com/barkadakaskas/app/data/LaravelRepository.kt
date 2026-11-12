@@ -107,6 +107,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         request("GET", "/trips/$tripId/itinerary/$stopId/photos", readTimeout = 60_000)?.optJSONArray("data").let { list -> ApiJson.placePhotos(list) }
     override suspend fun stopTips(tripId: Long, stopId: Long): List<PlaceTip> =
         ApiJson.placeTips(request("GET", "/trips/$tripId/itinerary/$stopId/tips", readTimeout = 45_000)?.optJSONArray("data"))
+    override suspend fun dayPrep(tripId: Long, date: String): DayPrep? = ApiJson.dayPrep(data(request("GET", "/trips/$tripId/itinerary-day?date=$date", readTimeout = 50_000)))
     override suspend fun aiQuota(): AiQuota = ApiJson.aiQuota(data(request("GET", "/photos/ai-quota"))) ?: AiQuota(3, 3, 0)
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =

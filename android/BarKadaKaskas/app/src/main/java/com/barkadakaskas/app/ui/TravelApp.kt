@@ -619,6 +619,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
 
+    DayPrepCard(current.key.toString(), current.stops.joinToString("|") { "${it.id}:${it.title}:${it.startsAt}" }, vm::dayPrep)
     Column {
         current.stops.forEachIndexed { index, stop ->
             TimelineStop(stop, current.stops.getOrNull(index - 1), index == current.stops.lastIndex, trip, detail.isOrganizer && !vm.busy, geocoded[stop.id], { url -> openUrl(context, url) }, { located -> navigateTo(context, located, dayStops, trip.timezone, trip.id) }, { vm.toggleStopDone(stop) }, { vm.stopPhotos(stop.id) }, { vm.stopTips(stop.id) }) { editing = stop; form = true }
@@ -1148,6 +1149,45 @@ private fun postTime(iso: String): String = runCatching {
                 if (vm.commentSending) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.Send, "Post comment", tint = Color.White)
             }
         }
+    }
+}
+
+/** "Prep for the day": the day's plan in a sentence, what to wear and what to bring (AI); collapsible. */
+@Composable private fun DayPrepCard(date: String, signature: String, load: suspend (String, String) -> DayPrep?) {
+    var prep by remember(date, signature) { mutableStateOf<DayPrep?>(null) }
+    var loading by remember(date, signature) { mutableStateOf(true) }
+    var open by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(date, signature) { prep = load(date, signature); loading = false }
+    val p = prep
+    if (!loading && p == null) return
+    Surface(color = Color(0xFFF5F8F1), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color(0xFFE3EADC)), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, null, tint = Forest, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                Text("Prep for the day", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Forest)
+                Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (open) "Hide" else "Show", tint = Forest)
+            }
+            if (open) {
+                if (p == null) Text("Reading the day's plan…", color = Muted, style = MaterialTheme.typography.bodySmall)
+                else {
+                    p.summary?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF33463D)) }
+                    if (p.outfit.isNotEmpty()) PrepList(Icons.Default.Checkroom, "WHAT TO WEAR", p.outfit, "•")
+                    if (p.bring.isNotEmpty()) PrepList(Icons.Default.Backpack, "WHAT TO BRING", p.bring, "☐")
+                    if (p.tips.isNotEmpty()) PrepList(Icons.Default.Lightbulb, "TIPS", p.tips, "•")
+                    Text("Suggested by AI from the day's plan. Check the weather before you head out.", color = Muted, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun PrepList(icon: ImageVector, title: String, items: List<String>, bullet: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = Color(0xFF76846E), modifier = Modifier.size(14.dp)); Spacer(Modifier.width(5.dp))
+            Text(title, color = Color(0xFF76846E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        }
+        items.forEach { Row { Text(bullet, Modifier.width(18.dp), color = Moss); Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFF33463D)) } }
     }
 }
 

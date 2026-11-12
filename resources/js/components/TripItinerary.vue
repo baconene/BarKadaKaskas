@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, ChevronUp, List, Navigation, Sparkles, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
 import ItineraryRouteMap, { type LegResult } from '@/components/ItineraryRouteMap.vue';
 import ActivitySheet from '@/components/trip/ActivitySheet.vue';
+import DayPrep from '@/components/trip/DayPrep.vue';
 import DailyRouteSummary from '@/components/trip/DailyRouteSummary.vue';
 import DaySelector from '@/components/trip/DaySelector.vue';
 import DayTimeline from '@/components/trip/DayTimeline.vue';
@@ -199,6 +200,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 
                 <div v-if="shownDay" class="day-view">
                     <div class="day-title"><h3>Day {{ shownDay.number }} · {{ shownDay.weekday }}, {{ shownDay.date }}</h3><span class="muted">{{ shownDay.count }} activities</span></div>
+                    <DayPrep :trip-id="tripId" :date="shownDay.key" :signature="shownDay.entries.map(e => `${e.item.id}:${e.item.title}:${e.item.starts_at}`).join('|')" />
                     <DailyRouteSummary title="Route for the day" :stops="shownDay.entries.map(e => e.item)" :leg-ids="legsOn(shownDay).map(l => l.to.id)" :results="legResults" :loading="mapBusy" :has-map="hasMap && !isDesktop" @view-route="emit('navigate', 'map')" />
                     <div class="card timeline-card">
                         <DayTimeline :entries="shownDay.entries" :stops="stops" :results="legResults" :timezone="timezone" :selected-leg="selectedLeg" :done="done" @open="openItem = $event" @focus-leg="focusLeg" @swipe="stepDay" />

@@ -13,7 +13,33 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** Prepares a picked photo for upload: honours camera rotation, limits the longest side and re-encodes as JPEG. */
+/** Where and when a photo was taken, from its EXIF data (local time "yyyy-MM-dd HH:mm:ss"). */
+data class PhotoPlace(val latitude: Double?, val longitude: Double?, val takenAt: String?)
+
 object Photos {
+    /** Reads the photo's own GPS position and capture time before it is resized (resizing drops EXIF). */
+    suspend fun place(context: Context, uri: Uri): PhotoPlace = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val exif = android.media.ExifInterface(input)
+                val latLong = exif.latLong?.takeIf { !(it[0] == 0.0 && it[1] == 0.0) }
+                val raw = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(android.media.ExifInterface.TAG_DATETIME)
+                val taken = raw?.trim()?.takeIf { Regex("^\\d{4}:\\d\\d:\\d\\d \\d\\d:\\d\\d:\\d\\d$").matches(it) }?.let { it.substring(0, 4) + "-" + it.substring(5, 7) + "-" + it.substring(8) }
+                PhotoPlace(latLong?.get(0), latLong?.get(1), taken)
+            }
+        }.getOrNull() ?: PhotoPlace(null, null, null)
+    }
+
+    /** The phone's most recent location fix (GPS or network) from the last 15 minutes, if location is allowed. */
+    fun lastLocation(context: Context): Pair<Double, Double>? = runCatching {
+        if (context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) return null
+        val manager = context.getSystemService(android.location.LocationManager::class.java)
+        manager.getProviders(true).mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+            .filter { System.currentTimeMillis() - it.time < 15 * 60_000 }
+            .minByOrNull { it.accuracy }?.let { it.latitude to it.longitude }
+    }.getOrNull()
+
     suspend fun jpeg(context: Context, uri: Uri, maxSide: Int = 1600): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
             val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

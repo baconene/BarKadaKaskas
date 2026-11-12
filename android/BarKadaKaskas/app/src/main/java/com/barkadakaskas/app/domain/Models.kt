@@ -111,7 +111,7 @@ interface TravelRepository {
     suspend fun removeAvatar()
     suspend fun posts(tripId: Long, before: Long? = null): PostPage
     /** [jpegs] are downscaled photos (1 to 10). */
-    suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>): Post
+    suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>, places: List<com.barkadakaskas.app.data.PhotoPlace?> = emptyList(), here: Pair<Double, Double>? = null): Post
     suspend fun deletePost(tripId: Long, postId: Long)
     /** Toggles the viewer's heart; returns (liked, likesCount). */
     suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int>

@@ -113,7 +113,32 @@ class HighlightTest extends TestCase
         $this->assertNotEmpty($scenes[1]['photos'][0]['by']);
     }
 
-        public function test_repeated_scenery_is_shown_once(): void
+        public function test_photos_go_to_the_stop_where_they_were_taken(): void
+    {
+        config(['services.google_maps.browser_key' => '']);
+        $stop = fn ($time, $title, $lat, $lng) => $this->trip->itineraryItems()->create(['title' => $title, 'latitude' => $lat, 'longitude' => $lng, 'starts_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->utc(), 'ends_at' => Carbon::parse("2026-11-12 {$time}", 'Asia/Manila')->addHours(2)->utc(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $this->owner->id]);
+        $stop('08:00', 'Cambugahay Falls', 9.1405, 123.6227);
+        $stop('13:00', 'Salagdoong Beach', 9.2208, 123.6731);
+        // Posted at 2 PM (during the beach), but taken at the falls in the morning: the photo's own place and time win.
+        Carbon::setTestNow(Carbon::parse('2026-11-12 14:00', 'Asia/Manila'));
+        // First post (best by default) becomes the cover, so the two below are both slides.
+        $this->post("/api/v1/trips/{$this->trip->id}/posts", ['caption' => 'Cover', 'photos' => [$this->scene([40, 40, 70], [230, 230, 220], 120, 140)]], $this->headers($this->friend) + ['Accept' => 'application/json'])->assertCreated();
+        $this->post("/api/v1/trips/{$this->trip->id}/posts", ['caption' => 'Falls pic', 'photos' => [$this->scene([120, 170, 230], [30, 90, 160], 200)],
+            'photo_locations' => [['latitude' => 9.1409, 'longitude' => 123.6230, 'taken_at' => '2026-11-12 09:15:00']], 'latitude' => 9.2210, 'longitude' => 123.6735],
+            $this->headers($this->owner) + ['Accept' => 'application/json'])->assertCreated();
+        // No photo location: the phone's location when posting is used (at the beach).
+        $this->post("/api/v1/trips/{$this->trip->id}/posts", ['caption' => 'Beach pic', 'photos' => [$this->scene([240, 150, 90], [60, 40, 80], 600, -80)], 'latitude' => 9.2210, 'longitude' => 123.6735],
+            $this->headers($this->friend) + ['Accept' => 'application/json'])->assertCreated();
+        $photo = \App\Models\TripPostPhoto::whereHas('post', fn ($q) => $q->where('caption', 'Falls pic'))->firstOrFail();
+        $this->assertSame(['photo', '2026-11-12 01:15'], [$photo->location_source, $photo->taken_at->format('Y-m-d H:i')]);
+        $this->assertSame('device', \App\Models\TripPostPhoto::whereHas('post', fn ($q) => $q->where('caption', 'Beach pic'))->value('location_source'));
+
+        $slides = collect($this->getJson("/api/v1/trips/{$this->trip->id}/highlights?date=2026-11-12", $this->headers($this->owner))->assertOk()->json('data.slides'))->keyBy('caption');
+        $this->assertSame('Cambugahay Falls', $slides['Falls pic']['title'] ?? null);
+        $this->assertSame('Salagdoong Beach', $slides['Beach pic']['title'] ?? null);
+    }
+
+    public function test_repeated_scenery_is_shown_once(): void
     {
         $this->postAt('08:00', $this->owner, 'Beach', $this->scene([120, 170, 230], [30, 90, 160], 200));
         $this->postAt('08:01', $this->friend, 'Beach again', $this->scene([120, 170, 230], [30, 90, 160], 205, 8, 12)); // same view, a little brighter

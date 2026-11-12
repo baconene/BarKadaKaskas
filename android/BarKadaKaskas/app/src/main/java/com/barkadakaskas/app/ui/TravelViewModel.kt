@@ -196,9 +196,9 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
             finally { postsLoading = false }
         }
     }
-    fun createPost(caption: String, jpegs: List<ByteArray>, done: () -> Unit) = launch {
+    fun createPost(caption: String, jpegs: List<ByteArray>, done: () -> Unit, places: List<com.barkadakaskas.app.data.PhotoPlace?> = emptyList(), here: Pair<Double, Double>? = null) = launch {
         val id = detail?.trip?.id ?: return@launch
-        posts = listOf(repository.createPost(id, caption, jpegs)) + posts
+        posts = listOf(repository.createPost(id, caption, jpegs, places, here)) + posts
         done()
     }
     fun deletePost(post: Post) = launch {

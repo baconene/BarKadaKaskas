@@ -6,6 +6,7 @@ import LoadingImage from '@/components/LoadingImage.vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { appFetch, shrinkImage } from '@/lib/uploads';
+import { currentPosition, readPhotoLocation } from '@/lib/photoLocation';
 
 /** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
 type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number };
@@ -96,6 +97,11 @@ async function publish() {
     try {
         const body = new FormData();
         body.append('caption', caption.value.trim());
+        // Where each photo was taken (from its own GPS data, read before resizing) and, as a fallback, where the
+        // phone is now; the day highlight uses these to put photos at the right stop.
+        const [here, ...places] = await Promise.all([currentPosition(), ...picked.value.map(p => readPhotoLocation(p.file))]);
+        if (here) { body.append('latitude', String(here.latitude)); body.append('longitude', String(here.longitude)); }
+        places.forEach((place, i) => (Object.keys(place) as (keyof typeof place)[]).forEach(key => { if (place[key] !== null) body.append(`photo_locations[${i}][${key}]`, String(place[key])); }));
         for (const [i, p] of picked.value.entries()) body.append('photos[]', await shrinkImage(p.file), `photo-${i + 1}.jpg`);
         const { data } = await appFetch<{ data: Post }>(`/trips/${props.tripId}/posts`, { method: 'POST', body });
         posts.value = [data, ...posts.value];

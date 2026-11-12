@@ -85,8 +85,17 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun uploadAvatar(jpeg: ByteArray) { request("POST", "/me/avatar", raw = multipart("avatar", "avatar.jpg", "image/jpeg", jpeg)) }
     override suspend fun removeAvatar() { request("DELETE", "/me/avatar") }
     override suspend fun posts(tripId: Long, before: Long?): PostPage = ApiJson.postPage(request("GET", "/trips/$tripId/posts" + (before?.let { "?before=$it" } ?: "")) ?: JSONObject())
-    override suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>): Post =
-        ApiJson.post(data(request("POST", "/trips/$tripId/posts", raw = multipart(mapOf("caption" to caption.trim()), jpegs.mapIndexed { i, bytes -> FilePart("photos[]", "photo-${i + 1}.jpg", "image/jpeg", bytes) }))))
+    override suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>, places: List<PhotoPlace?>, here: Pair<Double, Double>?): Post {
+        // Where each photo was taken (its own GPS data, else the phone's location now) for the day highlight.
+        val fields = mutableMapOf("caption" to caption.trim())
+        here?.let { fields["latitude"] = it.first.toString(); fields["longitude"] = it.second.toString() }
+        places.forEachIndexed { i, place ->
+            place?.latitude?.let { fields["photo_locations[$i][latitude]"] = it.toString() }
+            place?.longitude?.let { fields["photo_locations[$i][longitude]"] = it.toString() }
+            place?.takenAt?.let { fields["photo_locations[$i][taken_at]"] = it }
+        }
+        return ApiJson.post(data(request("POST", "/trips/$tripId/posts", raw = multipart(fields, jpegs.mapIndexed { i, bytes -> FilePart("photos[]", "photo-${i + 1}.jpg", "image/jpeg", bytes) }))))
+    }
     override suspend fun deletePost(tripId: Long, postId: Long) { request("DELETE", "/trips/$tripId/posts/$postId") }
     override suspend fun toggleLike(tripId: Long, postId: Long): Pair<Boolean, Int> = data(request("POST", "/trips/$tripId/posts/$postId/like")).let { it.optBoolean("liked") to it.optInt("likes_count") }
     override suspend fun alerts(after: Long?): AlertPage = ApiJson.alertPage(request("GET", "/alerts" + (after?.let { "?after=$it" } ?: "")))

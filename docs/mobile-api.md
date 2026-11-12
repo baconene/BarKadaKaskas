@@ -196,3 +196,11 @@ are empty and `summary` null when the day has no activities or the AI isn't avai
 - `PUT /api/v1/trips/{trip}/expenses/{expense}/participants` (`member_ids`, `version`), organizer: who shares the bill;
   the total is split again (equal and "shares" splits keep weights; others become equal). Travellers with a repayment
   recorded against the bill can't be removed until it is marked unpaid.
+
+## Photo locations
+
+`POST /api/v1/trips/{trip}/posts` also takes `latitude`/`longitude` (where the phone is when posting) and
+`photo_locations[i][latitude|longitude|taken_at]` per photo (read from the photo's EXIF before resizing; `taken_at` is
+local time `Y-m-d H:i:s`). The server falls back to the uploaded file's own EXIF, then the phone's location. Day
+highlights put each photo at the nearest itinerary stop within 1.5 km of where it was taken, and use the capture time
+(not the posting time) for the day and the time-based fallback.

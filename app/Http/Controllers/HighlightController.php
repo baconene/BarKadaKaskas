@@ -39,12 +39,20 @@ class HighlightController extends Controller
         // The cover shows the best photo; the slides use the rest (unless it's the only one).
         $picked = ($unique->count() > 1 ? $unique->slice(1) : $unique)->take(self::MAX_PHOTOS);
 
-        // Each photo belongs to the stop that had started when it was posted (or the first stop, if posted earlier).
+        // Each photo belongs to the stop it was taken at: the nearest stop within 1.5 km of where it was taken, when
+        // the photo has a location; otherwise the stop that had started when it was taken (or posted), or the first.
+        $positions = $items->mapWithKeys(fn ($item) => [$item->id => $maps->position($item, $trip)]);
         $slides = [];
-        foreach ($picked->sortBy('posted_at') as $photo) {
-            $stop = $items->filter(fn ($item) => $item->starts_at->lte($photo['posted_at']))->last() ?? $items->first();
+        foreach ($picked->sortBy('at') as $photo) {
+            $stop = null;
+            if ($photo['latitude'] !== null) {
+                $near = $items->map(fn ($item) => [$item, ($p = $positions[$item->id]) ? self::meters($photo['latitude'], $photo['longitude'], $p[0], $p[1]) : INF])
+                    ->filter(fn ($pair) => $pair[1] <= 1500)->sortBy(fn ($pair) => $pair[1])->first();
+                $stop = $near[0] ?? null;
+            }
+            $stop ??= $items->filter(fn ($item) => $item->starts_at->lte($photo['at']))->last() ?? $items->first();
             $slides[] = [
-                'time' => $stop ? $stop->starts_at->setTimezone($trip->timezone)->format('g:i A') : CarbonImmutable::parse($photo['posted_at'])->setTimezone($trip->timezone)->format('g:i A'),
+                'time' => $stop ? $stop->starts_at->setTimezone($trip->timezone)->format('g:i A') : CarbonImmutable::parse($photo['at'])->setTimezone($trip->timezone)->format('g:i A'),
                 'title' => $stop?->title ?? ($photo['caption'] ?: $trip->destination),
                 'location' => $stop?->location,
                 'photo_url' => $photo['url'],
@@ -133,14 +141,25 @@ class HighlightController extends Controller
     }
 
     /** Photos posted that day, with a score from the post's hearts and comments. */
+    /** Photos taken that day (by their capture time, else when they were posted), with where they were taken. */
     private function dayPhotos(Trip $trip, CarbonImmutable $from, CarbonImmutable $to)
     {
-        $posts = $trip->posts()->whereBetween('created_at', [$from, $to])->with(['photos', 'member.user'])->withCount(['likes', 'comments'])->get();
+        $posts = $trip->posts()->where(fn ($q) => $q->whereBetween('created_at', [$from, $to])->orWhereHas('photos', fn ($p) => $p->whereBetween('taken_at', [$from, $to])))
+            ->with(['photos', 'member.user'])->withCount(['likes', 'comments'])->get();
         return $posts->flatMap(fn ($post) => $post->photos->map(fn (TripPostPhoto $photo) => [
             'url' => PublicImages::url($photo->path), 'path' => $photo->path, 'caption' => $post->caption,
             'by' => $post->member?->user ? \App\Services\Alerts::firstName($post->member->user) : null,
-            'posted_at' => $post->created_at, 'score' => $post->likes_count * 2 + $post->comments_count - $photo->position * 0.1,
-        ]))->values();
+            'posted_at' => $post->created_at, 'at' => $photo->taken_at ?? $post->created_at,
+            'latitude' => $photo->latitude, 'longitude' => $photo->longitude,
+            'score' => $post->likes_count * 2 + $post->comments_count - $photo->position * 0.1,
+        ]))->filter(fn ($photo) => $photo['at']->between($from, $to))->values();
+    }
+
+    private static function meters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $dLat = deg2rad($lat2 - $lat1); $dLng = deg2rad($lng2 - $lng1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        return 6371000 * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
     /**
@@ -194,7 +213,9 @@ class HighlightController extends Controller
     /** Trip days (in the trip's time zone) that have photos, newest first. */
     private function daysWithPhotos(Trip $trip): array
     {
-        return $trip->posts()->pluck('created_at')->map(fn ($at) => $at->setTimezone($trip->timezone)->format('Y-m-d'))->unique()->sortDesc()->values()->all();
+        $posted = $trip->posts()->pluck('created_at');
+        $taken = TripPostPhoto::whereIn('trip_post_id', $trip->posts()->select('id'))->whereNotNull('taken_at')->pluck('taken_at');
+        return $posted->concat($taken)->map(fn ($at) => $at->setTimezone($trip->timezone)->format('Y-m-d'))->unique()->sortDesc()->values()->all();
     }
 
     private function coverKey(Trip $trip, string $date): string

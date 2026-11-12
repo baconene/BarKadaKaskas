@@ -1369,9 +1369,11 @@ private fun postTime(iso: String): String = runCatching {
         Submit(if (preparing) "Preparing photos…" else "Post ${picked.size} photo${if (picked.size == 1) "" else "s"}", vm.busy || preparing, picked.isNotEmpty(), Icons.AutoMirrored.Filled.Send) {
             scope.launch {
                 preparing = true
-                val jpegs = picked.mapNotNull { Photos.jpeg(context, it, maxSide = 2000) }
+                // Read each photo's place and time before resizing (which drops it); keep them paired with their JPEG.
+                val prepared = picked.mapNotNull { uri -> Photos.jpeg(context, uri, maxSide = 2000)?.let { it to Photos.place(context, uri) } }
                 preparing = false
-                if (jpegs.isEmpty()) Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show() else vm.createPost(caption, jpegs, dismiss)
+                if (prepared.isEmpty()) Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show()
+                else vm.createPost(caption, prepared.map { it.first }, dismiss, prepared.map { it.second }, Photos.lastLocation(context))
             }
         }
     }

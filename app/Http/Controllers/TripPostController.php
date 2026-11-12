@@ -35,13 +35,20 @@ class TripPostController extends Controller
             'caption' => 'nullable|string|max:2000',
             'photos' => 'required|array|min:1|max:10',
             'photos.*' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
+            // Where the phone was when posting, and per photo what its own GPS data said (read before resizing).
+            'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude',
+            'photo_locations' => 'nullable|array|max:10',
+            'photo_locations.*.latitude' => 'nullable|numeric|between:-90,90', 'photo_locations.*.longitude' => 'nullable|numeric|between:-180,180',
+            'photo_locations.*.taken_at' => 'nullable|date_format:Y-m-d H:i:s',
         ], ['photos.required' => 'Add at least one photo.', 'photos.max' => 'Post up to 10 photos at a time.']);
         $memberId = $this->memberId($request, $trip);
         $post = DB::transaction(function () use ($request, $trip, $memberId) {
             $post = TripPost::create(['trip_id' => $trip->id, 'trip_member_id' => $memberId, 'caption' => trim((string) $request->input('caption')) ?: null]);
+            $sent = array_values((array) $request->input('photo_locations', []));
             foreach (array_values($request->file('photos')) as $position => $file) {
                 [$width, $height] = @getimagesize($file->getRealPath()) ?: [null, null];
-                $post->photos()->create(['path' => PublicImages::store($file, 'trip-photos'), 'width' => $width, 'height' => $height, 'position' => $position]);
+                $post->photos()->create(['path' => PublicImages::store($file, 'trip-photos'), 'width' => $width, 'height' => $height, 'position' => $position]
+                    + $this->whereTaken($file->getRealPath(), $sent[$position] ?? [], $request, $trip));
             }
             return $post;
         });
@@ -50,6 +57,23 @@ class TripPostController extends Controller
         $count = $post->photos->count();
         app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'post', \App\Services\Alerts::firstName($request->user()).' posted '.($count === 1 ? 'a photo' : "{$count} photos"), $post->caption, ['post_id' => $post->id]);
         return response()->json(['data' => $this->present($post, $trip, $memberId, $request)], 201);
+    }
+
+    /** A photo's place and time: what the app read from the photo, else the file's own EXIF, else the phone's location now. */
+    private function whereTaken(string $path, mixed $sent, Request $request, Trip $trip): array
+    {
+        $sent = is_array($sent) ? $sent : [];
+        $exif = \App\Support\PhotoMetadata::read($path, $trip->timezone);
+        $taken = isset($sent['taken_at']) ? \Carbon\CarbonImmutable::createFromFormat('Y-m-d H:i:s', $sent['taken_at'], $trip->timezone) : $exif['taken_at'];
+        // Ignore capture times in the future or long before the trip (wrong camera clock).
+        if ($taken && ($taken->isFuture() || $taken->lt(\Carbon\CarbonImmutable::parse($trip->starts_on->format('Y-m-d'), $trip->timezone)->subDays(2)))) { $taken = null; }
+        [$lat, $lng, $source] = match (true) {
+            isset($sent['latitude'], $sent['longitude']) => [(float) $sent['latitude'], (float) $sent['longitude'], 'photo'],
+            $exif['latitude'] !== null => [$exif['latitude'], $exif['longitude'], 'photo'],
+            $request->filled(['latitude', 'longitude']) => [(float) $request->input('latitude'), (float) $request->input('longitude'), 'device'],
+            default => [null, null, null],
+        };
+        return ['latitude' => $lat, 'longitude' => $lng, 'location_source' => $source, 'taken_at' => $taken?->utc()];
     }
 
     public function destroy(Request $request, Trip $trip, TripPost $post)

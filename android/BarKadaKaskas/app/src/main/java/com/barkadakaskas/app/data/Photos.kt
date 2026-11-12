@@ -22,7 +22,9 @@ object Photos {
         runCatching {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 val exif = android.media.ExifInterface(input)
-                val latLong = exif.latLong?.takeIf { !(it[0] == 0.0 && it[1] == 0.0) }
+                // The framework ExifInterface fills a float pair (androidx's has a latLong property instead).
+                val pair = FloatArray(2)
+                val latLong = if (exif.getLatLong(pair) && !(pair[0] == 0f && pair[1] == 0f)) doubleArrayOf(pair[0].toDouble(), pair[1].toDouble()) else null
                 val raw = exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL) ?: exif.getAttribute(android.media.ExifInterface.TAG_DATETIME)
                 val taken = raw?.trim()?.takeIf { Regex("^\\d{4}:\\d\\d:\\d\\d \\d\\d:\\d\\d:\\d\\d$").matches(it) }?.let { it.substring(0, 4) + "-" + it.substring(5, 7) + "-" + it.substring(8) }
                 PhotoPlace(latLong?.get(0), latLong?.get(1), taken)

@@ -7,6 +7,11 @@ import android.content.res.Configuration
 import android.location.Geocoder
 import android.os.Bundle
 import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.material.icons.filled.Fullscreen
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -119,6 +124,10 @@ class NavigationActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // While navigating: the screen stays on, and the map uses the whole screen (status bar and the phone's
+        // buttons hidden; a swipe from the edge shows them for a moment).
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         tripId = intent.getLongExtra(InAppNavigation.EXTRA_TRIP, -1L).takeIf { it > 0 }
         stops += InAppNavigation.decode(intent.getStringExtra(InAppNavigation.EXTRA_ROUTE)).ifEmpty {
             // Opened for a single stop: show just that one.
@@ -157,21 +166,39 @@ class NavigationActivity : ComponentActivity() {
 
     @Composable private fun Panel() {
         var expanded by remember { mutableStateOf(stops.size > 1) }
-        // Swipe the panel down (or tap its handle) for a compact bar with more map; swipe up for everything.
-        var collapsed by remember { mutableStateOf(false) }
+        // Three sizes: everything, a compact bar, or hidden (a slim strip, for the full map). Swipe down to shrink, up to grow.
+        var size by remember { mutableIntStateOf(2) }   // 2 = full, 1 = compact, 0 = hidden
+        val collapsed = size < 2
+        // Arriving (or the "mark done?" question) brings the panel back.
+        LaunchedEffect(arrived, askDone) { if ((arrived || askDone != null) && size == 0) size = 1 }
         // Resizing the map (panel shown/hidden) can make Google's camera stop following you; follow again.
-        LaunchedEffect(collapsed, expanded) { kotlinx.coroutines.delay(400); if (!routing && !arrived) followMe() }
+        LaunchedEffect(size, expanded) { kotlinx.coroutines.delay(400); if (!routing && !arrived) followMe() }
         val swipe = Modifier.pointerInput(Unit) {
             var dragged = 0f
-            detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = { if (dragged > 40f) collapsed = true else if (dragged < -40f) collapsed = false }) { change, dy -> change.consume(); dragged += dy }
+            detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = { if (dragged > 40f) size = (size - 1).coerceAtLeast(0) else if (dragged < -40f) size = (size + 1).coerceAtMost(2) }) { change, dy -> change.consume(); dragged += dy }
+        }
+        if (size == 0) {
+            // Hidden: a slim strip with the time left; tap or swipe up to bring the details back.
+            Surface(color = Cream, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)) {
+                Row(Modifier.fillMaxWidth().then(swipe).clickable(onClickLabel = "Show navigation details") { size = 1 }.navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ExpandLess, null, tint = Forest)
+                    Spacer(Modifier.width(6.dp))
+                    val seconds = remainingSeconds; val meters = remainingMeters
+                    Text(if (seconds != null && meters != null && !routing) "${duration(seconds)} · ${distance(meters)}" else stops[current].title, Modifier.weight(1f), color = Forest, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Details", color = Muted, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            return
         }
         val stop = stops[current]
         val next = stops.drop(current + 1).firstOrNull { !it.done }?.let { stops.indexOf(it) }
         Surface(color = Cream, shadowElevation = 12.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
             Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 18.dp).padding(bottom = 12.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Handle: a wide touch area so the swipe is easy to hit.
-                Box(Modifier.fillMaxWidth().height(28.dp).then(swipe).clickable(onClickLabel = if (collapsed) "Show more" else "Show less") { collapsed = !collapsed }, contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(28.dp).then(swipe).clickable(onClickLabel = if (collapsed) "Show more" else "Show less") { size = if (collapsed) 2 else 1 }, contentAlignment = Alignment.Center) {
                     Box(Modifier.size(width = 44.dp, height = 5.dp).clip(CircleShape).background(Line))
+                    // Hide the panel for the full map.
+                    IconButton(onClick = { size = 0 }, modifier = Modifier.align(Alignment.CenterEnd).size(32.dp)) { Icon(Icons.Default.Fullscreen, "Hide details for the full map", tint = Muted) }
                 }
                 Column(swipe, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -482,7 +509,14 @@ class NavigationActivity : ComponentActivity() {
     }
 
     override fun onStart() { super.onStart(); navigationView.onStart() }
-    override fun onResume() { super.onResume(); navigationView.onResume() }
+    override fun onResume() { super.onResume(); navigationView.onResume(); fullScreen() }
+    override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) fullScreen() }
+    private fun fullScreen() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
     override fun onPause() { navigationView.onPause(); super.onPause() }
     override fun onStop() { navigationView.onStop(); super.onStop() }
     override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); navigationView.onSaveInstanceState(outState) }

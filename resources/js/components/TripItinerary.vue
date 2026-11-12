@@ -287,7 +287,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .screen-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .screen-head .eyebrow{margin-bottom:4px}
 .travel-app .screen-head h2{font-size:22px;letter-spacing:-.6px}
-.head-actions{display:flex;align-items:center;gap:8px}
+.head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;max-width:100%} /* wraps on phones instead of pushing the page wider than the screen */
 .add-btn{min-height:44px}
 .empty-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .budget-pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:750;color:#214e3e;background:#fff;border:1px solid #dfe7da;border-radius:999px;padding:7px 12px;white-space:nowrap}
@@ -295,8 +295,8 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
 .timeline-card{padding:8px}
 .empty-icon{margin:0 auto 12px;color:#839362}
 .see-all{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:0;background:transparent;color:#4f6f2c;font-weight:700;font-size:13px;cursor:pointer}
-.day-view{display:grid;gap:12px}
-.day-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.day-view{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.day-title{display:flex;align-items:baseline;justify-content:space-between;gap:4px 10px;flex-wrap:wrap}
 .travel-app .day-title h3{font-size:17px;letter-spacing:-.3px}
 .day-steps{display:flex;justify-content:space-between;gap:10px}
 .day-steps .btn{min-height:44px;flex:1}

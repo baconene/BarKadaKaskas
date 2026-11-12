@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { Backpack, Shirt, Sparkles } from 'lucide-vue-next';
+import { Backpack, ChevronDown, Shirt, Sparkles } from 'lucide-vue-next';
 import { appFetch } from '@/lib/uploads';
 
 /**
  * "Prep for the day": a short summary of the day's plan, what to wear and what to bring, written by AI from the
- * itinerary (the server caches it until that day's plan changes). Collapsible; hidden when the AI isn't available.
+ * itinerary (the server caches it until that day's plan changes). Collapsed until tapped; hidden when the AI isn't available.
  */
 type Prep = { date: string; stops: number; summary: string | null; outfit: string[]; bring: string[]; tips: string[]; available: boolean };
 const props = defineProps<{ tripId: number; date: string; signature: string }>();
@@ -26,8 +26,8 @@ watch(() => `${props.date}|${props.signature}`, async key => {
 </script>
 
 <template>
-    <details v-if="loading || (prep && (prep.summary || prep.outfit.length || prep.bring.length))" class="day-prep" open>
-        <summary><Sparkles :size="15" aria-hidden="true" /> Prep for the day</summary>
+    <details v-if="loading || (prep && (prep.summary || prep.outfit.length || prep.bring.length))" class="day-prep">
+        <summary><Sparkles :size="15" aria-hidden="true" /> <span>Prep for the day</span><small>What to wear and bring</small><ChevronDown :size="16" class="chev" aria-hidden="true" /></summary>
         <p v-if="loading" class="muted">Reading the day’s plan…</p>
         <template v-else-if="prep">
             <p v-if="prep.summary" class="summary">{{ prep.summary }}</p>
@@ -42,7 +42,10 @@ watch(() => `${props.date}|${props.signature}`, async key => {
 </template>
 
 <style scoped>
-.day-prep{border:1px solid #e3eadc;background:#f5f8f1;border-radius:16px;padding:12px 14px}
+.day-prep{border:1px solid #e3eadc;background:#f5f8f1;border-radius:16px;padding:10px 14px;min-width:0;overflow-wrap:anywhere}
+.day-prep summary small{font-weight:500;font-size:12px;color:#76846e;margin-left:2px}
+.chev{margin-left:auto;transition:transform .15s}
+.day-prep[open] .chev{transform:rotate(180deg)}
 .day-prep summary{display:flex;align-items:center;gap:6px;font-weight:750;color:#214e3e;cursor:pointer;list-style:none;min-height:32px}
 .day-prep summary::-webkit-details-marker{display:none}
 .day-prep[open] summary{margin-bottom:6px}

@@ -1156,7 +1156,7 @@ private fun postTime(iso: String): String = runCatching {
 @Composable private fun DayPrepCard(date: String, signature: String, load: suspend (String, String) -> DayPrep?) {
     var prep by remember(date, signature) { mutableStateOf<DayPrep?>(null) }
     var loading by remember(date, signature) { mutableStateOf(true) }
-    var open by rememberSaveable { mutableStateOf(true) }
+    var open by rememberSaveable { mutableStateOf(false) }   // collapsed until tapped
     LaunchedEffect(date, signature) { prep = load(date, signature); loading = false }
     val p = prep
     if (!loading && p == null) return
@@ -1164,7 +1164,7 @@ private fun postTime(iso: String): String = runCatching {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AutoAwesome, null, tint = Forest, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                Text("Prep for the day", Modifier.weight(1f), fontWeight = FontWeight.Bold, color = Forest)
+                Text("Prep for the day", fontWeight = FontWeight.Bold, color = Forest); Spacer(Modifier.width(6.dp)); Text("What to wear and bring", Modifier.weight(1f), color = Moss, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (open) "Hide" else "Show", tint = Forest)
             }
             if (open) {

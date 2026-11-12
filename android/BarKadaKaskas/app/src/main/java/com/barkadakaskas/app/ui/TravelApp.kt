@@ -702,7 +702,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 @Composable private fun TimelineStop(stop: Stop, previous: Stop?, last: Boolean, trip: Trip, canEdit: Boolean, guessed: Pair<Double, Double>?, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit, photos: suspend () -> List<PlacePhoto>, tips: suspend () -> List<PlaceTip>, edit: () -> Unit) {
-    var expanded by rememberSaveable(stop.id) { mutableStateOf(false) }
+    var details by rememberSaveable(stop.id) { mutableStateOf(false) }
     val located = guessed?.takeIf { !Itinerary.hasPin(stop) }?.let { stop.copy(latitude = it.first, longitude = it.second) } ?: stop
     val previousLocated = previous
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
@@ -717,7 +717,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             }
             if (!last) Box(Modifier.width(2.dp).weight(1f).background(Line))
         }
-        Card(onClick = { expanded = !expanded }, modifier = Modifier.weight(1f).padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+        Card(onClick = { details = true }, modifier = Modifier.weight(1f).padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
                     Text(stop.title, Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall, color = if (stop.done) Muted else Color.Unspecified, textDecoration = if (stop.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
@@ -728,7 +728,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 val go = Itinerary.navigateUrl(located)
                 if (go != null) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFFF1F5EC)).clickable(onClickLabel = "Navigate to ${stop.location}") { navigate(located) }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Place, null, tint = Moss, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
-                    Text(stop.location, Modifier.weight(1f), color = Forest, style = MaterialTheme.typography.bodySmall, maxLines = if (expanded) 3 else 1, overflow = TextOverflow.Ellipsis)
+                    Text(stop.location, Modifier.weight(1f), color = Forest, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Surface(color = Forest, shape = RoundedCornerShape(50)) {
                         Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Navigation, null, tint = Color.White, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp))
@@ -744,23 +744,11 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                         else -> Pill(transportOptions.find { it.first == stop.transport }?.second?.substringBefore(" /") ?: "Transport TBD", transportIcon(stop.transport), Color(0xFFF1F3EF), Muted)
                     }
                 }
-                AnimatedVisibility(expanded) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PlacePhotoStrip(stop, photos)
-                        if (stop.description.isNotBlank()) Text(stop.description, color = Muted, style = MaterialTheme.typography.bodySmall)
-                        stop.costNote?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
-                        PlaceTips(stop, tips)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (stop.location.isNotBlank()) OutlinedButton(onClick = { open(Itinerary.searchUrl(located)) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.Map, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("View on map") }
-                            val directions = previousLocated?.takeIf { !Itinerary.samePlace(it, stop) }?.let { Itinerary.directionsUrl(it, located) }
-                            if (directions != null) OutlinedButton(onClick = { open(directions) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.Directions, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("From previous stop") }
-                        }
-                    }
-                }
-                if (!expanded && (stop.description.isNotBlank() || stop.location.isNotBlank())) Text("Tap for details", color = Moss, style = MaterialTheme.typography.labelSmall)
+                Text("Tap for photos, tips and details", color = Moss, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
+    if (details) ActivitySheet(stop, previous, located, trip, canEdit, open, navigate, toggleDone, photos, tips, edit = { details = false; edit() }) { details = false }
 }
 
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
@@ -1163,6 +1151,72 @@ private fun postTime(iso: String): String = runCatching {
     }
 }
 
+/**
+ * An activity's details in a bottom drawer, like the web's activity sheet: when, photos of the place, where (tap for
+ * the map), Navigate / map / mark done, how you get there, cost, notes, things to do there, and Edit for the organizer.
+ */
+@Composable private fun ActivitySheet(stop: Stop, previous: Stop?, located: Stop, trip: Trip, canEdit: Boolean, open: (String) -> Unit, navigate: (Stop) -> Unit, toggleDone: () -> Unit,
+    photos: suspend () -> List<PlacePhoto>, tips: suspend () -> List<PlaceTip>, edit: () -> Unit, close: () -> Unit) {
+    val zone = runCatching { java.time.ZoneId.of(trip.timezone) }.getOrDefault(java.time.ZoneId.systemDefault())
+    val day = runCatching { java.time.OffsetDateTime.parse(stop.startsAt).atZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)) }.getOrDefault("")
+    val start = Itinerary.clock(stop.startsAt, trip.timezone); val end = Itinerary.clock(stop.endsAt, trip.timezone)
+    ModalBottomSheet(onDismissRequest = close, containerColor = Color(0xFFFFFEFB)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Schedule, null, tint = Moss, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(5.dp))
+                        Text(listOf(day, if (start == end) start else "$start – $end").filter { it.isNotBlank() }.joinToString(" · "), color = Moss, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    }
+                    Text(stop.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                }
+                IconButton(onClick = close) { Icon(Icons.Default.Close, "Close details") }
+            }
+            PlacePhotoStrip(stop, photos, width = 220.dp, height = 150.dp)
+            if (stop.location.isNotBlank()) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Open in Google Maps") { open(Itinerary.searchUrl(located)) }.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.Place, null, tint = Moss, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                Text(stop.location, color = Color(0xFF4F6156), style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (Itinerary.navigateUrl(located) != null) Button(onClick = { navigate(located) }, modifier = Modifier.weight(1f).heightIn(min = 46.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(Icons.Default.Navigation, null, Modifier.size(16.dp)); Spacer(Modifier.width(5.dp)); Text("Navigate")
+                }
+                if (stop.location.isNotBlank()) OutlinedButton(onClick = { open(Itinerary.searchUrl(located)) }, modifier = Modifier.weight(1f).heightIn(min = 46.dp), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(Icons.Default.Map, null, Modifier.size(16.dp)); Spacer(Modifier.width(5.dp)); Text("Map")
+                }
+                OutlinedButton(onClick = toggleDone, modifier = Modifier.weight(1f).heightIn(min = 46.dp), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(if (stop.done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked, null, Modifier.size(16.dp), tint = Forest); Spacer(Modifier.width(5.dp)); Text(if (stop.done) "Done" else "Mark done")
+                }
+            }
+            val cost = Itinerary.costRange(stop.costMinMinor, stop.costMaxMinor, trip.currency)
+            if (previous != null || cost != null) Surface(color = Color(0xFFF5F8F1), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Color(0xFFE3EADC))) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (previous != null) Column {
+                        Text("GETTING HERE", color = Color(0xFF76846E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        val how = if (Itinerary.samePlace(previous, stop)) "Same spot as ${previous.title}" else "${transportOptions.find { it.first == stop.transport }?.second?.substringBefore(" /") ?: "Transport to be decided"} from ${previous.title}"
+                        Text(how, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
+                        Itinerary.directionsUrl(previous, located)?.takeIf { !Itinerary.samePlace(previous, stop) }?.let { url ->
+                            TextButton(onClick = { open(url) }, contentPadding = PaddingValues(0.dp)) { Icon(Icons.Default.Directions, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Route from previous stop") }
+                        }
+                    }
+                    if (cost != null) Column {
+                        Text("ESTIMATED COST", color = Color(0xFF76846E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text("$cost per person", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 3.dp))
+                        stop.costNote?.let { Text(it, color = Muted, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+            if (stop.description.isNotBlank()) Column {
+                Text("NOTES", color = Color(0xFF76846E), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text(stop.description, color = Color(0xFF33463D), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+            }
+            PlaceTips(stop, tips)
+            Text("Everyone on the trip sees what's done.", color = Muted, style = MaterialTheme.typography.labelSmall)
+            if (canEdit) OutlinedButton(onClick = edit, modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Edit activity") }
+        }
+    }
+}
+
 /** Recommended things to do at the stop's place (AI), loaded when its details open. */
 @Composable private fun PlaceTips(stop: Stop, load: suspend () -> List<PlaceTip>) {
     var tips by remember(stop.id) { mutableStateOf<List<PlaceTip>?>(null) }
@@ -1193,18 +1247,18 @@ private fun postTime(iso: String): String = runCatching {
 }
 
 /** Photos of the stop's place from the web, loaded when its details open; tap one for full screen. */
-@Composable private fun PlacePhotoStrip(stop: Stop, load: suspend () -> List<PlacePhoto>) {
+@Composable private fun PlacePhotoStrip(stop: Stop, load: suspend () -> List<PlacePhoto>, width: androidx.compose.ui.unit.Dp = 150.dp, height: androidx.compose.ui.unit.Dp = 104.dp) {
     var photos by remember(stop.id) { mutableStateOf<List<PlacePhoto>?>(null) }
     var viewing by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(stop.id) { if (photos == null) photos = load() }
     val list = photos
-    if (list == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(3) { Box(Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFEDF2E9))) } }
+    if (list == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { repeat(3) { Box(Modifier.size(width, height).clip(RoundedCornerShape(12.dp)).background(Color(0xFFEDF2E9))) } }
     else if (list.isNotEmpty()) {
         // A plain scrolling Row with fixed-size images: the stop card sizes itself to its content (intrinsic height),
         // which lazy lists can't report, so a LazyRow here crashes.
-        Row(Modifier.fillMaxWidth().height(104.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(height).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             list.forEachIndexed { i, p ->
-                Box(Modifier.size(150.dp, 104.dp).clip(RoundedCornerShape(12.dp)).clickable { viewing = i }) {
+                Box(Modifier.size(width, height).clip(RoundedCornerShape(12.dp)).clickable { viewing = i }) {
                     NetworkImage(model = p.url, contentDescription = "Photo ${i + 1} of ${stop.title}" + (p.credit?.let { ", by $it" } ?: ""), contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
                 }
             }

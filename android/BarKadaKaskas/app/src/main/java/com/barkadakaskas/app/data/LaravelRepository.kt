@@ -128,7 +128,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun deleteComment(tripId: Long, postId: Long, commentId: Long): Int =
         request("DELETE", "/trips/$tripId/posts/$postId/comments/$commentId")?.optInt("comments_count") ?: 0
     override suspend fun deleteExpense(tripId: Long, expenseId: Long) { request("DELETE", "/trips/$tripId/expenses/$expenseId") }
-    override suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft = ApiJson.receiptDraft(data(request("POST", "/trips/$tripId/receipt-scans", raw = multipart("receipt", "receipt.jpg", "image/jpeg", jpeg))))
+    override suspend fun scanReceipt(tripId: Long, jpeg: ByteArray): ReceiptDraft = ApiJson.receiptDraft(data(request("POST", "/trips/$tripId/receipt-scans", raw = multipart("receipt", "receipt.jpg", "image/jpeg", jpeg), readTimeout = 90_000)))
 
     override suspend fun changeExpenseStatus(tripId: Long, expense: Expense, status: String, reason: String?, voidPayments: Boolean) {
         val body = JSONObject().put("status", status).put("version", expense.version).put("reason", reason ?: JSONObject.NULL).put("void_payments", voidPayments)

@@ -1636,7 +1636,8 @@ private data class LineState(val description: String, val amountMinor: Long, val
     }
     fun upload(uri: Uri) = scope.launch {
         preparing = true
-        val jpeg = Photos.jpeg(context, uri, maxSide = 2000)
+        // 1600 px keeps receipt text readable while uploading and reading much faster on mobile data.
+        val jpeg = Photos.jpeg(context, uri, maxSide = 1600)
         preparing = false
         if (jpeg == null) Toast.makeText(context, "That photo couldn't be opened. Try another one.", Toast.LENGTH_LONG).show() else vm.scanReceipt(jpeg, ::applyDraft)
     }

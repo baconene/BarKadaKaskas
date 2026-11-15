@@ -54,13 +54,14 @@ class GeminiReceiptReader
         $response = null;
         try {
         if (! Cache::get($rejectsThinking)) {
-            $response = $this->vertex->generate($this->model(), array_merge_recursive($body, ['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => 0]]]));
+            // 50 s: answer (or say it was too slow) before web servers and phones stop waiting.
+            $response = $this->vertex->generate($this->model(), array_merge_recursive($body, ['generationConfig' => ['thinkingConfig' => ['thinkingBudget' => 0]]]), 50);
             if ($response->status() === 400 && str_contains(strtolower((string) $response->json('error.message')), 'think')) {
                 Cache::forever($rejectsThinking, true);
                 $response = null;
             }
         }
-        $response ??= $this->vertex->generate($this->model(), $body);
+        $response ??= $this->vertex->generate($this->model(), $body, 50);
         } catch (\App\Services\Vertex\VertexException $e) {
             throw new ReceiptReadException('Receipt scanning is misconfigured. Ask the app admin to check the Vertex AI key.', 503, $e->detail);
         }

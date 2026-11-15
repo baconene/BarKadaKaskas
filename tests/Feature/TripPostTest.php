@@ -59,8 +59,11 @@ class TripPostTest extends TestCase
 
     public function test_videos_can_be_posted_streamed_and_deleted(): void
     {
+        // A fake video with real bytes in it (fake files are otherwise empty), so it can be streamed by byte range.
+        $clip = UploadedFile::fake()->create('swing.mp4', 300, 'video/mp4');
+        file_put_contents($clip->getRealPath(), str_repeat('v', 4096));
         $post = $this->post("/api/v1/trips/{$this->trip->id}/posts", ['caption' => 'Rope swing', 'photos' => [UploadedFile::fake()->image('a.jpg', 800, 600)],
-            'videos' => [UploadedFile::fake()->create('swing.mp4', 300, 'video/mp4')], 'video_posters' => [UploadedFile::fake()->image('poster.jpg', 720, 1280)], 'video_durations' => [8500]],
+            'videos' => [$clip], 'video_posters' => [UploadedFile::fake()->image('poster.jpg', 720, 1280)], 'video_durations' => [8500]],
             $this->headers($this->friend) + ['Accept' => 'application/json'])->assertCreated()->json('data');
         $this->assertCount(2, $post['photos']);
         $this->assertArrayNotHasKey('video_url', $post['photos'][0]);

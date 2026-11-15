@@ -57,6 +57,26 @@ class TripPostTest extends TestCase
         $this->get(parse_url($first['photos'][0]['url'], PHP_URL_PATH))->assertOk();
     }
 
+    public function test_videos_can_be_posted_streamed_and_deleted(): void
+    {
+        $post = $this->post("/api/v1/trips/{$this->trip->id}/posts", ['caption' => 'Rope swing', 'photos' => [UploadedFile::fake()->image('a.jpg', 800, 600)],
+            'videos' => [UploadedFile::fake()->create('swing.mp4', 300, 'video/mp4')], 'video_posters' => [UploadedFile::fake()->image('poster.jpg', 720, 1280)], 'video_durations' => [8500]],
+            $this->headers($this->friend) + ['Accept' => 'application/json'])->assertCreated()->json('data');
+        $this->assertCount(2, $post['photos']);
+        $this->assertArrayNotHasKey('video_url', $post['photos'][0]);
+        $this->assertStringContainsString('/trip-videos/', $post['photos'][1]['video_url']);
+        $this->assertSame([8500, 720, 1280], [$post['photos'][1]['duration_ms'], $post['photos'][1]['width'], $post['photos'][1]['height']]);
+        // Streamed with byte ranges so players can seek.
+        $this->get(parse_url($post['photos'][1]['video_url'], PHP_URL_PATH), ['Range' => 'bytes=0-99'])->assertStatus(206);
+        $this->assertDatabaseHas('alerts', ['title' => explode(' ', $this->friend->name)[0].' posted a photo and a video']);
+        // A video without its still image, or that isn't a video, is refused.
+        $this->post("/api/v1/trips/{$this->trip->id}/posts", ['videos' => [UploadedFile::fake()->create('swing.mp4', 300, 'video/mp4')]], $this->headers($this->friend) + ['Accept' => 'application/json'])->assertStatus(422);
+        $this->post("/api/v1/trips/{$this->trip->id}/posts", ['videos' => [UploadedFile::fake()->create('notes.txt', 3, 'text/plain')], 'video_posters' => [UploadedFile::fake()->image('p.jpg')]], $this->headers($this->friend) + ['Accept' => 'application/json'])->assertJsonValidationErrors('videos.0');
+        $paths = \App\Models\TripPostPhoto::where('trip_post_id', $post['id'])->get()->flatMap(fn ($p) => array_filter([$p->path, $p->video_path]))->all();
+        $this->deleteJson("/api/v1/trips/{$this->trip->id}/posts/{$post['id']}", [], $this->headers($this->friend))->assertNoContent();
+        foreach ($paths as $path) { Storage::disk('local')->assertMissing($path); }
+    }
+
     public function test_outsiders_cannot_see_or_post(): void
     {
         $stranger = User::factory()->create();

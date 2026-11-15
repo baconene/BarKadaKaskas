@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Trip, TripPost, TripPostComment, TripPostLike};
-use App\Support\PublicImages;
+use App\Support\{PublicImages, PublicVideos};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Gate, Storage};
 
@@ -33,30 +33,48 @@ class TripPostController extends Controller
         Gate::authorize('view', $trip);
         $request->validate([
             'caption' => 'nullable|string|max:2000',
-            'photos' => 'required|array|min:1|max:10',
+            'photos' => 'required_without:videos|array|max:10',
             'photos.*' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
+            // Videos (up to 50 MB each), each with a still image taken from it by the app and its length.
+            'videos' => 'nullable|array|max:4',
+            'videos.*' => 'required|file|mimetypes:video/mp4,video/quicktime,video/webm,video/3gpp|max:51200',
+            'video_posters' => 'required_with:videos|array',
+            'video_posters.*' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
+            'video_durations' => 'nullable|array', 'video_durations.*' => 'nullable|integer|min:0|max:3600000',
             // Where the phone was when posting, and per photo what its own GPS data said (read before resizing).
             'latitude' => 'nullable|numeric|between:-90,90|required_with:longitude', 'longitude' => 'nullable|numeric|between:-180,180|required_with:latitude',
             'photo_locations' => 'nullable|array|max:10',
             'photo_locations.*.latitude' => 'nullable|numeric|between:-90,90', 'photo_locations.*.longitude' => 'nullable|numeric|between:-180,180',
             'photo_locations.*.taken_at' => 'nullable|date_format:Y-m-d H:i:s',
-        ], ['photos.required' => 'Add at least one photo.', 'photos.max' => 'Post up to 10 photos at a time.']);
+        ], ['photos.required_without' => 'Add at least one photo or video.', 'photos.max' => 'Post up to 10 photos at a time.', 'videos.max' => 'Post up to 4 videos at a time.',
+            'videos.*.max' => 'Videos can be up to 50 MB.', 'videos.*.mimetypes' => 'Videos must be MP4, MOV or WebM.']);
+        abort_if(count((array) $request->file('videos', [])) !== count((array) $request->file('video_posters', [])), 422, 'Each video needs its still image.');
         $memberId = $this->memberId($request, $trip);
         $post = DB::transaction(function () use ($request, $trip, $memberId) {
             $post = TripPost::create(['trip_id' => $trip->id, 'trip_member_id' => $memberId, 'caption' => trim((string) $request->input('caption')) ?: null]);
             $sent = array_values((array) $request->input('photo_locations', []));
-            foreach (array_values($request->file('photos')) as $position => $file) {
+            $photos = array_values((array) $request->file('photos', []));
+            foreach ($photos as $position => $file) {
                 [$width, $height] = @getimagesize($file->getRealPath()) ?: [null, null];
                 $post->photos()->create(['path' => PublicImages::store($file, 'trip-photos'), 'width' => $width, 'height' => $height, 'position' => $position]
                     + $this->whereTaken($file->getRealPath(), $sent[$position] ?? [], $request, $trip));
+            }
+            $posters = array_values((array) $request->file('video_posters', []));
+            $durations = array_values((array) $request->input('video_durations', []));
+            foreach (array_values((array) $request->file('videos', [])) as $i => $video) {
+                [$width, $height] = @getimagesize($posters[$i]->getRealPath()) ?: [null, null];
+                $post->photos()->create(['path' => PublicImages::store($posters[$i], 'trip-photos'), 'video_path' => PublicVideos::store($video),
+                    'duration_ms' => isset($durations[$i]) ? (int) $durations[$i] : null, 'width' => $width, 'height' => $height, 'position' => count($photos) + $i]
+                    + $this->whereTaken($posters[$i]->getRealPath(), [], $request, $trip));
             }
             return $post;
         });
         try { app(\App\Services\PostPlaces::class)->guess($post, $trip); } catch (\Throwable) { /* the place is a nice extra */ }
         $post->load(['photos', 'member.user:id,name,avatar_path'])->loadCount(['likes', 'comments']);
         $post->liked = false;
-        $count = $post->photos->count();
-        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'post', \App\Services\Alerts::firstName($request->user()).' posted '.($count === 1 ? 'a photo' : "{$count} photos"), $post->caption, ['post_id' => $post->id]);
+        $videos = $post->photos->whereNotNull('video_path')->count(); $images = $post->photos->count() - $videos;
+        $what = implode(' and ', array_filter([$images ? ($images === 1 ? 'a photo' : "{$images} photos") : null, $videos ? ($videos === 1 ? 'a video' : "{$videos} videos") : null]));
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'post', \App\Services\Alerts::firstName($request->user()).' posted '.$what, $post->caption, ['post_id' => $post->id]);
         return response()->json(['data' => $this->present($post, $trip, $memberId, $request)], 201);
     }
 
@@ -82,7 +100,7 @@ class TripPostController extends Controller
         abort_unless($post->trip_id === $trip->id, 404);
         Gate::authorize('view', $trip);
         abort_unless($this->canDelete($post, $trip, $this->memberId($request, $trip), $request), 403, 'Only the person who posted this or the organizer can delete it.');
-        $paths = $post->photos()->pluck('path')->all();
+        $paths = $post->photos()->get(['path', 'video_path'])->flatMap(fn ($p) => array_filter([$p->path, $p->video_path]))->all();
         DB::transaction(function () use ($post) {
             $post->likes()->delete();
             $post->comments()->delete();
@@ -160,6 +178,11 @@ class TripPostController extends Controller
         return PublicImages::serve('trip-photos', $file);
     }
 
+    public function video(string $file)
+    {
+        return PublicVideos::serve($file);
+    }
+
     private function memberId(Request $request, Trip $trip): ?int
     {
         return $trip->members()->where('user_id', $request->user()->id)->value('id');
@@ -177,7 +200,8 @@ class TripPostController extends Controller
             'caption' => $post->caption,
             'created_at' => $post->created_at?->toIso8601String(),
             'author' => ['member_id' => $post->trip_member_id, 'name' => $post->member?->user?->name ?? 'Traveler', 'avatar_url' => $post->member?->user?->avatar_url],
-            'photos' => $post->photos->map(fn ($photo) => ['url' => PublicImages::url($photo->path), 'width' => $photo->width, 'height' => $photo->height])->values(),
+            'photos' => $post->photos->map(fn ($photo) => ['url' => PublicImages::url($photo->path), 'width' => $photo->width, 'height' => $photo->height]
+                + ($photo->video_path ? ['video_url' => PublicVideos::url($photo->video_path), 'duration_ms' => $photo->duration_ms] : []))->values(),
             'likes_count' => (int) $post->likes_count,
             'comments_count' => (int) ($post->comments_count ?? 0),
             'liked' => (bool) $post->liked,

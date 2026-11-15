@@ -1047,6 +1047,8 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
     // Full-screen gallery: the post's photos and the one that was tapped.
     var viewing by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var commentsFor by remember { mutableStateOf<Long?>(null) }
+    var playing by remember { mutableStateOf<String?>(null) }
+    playing?.let { url -> VideoPlayer(url) { playing = null } }
     LaunchedEffect(detail.trip.id) { if (vm.postsLoadedFor != detail.trip.id) vm.loadPosts() }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) picked = uris }
 
@@ -1063,8 +1065,8 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
     }
     if (highlightOpen) HighlightPlayer(vm) { highlightOpen = false }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
-            Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Choose photos")
+        Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+            Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Photos & videos")
         }
         OutlinedButton(onClick = camera, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp)) {
             Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Take photo", color = Forest)
@@ -1087,7 +1089,11 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
                 }
                 if (post.canDelete) IconButton(onClick = { vm.deletePost(post) }, enabled = !vm.busy) { Icon(Icons.Default.Delete, "Delete post", tint = Muted) }
             }
-            PhotoGrid(post.photos) { url -> viewing = post.photos.map { it.url } to post.photos.indexOfFirst { it.url == url }.coerceAtLeast(0) }
+            PhotoGrid(post.photos) { url ->
+                val tapped = post.photos.firstOrNull { it.url == url }
+                if (tapped?.videoUrl != null) playing = tapped.videoUrl
+                else { val stills = post.photos.filter { it.videoUrl == null }; viewing = stills.map { it.url } to stills.indexOfFirst { it.url == url }.coerceAtLeast(0) }
+            }
             post.caption?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge) }
             Row(Modifier.padding(start = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.toggleLike(post) }) { Icon(if (post.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (post.liked) "Remove heart" else "Add heart", tint = if (post.liked) Color(0xFFD0454C) else Muted) }
@@ -1339,6 +1345,41 @@ private fun postTime(iso: String): String = runCatching {
     viewing?.let { start -> PhotoViewer(list.orEmpty().map { it.url }, start) { viewing = null } }
 }
 
+/** A still from a picked video for the composer (decoded on the device). */
+@Composable private fun VideoThumb(uri: Uri, modifier: Modifier) {
+    val context = LocalContext.current
+    val frame by produceState<android.graphics.Bitmap?>(null, uri) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { android.media.MediaMetadataRetriever().run { try { setDataSource(context, uri); getFrameAtTime(0) } finally { release() } } }.getOrNull()
+        }
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        frame?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+        Icon(Icons.Default.PlayCircle, null, tint = Color.White, modifier = Modifier.size(30.dp))
+    }
+}
+
+/** Full-screen video playback with the system controls (play/pause, seek). */
+@Composable private fun VideoPlayer(url: String, close: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = close, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        var loading by remember { mutableStateOf(true) }
+        var failed by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            androidx.compose.ui.viewinterop.AndroidView(factory = { ctx ->
+                android.widget.VideoView(ctx).apply {
+                    val controller = android.widget.MediaController(ctx); controller.setAnchorView(this); setMediaController(controller)
+                    setOnPreparedListener { loading = false; start(); controller.show(2500) }
+                    setOnErrorListener { _, _, _ -> loading = false; failed = true; true }
+                    setVideoURI(Uri.parse(url))
+                }
+            }, modifier = Modifier.fillMaxWidth(), onRelease = { it.stopPlayback() })
+            if (loading) CircularProgressIndicator(color = Color.White)
+            if (failed) Text("This video can't be played on this phone.", color = Color.White)
+            IconButton(onClick = close, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))) { Icon(Icons.Default.Close, "Close video", tint = Color.White) }
+        }
+    }
+}
+
 /** Swipeable full-screen gallery of a post's photos, starting at [start]. */
 @Composable private fun PhotoViewer(urls: List<String>, start: Int, close: () -> Unit) {
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = start) { urls.size }
@@ -1367,6 +1408,10 @@ private fun postTime(iso: String): String = runCatching {
 @Composable private fun PhotoTile(photo: PostPhoto, modifier: Modifier, extra: Int, open: (String) -> Unit) {
     Box(modifier.background(Sage).clickable { open(photo.url) }) {
         NetworkImage(model = photo.url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (photo.videoUrl != null) Row(Modifier.align(Alignment.BottomStart).padding(8.dp).clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.PlayArrow, "Video", tint = Color.White, modifier = Modifier.size(16.dp))
+            photo.durationMs?.let { ms -> Text("${ms / 60000}:${((ms / 1000) % 60).toString().padStart(2, '0')}", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+        }
         if (extra > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) { Text("+$extra", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
     }
 }
@@ -1379,32 +1424,47 @@ private fun postTime(iso: String): String = runCatching {
     var editing by remember { mutableStateOf<Int?>(null) }
     val addMore = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> if (uris.isNotEmpty()) change((picked + uris).take(10)) }
     val camera = rememberPostCamera { uri -> change((picked + uri).take(10)) }
+    val recorder = rememberPostCamera(video = true) { uri -> change((picked + uri).take(10)) }
+    val videoFlags = remember(picked) { picked.associateWith { Photos.isVideo(context, it) } }
     editing?.let { index -> picked.getOrNull(index)?.let { uri -> PhotoEditorSheet(vm, uri, { edited -> change(picked.mapIndexed { i, u -> if (i == index) edited else u }); editing = null }) { editing = null } } }
     FormSheet("Post photos", vm, dismiss, "${picked.size} photo${if (picked.size == 1) "" else "s"} · tap a photo to edit · everyone on the trip can see this") {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(picked, key = { _, uri -> uri.toString() }) { index, uri ->
-                Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp)).clickable { editing = index }) {
-                    NetworkImage(model = uri, contentDescription = "Edit photo ${index + 1}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                val isVideo = videoFlags[uri] == true
+                Box(Modifier.size(96.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF17302A)).clickable(enabled = !isVideo) { editing = index }) {
+                    if (isVideo) VideoThumb(uri, Modifier.fillMaxSize())
+                    else NetworkImage(model = uri, contentDescription = "Edit photo ${index + 1}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     Icon(Icons.Default.Close, "Remove photo", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.6f)).clickable { change(picked.filterIndexed { i, _ -> i != index }) }.padding(3.dp))
                     Row(Modifier.align(Alignment.BottomStart).padding(4.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(3.dp)); Text("Edit", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        if (isVideo) { Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(3.dp)); Text("Video", color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                        else { Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(3.dp)); Text("Edit", color = Color.White, style = MaterialTheme.typography.labelSmall) }
                     }
                 }
             }
         }
         if (picked.size < 10) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { addMore.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Add more") }
-            OutlinedButton(onClick = camera, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PhotoCamera, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Camera") }
+            OutlinedButton(onClick = { addMore.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) { Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Add") }
+            OutlinedButton(onClick = camera, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) { Icon(Icons.Default.PhotoCamera, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Photo") }
+            OutlinedButton(onClick = recorder, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) { Icon(Icons.Default.Videocam, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Video") }
         }
         Field("Caption", caption, { caption = it }, singleLine = false, supporting = "Say something about these moments")
-        Submit(if (preparing) "Preparing photos…" else "Post ${picked.size} photo${if (picked.size == 1) "" else "s"}", vm.busy || preparing, picked.isNotEmpty(), Icons.AutoMirrored.Filled.Send) {
+        val videoCount = picked.count { videoFlags[it] == true }; val photoCount = picked.size - videoCount
+        val what = listOfNotNull(photoCount.takeIf { it > 0 }?.let { "$it photo${if (it == 1) "" else "s"}" }, videoCount.takeIf { it > 0 }?.let { "$it video${if (it == 1) "" else "s"}" }).joinToString(" and ")
+        if (videoCount > 4) Text("You can post up to 4 videos at a time.", color = Danger, style = MaterialTheme.typography.bodySmall)
+        Submit(if (preparing) "Preparing…" else "Post $what", vm.busy || preparing, picked.isNotEmpty() && videoCount <= 4, Icons.AutoMirrored.Filled.Send) {
             scope.launch {
                 preparing = true
                 // Read each photo's place and time before resizing (which drops it); keep them paired with their JPEG.
-                val prepared = picked.mapNotNull { uri -> Photos.jpeg(context, uri, maxSide = 2000)?.let { it to Photos.place(context, uri) } }
+                val prepared = picked.filter { videoFlags[it] != true }.mapNotNull { uri -> Photos.jpeg(context, uri, maxSide = 2000)?.let { it to Photos.place(context, uri) } }
+                val videos = picked.filter { videoFlags[it] == true }.map { uri -> Photos.video(context, uri) }
                 preparing = false
-                if (prepared.isEmpty()) Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show()
-                else vm.createPost(caption, prepared.map { it.first }, dismiss, prepared.map { it.second }, Photos.lastLocation(context))
+                when {
+                    videos.any { it == null } -> Toast.makeText(context, "A video couldn't be read or is over 50 MB. Trim it and try again.", Toast.LENGTH_LONG).show()
+                    // The upload is built in memory; keep one post's videos to about 100 MB.
+                    videos.sumOf { it?.bytes?.size?.toLong() ?: 0L } > 100L * 1024 * 1024 -> Toast.makeText(context, "Those videos are too big to post together. Post them in separate posts.", Toast.LENGTH_LONG).show()
+                    prepared.isEmpty() && videos.isEmpty() -> Toast.makeText(context, "Those photos couldn't be opened.", Toast.LENGTH_LONG).show()
+                    else -> vm.createPost(caption, prepared.map { it.first }, dismiss, prepared.map { it.second }, Photos.lastLocation(context), videos.filterNotNull())
+                }
             }
         }
     }
@@ -1534,12 +1594,12 @@ private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): Byt
 }
 
 /** "Take photo" for posts: each shot goes to its own cache file, handed back as a Uri. */
-@Composable private fun rememberPostCamera(onPhoto: (Uri) -> Unit): () -> Unit {
+@Composable private fun rememberPostCamera(video: Boolean = false, onPhoto: (Uri) -> Unit): () -> Unit {
     val context = LocalContext.current
     var pending by remember { mutableStateOf<Uri?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved -> pending?.let { if (saved) onPhoto(it) }; pending = null }
+    val launcher = rememberLauncherForActivityResult(if (video) ActivityResultContracts.CaptureVideo() else ActivityResultContracts.TakePicture()) { saved -> pending?.let { if (saved) onPhoto(it) }; pending = null }
     return {
-        val file = java.io.File(context.cacheDir, "camera/post-${System.currentTimeMillis()}.jpg").apply { parentFile?.mkdirs() }
+        val file = java.io.File(context.cacheDir, "camera/post-${System.currentTimeMillis()}.${if (video) "mp4" else "jpg"}").apply { parentFile?.mkdirs() }
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         pending = uri
         runCatching { launcher.launch(uri) }.onFailure { Toast.makeText(context, "No camera app found on this phone.", Toast.LENGTH_LONG).show() }

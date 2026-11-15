@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MapPin, MessageCircle, Pencil, Sparkles, Trash2, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MapPin, MessageCircle, Pencil, Play, Sparkles, Trash2, Video, X } from 'lucide-vue-next';
 import PostComments from '@/components/trip/PostComments.vue';
 import HighlightPlayer from '@/components/trip/HighlightPlayer.vue';
 import LoadingImage from '@/components/LoadingImage.vue';
@@ -9,7 +9,7 @@ import { appFetch, shrinkImage } from '@/lib/uploads';
 import { currentPosition, readPhotoLocation } from '@/lib/photoLocation';
 
 /** The trip's photo feed: everyone on the trip can post photos with a caption and leave hearts. */
-type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number; place?: { name: string; itinerary_item_id: number | null } | null; can_edit_place?: boolean };
+type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null; video_url?: string; duration_ms?: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number; place?: { name: string; itinerary_item_id: number | null } | null; can_edit_place?: boolean };
 // The day highlight (30-second story of today's stops and photos).
 const showHighlight = ref(false);
 // Posts whose comments are open.
@@ -84,7 +84,8 @@ async function remove(post: Post) {
 // Composer
 const composing = ref(false);
 const dialog = ref<HTMLDialogElement | null>(null);
-const picked = ref<{ file: File; url: string }[]>([]);
+const picked = ref<{ file: File; url: string; video?: boolean }[]>([]);
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const caption = ref('');
 const posting = ref(false);
 const postError = ref('');
@@ -97,10 +98,17 @@ async function openComposer(pick = true) {
 function closeComposer() { dialog.value?.close(); }
 function onClosed() { composing.value = false; if (!posting.value) { picked.value.forEach(p => URL.revokeObjectURL(p.url)); picked.value = []; caption.value = ''; } }
 function addFiles(event: Event) {
-    const files = Array.from((event.target as HTMLInputElement).files ?? []).filter(f => f.type.startsWith('image/'));
+    postError.value = '';
+    const all = Array.from((event.target as HTMLInputElement).files ?? []);
+    const images = all.filter(f => f.type.startsWith('image/'));
+    let videos = all.filter(f => f.type.startsWith('video/'));
+    if (videos.some(v => v.size > MAX_VIDEO_BYTES)) { postError.value = 'Videos can be up to 50 MB. Trim longer clips first.'; videos = videos.filter(v => v.size <= MAX_VIDEO_BYTES); }
+    const videoRoom = 4 - picked.value.filter(p => p.video).length;
+    if (videos.length > videoRoom) { postError.value = 'You can post up to 4 videos at a time.'; videos = videos.slice(0, Math.max(0, videoRoom)); }
+    const files = [...images, ...videos];
     const room = 10 - picked.value.length;
-    if (files.length > room) postError.value = 'You can post up to 10 photos at a time.';
-    picked.value = [...picked.value, ...files.slice(0, room).map(file => ({ file, url: URL.createObjectURL(file) }))];
+    if (files.length > room) postError.value = 'You can post up to 10 photos and videos at a time.';
+    picked.value = [...picked.value, ...files.slice(0, room).map(file => ({ file, url: URL.createObjectURL(file), video: file.type.startsWith('video/') }))];
     (event.target as HTMLInputElement).value = ''; // lets the same camera/file be picked again
 }
 function removePicked(index: number) { URL.revokeObjectURL(picked.value[index].url); picked.value.splice(index, 1); }
@@ -121,10 +129,18 @@ async function publish() {
         body.append('caption', caption.value.trim());
         // Where each photo was taken (from its own GPS data, read before resizing) and, as a fallback, where the
         // phone is now; the day highlight uses these to put photos at the right stop.
-        const [here, ...places] = await Promise.all([currentPosition(), ...picked.value.map(p => readPhotoLocation(p.file))]);
+        const photos = picked.value.filter(p => !p.video), videos = picked.value.filter(p => p.video);
+        const [here, ...places] = await Promise.all([currentPosition(), ...photos.map(p => readPhotoLocation(p.file))]);
         if (here) { body.append('latitude', String(here.latitude)); body.append('longitude', String(here.longitude)); }
         places.forEach((place, i) => (Object.keys(place) as (keyof typeof place)[]).forEach(key => { if (place[key] !== null) body.append(`photo_locations[${i}][${key}]`, String(place[key])); }));
-        for (const [i, p] of picked.value.entries()) body.append('photos[]', await shrinkImage(p.file), `photo-${i + 1}.jpg`);
+        for (const [i, p] of photos.entries()) body.append('photos[]', await shrinkImage(p.file), `photo-${i + 1}.jpg`);
+        // Videos go as they are, each with a still image from its first second (shown in the feed and highlights).
+        for (const [i, v] of videos.entries()) {
+            const still = await videoStill(v.url);
+            body.append('videos[]', v.file, v.file.name || `video-${i + 1}.mp4`);
+            body.append('video_posters[]', still.poster, `video-${i + 1}.jpg`);
+            body.append('video_durations[]', String(still.durationMs));
+        }
         const { data } = await appFetch<{ data: Post }>(`/trips/${props.tripId}/posts`, { method: 'POST', body });
         posts.value = [data, ...posts.value];
         picked.value.forEach(p => URL.revokeObjectURL(p.url)); picked.value = []; caption.value = '';
@@ -134,12 +150,33 @@ async function publish() {
 }
 onBeforeUnmount(() => picked.value.forEach(p => URL.revokeObjectURL(p.url)));
 
+/** A JPEG still from about the first second of a video, and its length. */
+function videoStill(url: string): Promise<{ poster: Blob; durationMs: number }> {
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = url;
+        video.onloadedmetadata = () => { video.currentTime = Math.min(1, (video.duration || 0) / 2); };
+        video.onseeked = () => {
+            const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight, 1));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(video.videoWidth * scale)); canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+            canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(b => (b ? resolve({ poster: b, durationMs: Math.round((video.duration || 0) * 1000) }) : reject(new Error('Could not read that video.'))), 'image/jpeg', 0.85);
+        };
+        video.onerror = () => reject(new Error('That video format can’t be read here. Try an MP4.'));
+    });
+}
+const pickedLabel = computed(() => {
+    const v = picked.value.filter(p => p.video).length, ph = picked.value.length - v;
+    return [ph ? `${ph} photo${ph === 1 ? '' : 's'}` : '', v ? `${v} video${v === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+});
+
 // Full-size viewer
-const viewing = ref<{ photos: string[]; index: number } | null>(null);
+const viewing = ref<{ photos: string[]; videos: (string | null)[]; index: number } | null>(null);
 const strip = ref<HTMLElement | null>(null);
 /** Opens the swipeable viewer on the tapped photo of a post. */
 async function openViewer(post: Post, index: number) {
-    viewing.value = { photos: post.photos.map(p => p.url), index };
+    viewing.value = { photos: post.photos.map(p => p.url), videos: post.photos.map(p => p.video_url ?? null), index };
     await nextTick();
     strip.value?.scrollTo({ left: index * strip.value.clientWidth, behavior: 'instant' as ScrollBehavior });
     strip.value?.focus();
@@ -151,6 +188,8 @@ function go(step: number) {
 }
 function onStripScroll() {
     if (viewing.value && strip.value) viewing.value.index = Math.round(strip.value.scrollLeft / Math.max(strip.value.clientWidth, 1));
+    // Only the video on screen keeps playing.
+    strip.value?.querySelectorAll('video').forEach((v, i) => { if (i !== viewing.value?.index) v.pause(); });
 }
 function onViewerKey(event: KeyboardEvent) {
     if (event.key === 'ArrowRight') { event.preventDefault(); go(1); }
@@ -190,7 +229,8 @@ const empty = computed(() => loaded.value && !posts.value.length);
             </header>
             <div class="post-photos" :class="gridClass(post.photos.length)">
                 <button v-for="(photo, i) in post.photos.slice(0, post.photos.length > 4 ? 4 : post.photos.length)" :key="photo.url" type="button" class="photo" :style="post.photos.length === 1 && photo.width && photo.height ? { aspectRatio: `${photo.width} / ${photo.height}` } : undefined" @click="openViewer(post, i)">
-                    <LoadingImage :src="photo.url" :alt="post.caption ? `Photo ${i + 1}: ${post.caption}` : `Photo ${i + 1} by ${post.author.name}`" />
+                    <LoadingImage :src="photo.url" :alt="post.caption ? `${photo.video_url ? 'Video' : 'Photo'} ${i + 1}: ${post.caption}` : `${photo.video_url ? 'Video' : 'Photo'} ${i + 1} by ${post.author.name}`" />
+                    <span v-if="photo.video_url" class="play-badge" aria-hidden="true"><Play :size="18" fill="currentColor" /><small v-if="photo.duration_ms">{{ Math.floor(photo.duration_ms / 60000) }}:{{ String(Math.round(photo.duration_ms / 1000) % 60).padStart(2, '0') }}</small></span>
                     <span v-if="i === 3 && post.photos.length > 4" class="more">+{{ post.photos.length - 4 }}</span>
                 </button>
             </div>
@@ -220,21 +260,25 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <form @submit.prevent="publish">
                 <header><h2 id="composer-title">Post photos</h2><button type="button" class="icon-btn" aria-label="Close" @click="closeComposer"><X :size="18" /></button></header>
                 <div class="picked">
-                    <div v-for="(p, i) in picked" :key="p.url" class="thumb"><img :src="p.url" alt="" /><button type="button" :aria-label="`Remove photo ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button><button type="button" class="edit-thumb" :aria-label="`Edit photo ${i + 1}`" @click="editingIndex = i"><Sparkles :size="13" aria-hidden="true" /> Edit</button></div>
-                    <label v-if="picked.length < 10" class="add-thumb"><ImagePlus :size="22" aria-hidden="true" /><span>{{ picked.length ? 'Add more' : 'Choose photos' }}</span><input ref="fileInput" type="file" accept="image/*" multiple class="sr-only" @change="addFiles" /></label>
+                    <div v-for="(p, i) in picked" :key="p.url" class="thumb"><video v-if="p.video" :src="p.url" muted playsinline preload="metadata" /><img v-else :src="p.url" alt="" /><span v-if="p.video" class="play-badge" aria-hidden="true"><Play :size="14" fill="currentColor" /></span><button type="button" :aria-label="`Remove ${p.video ? 'video' : 'photo'} ${i + 1}`" @click="removePicked(i)"><X :size="14" /></button><button v-if="!p.video" type="button" class="edit-thumb" :aria-label="`Edit photo ${i + 1}`" @click="editingIndex = i"><Sparkles :size="13" aria-hidden="true" /> Edit</button></div>
+                    <label v-if="picked.length < 10" class="add-thumb"><ImagePlus :size="22" aria-hidden="true" /><span>{{ picked.length ? 'Add more' : 'Photos & videos' }}</span><input ref="fileInput" type="file" accept="image/*,video/*" multiple class="sr-only" @change="addFiles" /></label>
                     <!-- Opens the camera straight away on phones (capture); desktops show the file picker. -->
                     <label v-if="picked.length < 10" class="add-thumb camera"><Camera :size="22" aria-hidden="true" /><span>Take photo</span><input type="file" accept="image/*" capture="environment" class="sr-only" @change="addFiles" /></label>
+                    <label v-if="picked.length < 10" class="add-thumb camera"><Video :size="22" aria-hidden="true" /><span>Record video</span><input type="file" accept="video/*" capture="environment" class="sr-only" @change="addFiles" /></label>
                 </div>
                 <label class="field">Caption<textarea v-model="caption" rows="3" maxlength="2000" placeholder="Say something about these moments…" /></label>
                 <p v-if="postError" class="error" role="alert">{{ postError }}</p>
-                <div class="actions"><button type="button" class="btn secondary" :disabled="posting" @click="closeComposer">Cancel</button><button type="submit" class="btn" :disabled="posting || !picked.length">{{ posting ? 'Posting…' : `Post${picked.length ? ` ${picked.length} photo${picked.length === 1 ? '' : 's'}` : ''}` }}</button></div>
+                <div class="actions"><button type="button" class="btn secondary" :disabled="posting" @click="closeComposer">Cancel</button><button type="submit" class="btn" :disabled="posting || !picked.length">{{ posting ? 'Posting…' : `Post${picked.length ? ` ${pickedLabel}` : ''}` }}</button></div>
             </form>
             <PhotoEditor v-if="editingIndex !== null && picked[editingIndex]" :source="picked[editingIndex].url" aspect="original" :output-size="2000" subject="photo" :title="`Edit photo ${editingIndex + 1}`" confirm-label="Done" @done="applyEdit" @close="editingIndex = null" />
         </dialog>
 
         <div v-if="viewing" class="viewer" role="dialog" aria-modal="true" :aria-label="`Photo ${viewing.index + 1} of ${viewing.photos.length}`">
             <div ref="strip" class="strip" tabindex="0" @scroll.passive="onStripScroll" @keydown="onViewerKey">
-                <div v-for="(url, i) in viewing.photos" :key="url" class="slide"><img :src="url" :alt="`Photo ${i + 1} of ${viewing.photos.length}`" :loading="Math.abs(i - viewing.index) <= 1 ? 'eager' : 'lazy'" /></div>
+                <div v-for="(url, i) in viewing.photos" :key="url" class="slide">
+                    <video v-if="viewing.videos[i]" :src="viewing.videos[i]!" :poster="url" controls playsinline preload="metadata" :aria-label="`Video ${i + 1} of ${viewing.photos.length}`" />
+                    <img v-else :src="url" :alt="`Photo ${i + 1} of ${viewing.photos.length}`" :loading="Math.abs(i - viewing.index) <= 1 ? 'eager' : 'lazy'" />
+                </div>
             </div>
             <span v-if="viewing.photos.length > 1" class="counter" aria-hidden="true">{{ viewing.index + 1 }} / {{ viewing.photos.length }}</span>
             <button v-if="viewing.photos.length > 1 && viewing.index > 0" type="button" class="nav prev" aria-label="Previous photo" @click="go(-1)"><ChevronLeft :size="26" /></button>
@@ -324,6 +368,9 @@ const empty = computed(() => loaded.value && !posts.value.length);
 .composer form{display:grid;gap:14px;padding:20px}
 .composer header{display:flex;justify-content:space-between;align-items:center}
 .composer h2{font-size:20px;font-weight:750}
+.play-badge{position:absolute;left:8px;bottom:8px;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;background:#0d1512b3;color:#fff;font-size:11px;font-weight:700;pointer-events:none}
+.thumb video{width:100%;height:100%;object-fit:cover;display:block}
+.slide video{max-width:100%;max-height:100%;background:#000}
 .picked{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .thumb,.add-thumb{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover}

@@ -77,7 +77,7 @@ internal object ApiJson {
         return Post(
             id = json.getLong("id"), caption = json.textOrNull("caption"), createdAt = json.text("created_at"),
             authorName = author.text("name").ifBlank { "Traveler" }, authorAvatarUrl = author.imageUrl("avatar_url"),
-            photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.imageUrl("url").orEmpty(), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt()) }.filter { it.url.isNotBlank() },
+            photos = json.optJSONArray("photos").mapObjects { PostPhoto(it.imageUrl("url").orEmpty(), it.longOrNull("width")?.toInt(), it.longOrNull("height")?.toInt(), it.imageUrl("video_url"), it.longOrNull("duration_ms")) }.filter { it.url.isNotBlank() },
             likesCount = json.optInt("likes_count"), liked = json.optBoolean("liked"), canDelete = json.optBoolean("can_delete"), commentsCount = json.optInt("comments_count"),
             placeName = json.optJSONObject("place")?.textOrNull("name"), placeStopId = json.optJSONObject("place")?.longOrNull("itinerary_item_id"), canEditPlace = json.optBoolean("can_edit_place"),
         )

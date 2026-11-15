@@ -212,3 +212,10 @@ the nearest itinerary stop within 1.5 km of where the photos were taken, else th
 `PATCH /api/v1/trips/{trip}/posts/{post}/place` (poster or organizer) takes `itinerary_item_id` (a stop), `name` (a
 typed place, geocoded for the photos' position when possible) or `clear: true`, and returns the post. When the place is
 a stop, the day highlight puts the post's photos at that stop.
+
+## Videos in posts
+
+`POST /api/v1/trips/{trip}/posts` also takes `videos[]` (MP4, MOV, WebM or 3GP, up to 50 MB each, at most 4), with
+`video_posters[]` (a JPEG still from each video, same order) and `video_durations[]` (milliseconds). Posts can be
+videos only. In the response each item of `photos` may carry `video_url` and `duration_ms`; `url` is then the still.
+Videos are served from `/trip-videos/{file}` with byte-range support.

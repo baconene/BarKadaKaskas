@@ -11,6 +11,7 @@ Route::get('/', function () {
 // Cover photos are served by an unguessable name so the mobile apps can load them without a session.
 Route::get('avatars/{file}', [TravelerProfileController::class, 'avatar'])->middleware('throttle:600,1')->name('avatars.show');
 Route::get('trip-photos/{file}', [TripPostController::class, 'photo'])->middleware('throttle:600,1')->name('trip-photos.show');
+Route::get('trip-videos/{file}', [TripPostController::class, 'video'])->middleware('throttle:600,1')->name('trip-videos.show');
 Route::get('trip-covers/{file}', [TripCoverController::class, 'show'])->middleware('throttle:240,1')->name('trip-covers.show');
 
 Route::get('join/{token}', [TripController::class, 'invitation'])->middleware('throttle:60,1')->name('invitations.show');

@@ -8,7 +8,8 @@ data class Trip(val id: Long, val name: String, val destination: String, val sta
 data class Member(val id: Long, val name: String, val phone: String? = null, val otherContact: String? = null, val avatarUrl: String? = null,
                   val emergencyName: String? = null, val emergencyRelationship: String? = null, val emergencyPhone: String? = null)
 data class ProfileDraft(val phone: String, val otherContact: String, val emergencyName: String, val emergencyRelationship: String, val emergencyPhone: String)
-data class PostPhoto(val url: String, val width: Int?, val height: Int?)
+/** A post item: a photo, or a video ([videoUrl]) shown with [url] as its still image. */
+data class PostPhoto(val url: String, val width: Int?, val height: Int?, val videoUrl: String? = null, val durationMs: Long? = null)
 data class Post(val id: Long, val caption: String?, val createdAt: String, val authorName: String, val authorAvatarUrl: String?, val photos: List<PostPhoto>, val likesCount: Int, val liked: Boolean, val canDelete: Boolean, val commentsCount: Int = 0,
     /** Where the photos were taken (an itinerary stop or a typed place); the poster or organizer may change it. */
     val placeName: String? = null, val placeStopId: Long? = null, val canEditPlace: Boolean = false)
@@ -113,7 +114,7 @@ interface TravelRepository {
     suspend fun removeAvatar()
     suspend fun posts(tripId: Long, before: Long? = null): PostPage
     /** [jpegs] are downscaled photos (1 to 10). */
-    suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>, places: List<com.barkadakaskas.app.data.PhotoPlace?> = emptyList(), here: Pair<Double, Double>? = null): Post
+    suspend fun createPost(tripId: Long, caption: String, jpegs: List<ByteArray>, places: List<com.barkadakaskas.app.data.PhotoPlace?> = emptyList(), here: Pair<Double, Double>? = null, videos: List<com.barkadakaskas.app.data.VideoUpload> = emptyList()): Post
     /** Changes a post's place: an itinerary stop, a typed place, or none ([clear]). */
     suspend fun setPostPlace(tripId: Long, postId: Long, stopId: Long?, name: String?, clear: Boolean): Post
     suspend fun deletePost(tripId: Long, postId: Long)

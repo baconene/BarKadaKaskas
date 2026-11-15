@@ -81,9 +81,12 @@ class ExpenseDeleteTest extends TestCase
         $this->patchJson("/api/v1/trips/{$this->trip->id}/expenses/{$expense['id']}/status", ['status' => 'cancelled', 'version' => $expense['version'], 'reason' => 'Duplicate'], $this->headers($this->friend))->assertOk()->assertJsonPath('data.status', 'cancelled');
     }
 
-    public function test_creator_cannot_complete_expenses(): void
+    public function test_creator_can_complete_but_not_close_their_expense_and_others_cannot_complete_it(): void
     {
         $expense = $this->expense($this->friend, [['trip_member_id' => $this->friendMember, 'amount_minor' => 1000]]);
-        $this->patchJson("/api/v1/trips/{$this->trip->id}/expenses/{$expense['id']}/status", ['status' => 'completed', 'version' => $expense['version']], $this->headers($this->friend))->assertForbidden();
+        $url = "/api/v1/trips/{$this->trip->id}/expenses/{$expense['id']}/status";
+        $this->patchJson($url, ['status' => 'completed', 'version' => $expense['version']], $this->headers($this->other))->assertForbidden();
+        $done = $this->patchJson($url, ['status' => 'completed', 'version' => $expense['version']], $this->headers($this->friend))->assertOk()->assertJsonPath('data.status', 'completed')->json('data');
+        $this->patchJson($url, ['status' => 'closed', 'version' => $done['version']], $this->headers($this->friend))->assertForbidden();
     }
 }

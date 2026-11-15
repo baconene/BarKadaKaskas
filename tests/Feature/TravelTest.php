@@ -344,6 +344,25 @@ class TravelTest extends TestCase
         $this->assertDatabaseHas('activity_logs', ['subject_id' => $expense->id, 'action' => 'share_unpaid']);
     }
 
+    public function test_the_traveller_who_recorded_an_expense_can_complete_it_and_mark_shares_paid(): void
+    {
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/expenses", $this->payload(false))->assertSessionHasNoErrors();
+        $expense = Expense::latest('id')->firstOrFail();
+        // The owner paid the merchant; the friend (who recorded it) records that, completes it and confirms the owner was paid back.
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/payments", ['trip_member_id' => $this->ownerMember, 'amount_minor' => 10001, 'version' => 1])->assertSessionHasNoErrors();
+        $this->changeStatus($expense, 'completed')->assertSessionHasNoErrors();
+        $this->assertSame(ExpenseStatus::Completed, $expense->fresh()->status);
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/paid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('settlements', ['expense_id' => $expense->id, 'from_member_id' => $this->friendMember, 'to_member_id' => $this->ownerMember, 'status' => 'confirmed']);
+        $this->post("/trips/{$this->trip->id}/expenses/{$expense->id}/shares/unpaid", ['member_id' => $this->friendMember, 'version' => $expense->fresh()->version])->assertSessionHasNoErrors();
+        $this->changeStatus($expense, 'closed')->assertForbidden();   // closing stays with the organizer
+        // Someone else's expense: no.
+        $theirs = $this->createExpense(false);
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/expenses/{$theirs->id}/payments", ['trip_member_id' => $this->ownerMember, 'amount_minor' => 10001, 'version' => 1])->assertForbidden();
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/expenses/{$theirs->id}/payments", ['trip_member_id' => $this->ownerMember, 'amount_minor' => 10001, 'version' => 1])->assertSessionHasNoErrors();
+        $this->actingAs($this->friend); $this->changeStatus($theirs, 'completed')->assertForbidden();
+    }
+
     public function test_organizer_changes_who_shares_an_expense(): void
     {
         $expense = $this->createExpense();

@@ -47,7 +47,8 @@ class ExpenseShares
             $fail = fn ($message) => throw ValidationException::withMessages(['share' => $message]);
             if ($expense->version !== $version) $fail('This expense changed. Refresh before marking a share unpaid.');
             $actorMemberId = (int) $trip->members()->where('user_id', $actor->id)->value('id');
-            $organizer = $trip->organizer_user_id === $actor->id;
+            // The organizer, or whoever recorded this expense, acts for everyone who covered it.
+            $organizer = $trip->organizer_user_id === $actor->id || ($expense->created_by_member_id && (int) $expense->created_by_member_id === $actorMemberId);
             $repayments = $expense->settlements()->where('from_member_id', $memberId)->where('status', 'confirmed')
                 ->when(! $organizer, fn ($q) => $q->where('to_member_id', $actorMemberId))->lockForUpdate()->get();
             if ($repayments->isEmpty()) $fail($organizer ? 'No repayment is recorded for this share.' : 'You can only undo repayments made to you.');
@@ -77,7 +78,8 @@ class ExpenseShares
             $trip = Trip::whereKey($expense->trip_id)->lockForUpdate()->firstOrFail();
             $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();
             $actorMemberId = (int) $trip->members()->where('user_id', $actor->id)->value('id');
-            $organizer = $trip->organizer_user_id === $actor->id;
+            // The organizer, or whoever recorded this expense, acts for everyone who covered it.
+            $organizer = $trip->organizer_user_id === $actor->id || ($expense->created_by_member_id && (int) $expense->created_by_member_id === $actorMemberId);
             abort_unless($organizer || $expense->payments()->where('trip_member_id', $actorMemberId)->whereNotNull('paid_at')->exists(), 403);
             $fail = fn ($message) => throw ValidationException::withMessages(['share' => $message]);
             if ($expense->version !== $version) $fail('This expense changed. Refresh before marking a share paid.');

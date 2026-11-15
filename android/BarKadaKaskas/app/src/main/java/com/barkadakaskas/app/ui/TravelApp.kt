@@ -1719,6 +1719,9 @@ private data class LineState(val description: String, val amountMinor: Long, val
 @Composable private fun ExpenseSheet(vm: TravelViewModel, detail: TripDetail, expense: Expense, dismiss: () -> Unit) {
     var action by remember { mutableStateOf<String?>(null) }; var reason by remember { mutableStateOf("") }; var voidPayments by remember { mutableStateOf(false) }; var selectedShare by remember { mutableStateOf<Share?>(null) }; var source by remember { mutableStateOf("") }; var payer by remember { mutableStateOf(detail.currentMemberId.toString()) }; var paymentAmount by remember { mutableStateOf("") }
     var undoShare by remember { mutableStateOf<Share?>(null) }
+    // The organizer manages every expense; whoever recorded one can also record its merchant payment, complete it,
+    // mark shares paid or unpaid for everyone who covered it, and cancel or delete it.
+    val canManage = detail.isOrganizer || (expense.createdByMemberId != null && expense.createdByMemberId == detail.currentMemberId)
     FormSheet(expense.title, vm, dismiss, listOf(expense.category, expense.merchant).filter { it.isNotBlank() }.joinToString(" · ")) {
         Row(verticalAlignment = Alignment.CenterVertically) { Text(money(expense.totalMinor, detail.trip.currency), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Forest); Status(expense.status) }
         Text("Assigned shares", fontWeight = FontWeight.Bold)
@@ -1726,9 +1729,9 @@ private data class LineState(val description: String, val amountMinor: Long, val
             Avatar(member?.name ?: "Traveler", share.memberId == detail.currentMemberId, 36); Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) { Text(member?.name ?: "Traveler", fontWeight = FontWeight.Medium); Text(if (share.remainingMinor <= 0) "Paid / covered" else "${money(share.remainingMinor, detail.trip.currency)} remaining", style = MaterialTheme.typography.bodySmall, color = if (share.remainingMinor <= 0) Forest else Muted) }
             Text(money(share.amountMinor, detail.trip.currency), fontWeight = FontWeight.SemiBold)
-            val mayConfirm = detail.isOrganizer || expense.payments.any { it.memberId == detail.currentMemberId }
+            val mayConfirm = canManage || expense.payments.any { it.memberId == detail.currentMemberId }
             // Repayments recorded against this bill from this traveller that you may undo (organizer, or ones made to you).
-            val mayUndo = detail.settlements.any { it.expenseId == expense.id && it.fromMemberId == share.memberId && it.status == "confirmed" && (detail.isOrganizer || it.toMemberId == detail.currentMemberId) }
+            val mayUndo = detail.settlements.any { it.expenseId == expense.id && it.fromMemberId == share.memberId && it.status == "confirmed" && (canManage || it.toMemberId == detail.currentMemberId) }
             if (mayConfirm && share.remainingMinor > 0 && expense.status in listOf("open", "completed", "closed")) TextButton(onClick = { selectedShare = share; source = "" }, enabled = !vm.busy) { Text("Mark paid") }
             else if (share.remainingMinor <= 0 && mayUndo && expense.status != "cancelled") TextButton(onClick = { undoShare = share }, enabled = !vm.busy) { Text("Mark unpaid", color = Danger) }
             else if (share.remainingMinor <= 0) Icon(Icons.Default.CheckCircle, "Paid", tint = Forest, modifier = Modifier.padding(start = 8.dp).size(20.dp))
@@ -1737,11 +1740,9 @@ private data class LineState(val description: String, val amountMinor: Long, val
         Text("Paid to merchant", fontWeight = FontWeight.Bold)
         expense.payments.forEach { Text("${detail.members.find { m -> m.id == it.memberId }?.name ?: "Traveler"} · ${money(it.amountMinor, detail.trip.currency)}") }
         if (expense.payments.isEmpty()) Text("No merchant payment recorded.", color = Muted)
-        // The organizer manages every expense; whoever recorded one may cancel or delete it.
-        val canManage = detail.isOrganizer || (expense.createdByMemberId != null && expense.createdByMemberId == detail.currentMemberId)
         val canDelete = canManage && expense.payments.isEmpty() && detail.settlements.none { it.expenseId == expense.id }
+        if (canManage && expense.status == "open") { OutlinedButton(onClick = { action = "payment" }, Modifier.fillMaxWidth()) { Text("Record merchant payment") }; Button(onClick = { action = "completed" }, Modifier.fillMaxWidth()) { Text("Complete merchant bill") } }
         if (detail.isOrganizer) {
-            if (expense.status == "open") { OutlinedButton(onClick = { action = "payment" }, Modifier.fillMaxWidth()) { Text("Record merchant payment") }; Button(onClick = { action = "completed" }, Modifier.fillMaxWidth()) { Text("Complete merchant bill") } }
             if (expense.status == "completed") Button(onClick = { action = "closed" }, Modifier.fillMaxWidth()) { Text("Close expense") }
             // Payers stay editable until reimbursements are recorded against the bill (they went to those payers).
             if (expense.status in listOf("open", "completed") && detail.settlements.none { it.expenseId == expense.id }) OutlinedButton(onClick = { action = "payers" }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Edit, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("Change who paid") }
@@ -1763,7 +1764,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
         selectedShare?.let { share ->
             val who = detail.members.find { it.id == share.memberId }?.name ?: "Traveler"
             // Is there anyone who covered more than their share (so this traveller can pay them back)?
-            val covered = expense.shares.filter { detail.isOrganizer || it.memberId == detail.currentMemberId }.sumOf { (it.coveredMinor - it.amountMinor).coerceAtLeast(0) }
+            val covered = expense.shares.filter { canManage || it.memberId == detail.currentMemberId }.sumOf { (it.coveredMinor - it.amountMinor).coerceAtLeast(0) }
             val hasRepayment = detail.settlements.any { it.expenseId == null && it.fromMemberId == share.memberId && it.status in listOf("pending", "confirmed") }
             if (covered <= 0 && !hasRepayment) {
                 val paid = expense.payments.sumOf { it.amountMinor }
@@ -1772,7 +1773,7 @@ private data class LineState(val description: String, val amountMinor: Long, val
                 Text("Nobody has paid $who's share to the merchant yet", fontWeight = FontWeight.Bold)
                 Text(if (paid > 0) "The ${money(paid, detail.trip.currency)} recorded so far only covers the payer's own share, so there is nothing to pay back." else "No merchant payment is recorded, so there is nothing to pay back.", color = Muted, style = MaterialTheme.typography.bodySmall)
                 Text("If $who paid the merchant directly, record it here. If someone paid the whole ${money(expense.totalMinor, detail.trip.currency)}, correct \"Change who paid\".", color = Muted, style = MaterialTheme.typography.bodySmall)
-                if (detail.isOrganizer && expense.status == "open" && direct > 0) Submit("${who.substringBefore(' ')} paid the merchant (${money(direct, detail.trip.currency)})", vm.busy) { vm.mutate({ selectedShare = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, share.memberId, direct) } }
+                if (canManage && expense.status == "open" && direct > 0) Submit("${who.substringBefore(' ')} paid the merchant (${money(direct, detail.trip.currency)})", vm.busy) { vm.mutate({ selectedShare = null }) { repo, current -> repo.recordMerchantPayment(current.trip.id, expense, share.memberId, direct) } }
                 TextButton(onClick = { selectedShare = null }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
                 return@let
             }

@@ -243,7 +243,10 @@ class ExpenseController extends Controller
 
     public function payment(Request $request, Trip $trip, Expense $expense)
     {
-        abort_unless($expense->trip_id === $trip->id, 404); Gate::authorize('update', $trip);
+        abort_unless($expense->trip_id === $trip->id, 404);
+        // The organizer, or whoever recorded this expense, records merchant payments.
+        $creator = $expense->created_by_member_id && (int) $expense->created_by_member_id === (int) $trip->members()->where('user_id', $request->user()->id)->value('id');
+        if (! $creator) { Gate::authorize('update', $trip); } else { Gate::authorize('view', $trip); }
         $data = $request->validate(['trip_member_id' => ['required', Rule::in($trip->members()->where('status', 'active')->pluck('id')->all())], 'amount_minor' => 'required|integer|min:1|max:100000000', 'version' => 'required|integer']);
         DB::transaction(function () use ($expense, $data, $request) {
             $expense = Expense::whereKey($expense->id)->lockForUpdate()->firstOrFail();

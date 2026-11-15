@@ -754,6 +754,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
     var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }; var breakdown by remember { mutableStateOf(false) }
+    var lines by remember { mutableStateOf(false) }
     // Same rule as the server's balances: every recorded bill counts in full, paid to the merchant or not.
     val total = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sumOf { it.totalMinor }
     // Part of those bills not yet paid to the merchant (e.g. only a down payment so far).
@@ -772,8 +773,20 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Text("Details", color = Color.White, style = MaterialTheme.typography.labelLarge); Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White)
             }
         }
+        // What you paid merchants (before anyone pays you back) and your own share; balance = paid − share ± repayments.
+        val counted = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }
+        val paidByMe = counted.sumOf { e -> e.payments.filter { it.memberId == detail.currentMemberId }.sumOf { it.amountMinor } }
+        val myShare = counted.sumOf { e -> e.shares.filter { it.memberId == detail.currentMemberId }.sumOf { it.amountMinor } }
+        Surface(onClick = { lines = true }, shape = RoundedCornerShape(14.dp), color = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Text("You paid merchants", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(paidByMe, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Text("Your share", color = Color(0xFFCDDEBC), style = MaterialTheme.typography.labelMedium); Text(money(myShare, detail.trip.currency), color = Color.White, fontWeight = FontWeight.Bold) }
+                Text("See list", color = Color.White, style = MaterialTheme.typography.labelLarge); Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Color.White)
+            }
+        }
     } }
     if (breakdown) BalanceBreakdownSheet(detail) { breakdown = false }
+    if (lines) MyLinesSheet(detail) { lines = false }
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1918,6 +1931,58 @@ private data class LineState(val description: String, val amountMinor: Long, val
         vm.mutate(done) { repo, current -> repo.setExpensePayers(current.trip.id, expense, payments) }
     }
     TextButton(onClick = done, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+}
+
+/** "Your lines": bills you paid the merchant for (with your share), and your shares still to pay (and to whom). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun MyLinesSheet(detail: TripDetail, close: () -> Unit) {
+    val me = detail.currentMemberId; val cur = detail.trip.currency
+    val counted = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sortedByDescending { it.incurredAt }
+    val paid = counted.mapNotNull { e -> e.payments.filter { it.memberId == me }.sumOf { it.amountMinor }.takeIf { it > 0 }?.let { Triple(e, it, e.shares.filter { s -> s.memberId == me }.sumOf { s -> s.amountMinor }) } }
+    val toPay = counted.mapNotNull { e -> e.shares.filter { it.memberId == me }.sumOf { it.remainingMinor }.takeIf { it > 0 }?.let { e to it } }
+    var tab by remember { mutableIntStateOf(0) }
+    fun day(d: String) = runCatching { LocalDate.parse(d.take(10)).format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)) }.getOrDefault(d)
+    ModalBottomSheet(onDismissRequest = close, containerColor = Color.White) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Your lines", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Paid by you" to paid.sumOf { it.second }, "Still to pay" to toPay.sumOf { it.second }).forEachIndexed { i, (label, total) ->
+                    Surface(onClick = { tab = i }, shape = RoundedCornerShape(14.dp), color = if (tab == i) Sage else Color.White, border = BorderStroke(1.dp, if (tab == i) Forest else Line), modifier = Modifier.weight(1f)) {
+                        Column(Modifier.padding(12.dp)) { Text(label, color = Muted, style = MaterialTheme.typography.labelMedium); Text(money(total, cur), fontWeight = FontWeight.Bold, color = if (i == 1 && total > 0) Danger else Ink) }
+                    }
+                }
+            }
+            if (tab == 0) {
+                Text("Bills you paid the merchant for. Your own share is part of it; the rest is what others owe you for that bill.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                if (paid.isEmpty()) Text("You haven't paid a merchant yet.", color = Muted)
+                paid.forEach { (e, amount, share) ->
+                    HorizontalDivider(color = Line)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.title, fontWeight = FontWeight.SemiBold)
+                            Text(listOfNotNull(day(e.incurredAt), e.merchant.takeIf { it.isNotBlank() }, "your share ${money(share, cur)}", if (amount > share) "others ${money(amount - share, cur)}" else null).joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(money(amount, cur), fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                Text("Your shares not covered yet: pay back whoever paid the merchant, or the merchant if nobody has.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                if (toPay.isEmpty()) Text("Nothing left to pay.", color = Muted)
+                toPay.forEach { (e, remaining) ->
+                    val payers = e.payments.filter { it.memberId != me }.mapNotNull { p -> detail.members.find { it.id == p.memberId }?.name?.substringBefore(" ") }.distinct()
+                    val to = if (payers.isNotEmpty()) "to ${payers.joinToString(", ")}" else if (e.payments.sumOf { it.amountMinor } < e.totalMinor) "to ${e.merchant.ifBlank { "the merchant" }} (not paid yet)" else null
+                    HorizontalDivider(color = Line)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(e.title, fontWeight = FontWeight.SemiBold)
+                            Text(listOfNotNull(day(e.incurredAt), "your share ${money(e.shares.filter { it.memberId == me }.sumOf { it.amountMinor }, cur)}", to).joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(money(remaining, cur), fontWeight = FontWeight.Bold, color = Danger)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Bottom sheet behind "Your balance": the net split into what you will pay and receive, bill by bill. */

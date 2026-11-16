@@ -24,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.horizontalScroll
@@ -755,6 +756,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 @Composable private fun ExpensesTab(vm: TravelViewModel, detail: TripDetail) {
     var create by remember { mutableStateOf(false) }; var selectedId by remember { mutableStateOf<Long?>(null) }; var breakdown by remember { mutableStateOf(false) }
     var lines by remember { mutableStateOf(false) }
+    var filter by rememberSaveable { mutableStateOf("all") }
     // Same rule as the server's balances: every recorded bill counts in full, paid to the merchant or not.
     val total = detail.expenses.filter { it.status in listOf("open", "completed", "closed") }.sumOf { it.totalMinor }
     // Part of those bills not yet paid to the merchant (e.g. only a down payment so far).
@@ -788,7 +790,25 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     if (breakdown) BalanceBreakdownSheet(detail) { breakdown = false }
     if (lines) MyLinesSheet(detail) { lines = false }
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
-    detail.expenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
+    // Filters with counts: all; paid to the merchant in full or not yet; ones you recorded; ones where someone still owes a share.
+    val paidFull = { e: Expense -> e.payments.sumOf { it.amountMinor } >= e.totalMinor }
+    val matches = { e: Expense, f: String -> when (f) {
+        "paid" -> e.status !in listOf("cancelled", "draft") && paidFull(e)
+        "unpaid" -> e.status != "cancelled" && !paidFull(e)
+        "created" -> e.createdByMemberId == detail.currentMemberId
+        "unsettled" -> e.status in listOf("open", "draft") || (e.status != "cancelled" && e.shares.any { it.remainingMinor > 0 })
+        else -> true
+    } }
+    if (detail.expenses.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(listOf("all" to "All", "paid" to "Paid", "unpaid" to "Unpaid", "created" to "Created by me", "unsettled" to "Unsettled")) { (key, label) ->
+            val count = detail.expenses.count { matches(it, key) }
+            FilterChip(filter == key, { filter = key }, label = { Text("$label  $count") },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Forest, selectedLabelColor = Color.White))
+        }
+    }
+    val shownExpenses = detail.expenses.filter { matches(it, filter) }
+    if (detail.expenses.isNotEmpty() && shownExpenses.isEmpty()) Text("No expenses match this filter.", color = Muted)
+    shownExpenses.forEach { expense -> Card(onClick = { selectedId = expense.id }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(Sage), contentAlignment = Alignment.Center) { Icon(kindIcon(Itinerary.kind("${expense.category} ${expense.title}")), null, tint = Forest) }
             Spacer(Modifier.width(12.dp))

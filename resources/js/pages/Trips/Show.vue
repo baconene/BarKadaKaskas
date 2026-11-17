@@ -12,6 +12,7 @@ import BalanceBreakdown from '@/components/trip/BalanceBreakdown.vue';
 import MySpending from '@/components/trip/MySpending.vue';
 import TripCancelDialog from '@/components/trip/TripCancelDialog.vue';
 import TripEditDialog from '@/components/trip/TripEditDialog.vue';
+import TripPresentation from '@/components/trip/TripPresentation.vue';
 import ReceiptScanner, { type ReceiptDraft } from '@/components/trip/ReceiptScanner.vue';
 import TripNavigation, { type TripScreen } from '@/components/trip/TripNavigation.vue';
 import type { ItineraryStop } from '@/lib/itinerary';
@@ -31,8 +32,13 @@ const isPlan=computed(()=>['today','itinerary','map'].includes(screen.value));
 const cancelled=computed(()=>props.trip.status==='cancelled');
 const cancelling=ref(false);
 const editingTrip=ref(false);
-function manageTrip(action:'cancel'|'reopen'|'hide'|'show'|'edit'){
+// The organizer ends the trip when it's over; everyone then gets the trip presentation.
+const ended=computed(()=>props.trip.status==='ended');
+const presenting=ref(false);
+function manageTrip(action:'cancel'|'reopen'|'hide'|'show'|'edit'|'end'|'present'){
     if(action==='edit'){editingTrip.value=true;return;}
+    if(action==='present'){presenting.value=true;return;}
+    if(action==='end'){if(confirm(`End “${props.trip.name}”? Everyone is told the trip is over and gets the trip presentation. Expenses and settling up keep working, and you can reopen it.`))router.post(`/trips/${props.trip.id}/end`,{},{preserveScroll:true,onSuccess:()=>{presenting.value=true;}});return;}
     if(action==='cancel'){cancelling.value=true;return;}
     if(action==='reopen'){router.post(`/trips/${props.trip.id}/reopen`,{},{preserveScroll:true});return;}
     router.patch(`/trips/${props.trip.id}/visibility`,{hidden:action==='hide'},{preserveScroll:true});
@@ -180,13 +186,19 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 </script>
 <template>
 <Head :title="trip.name"/><TravelLayout app-nav>
- <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" :cancelled="cancelled" :hidden="!!trip.hidden_at" :cover-url="trip.cover_url" @open="screen=$event" @manage="manageTrip"/>
+ <TripHeader :name="trip.name" :destination="trip.destination" :starts-on="String(trip.starts_on).slice(0,10)" :ends-on="String(trip.ends_on).slice(0,10)" :travelers="trip.members.length" :is-organizer="isOrganizer" :spent="money(spent)" :balance-minor="myBalance" :balance="money(myBalance)" :expense-count="trip.expenses.length" :open-expenses="trip.expenses.filter(e=>e.status==='open').length" :hide-summary="!isPlan" :cancelled="cancelled" :ended="ended" :hidden="!!trip.hidden_at" :cover-url="trip.cover_url" @open="screen=$event" @manage="manageTrip"/>
  <div v-if="cancelled" class="cancelled-banner" role="status">
   <strong>This trip was cancelled<span v-if="trip.hidden_at"> and is hidden from trip lists</span>.</strong>
   <span v-if="trip.cancellation_reason">“{{ trip.cancellation_reason }}”</span>
   <span>The plan and new expenses are locked. You can still record repayments and settle up.</span>
   <button v-if="isOrganizer" type="button" class="btn secondary" @click="manageTrip('reopen')">Reopen trip</button>
  </div>
+ <div v-if="ended" class="ended-banner" role="status">
+  <strong>This trip has ended. Thanks for travelling together!</strong>
+  <span>Relive it day by day: routes on the map, your photos, and the planned vs actual budget. Expenses and settling up still work.</span>
+  <div class="row"><button type="button" class="btn" @click="presenting=true">Open trip presentation</button><button v-if="isOrganizer" type="button" class="btn secondary" @click="manageTrip('reopen')">Reopen trip</button></div>
+ </div>
+ <TripPresentation v-if="presenting" :trip-id="trip.id" @close="presenting=false"/>
  <TripEditDialog v-if="editingTrip" :trip="trip" :has-expenses="trip.expenses.length>0" @close="editingTrip=false"/>
  <TripCancelDialog v-if="cancelling" :trip-id="trip.id" :trip-name="trip.name" @close="cancelling=false"/>
  <TripNavigation v-model="screen" :badges="{group:pendingForMe}"/>
@@ -284,5 +296,5 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 @media(min-width:1024px){.fab{display:none}.add-expense-desktop{display:inline-flex}.money-strip strong{font-size:19px}}
 @media(max-width:360px){.money-strip strong{font-size:14px}.money-strip div{padding:9px 10px}}
 @media(prefers-reduced-motion:reduce){.expense-chevron{transition:none}}
-.cancelled-banner{display:grid;gap:6px;justify-items:start;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:#fff4ef;border:1px solid #edc9bd;color:#7d3424;font-size:14px;line-height:1.5}.cancelled-banner .btn{margin-top:4px}
+.cancelled-banner{display:grid;gap:6px;justify-items:start;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:#fff4ef;border:1px solid #edc9bd;color:#7d3424;font-size:14px;line-height:1.5}.cancelled-banner .btn{margin-top:4px}.ended-banner{display:grid;gap:6px;justify-items:start;padding:16px 18px;margin-bottom:16px;border-radius:16px;background:#eef6e6;border:1px solid #c9dcb8;color:#214e3e;font-size:14px;line-height:1.5}.ended-banner .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 </style>

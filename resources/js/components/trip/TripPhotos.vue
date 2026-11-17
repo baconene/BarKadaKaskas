@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MapPin, MessageCircle, Pencil, Play, Sparkles, Trash2, Video, X } from 'lucide-vue-next';
+import { Camera, ChevronLeft, ChevronRight, Clapperboard, Heart, ImagePlus, MapPin, MessageCircle, Pencil, Play, Presentation, Sparkles, Trash2, Video, X } from 'lucide-vue-next';
 import PostComments from '@/components/trip/PostComments.vue';
 import HighlightPlayer from '@/components/trip/HighlightPlayer.vue';
+import TripPresentation from '@/components/trip/TripPresentation.vue';
 import LoadingImage from '@/components/LoadingImage.vue';
 import PhotoEditor from '@/components/PhotoEditor.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
@@ -12,6 +13,7 @@ import { currentPosition, readPhotoLocation } from '@/lib/photoLocation';
 type Post = { id: number; caption: string | null; created_at: string; author: { member_id: number; name: string; avatar_url: string | null }; photos: { url: string; width: number | null; height: number | null; video_url?: string; duration_ms?: number | null }[]; likes_count: number; liked: boolean; can_delete: boolean; comments_count?: number; place?: { name: string; itinerary_item_id: number | null } | null; can_edit_place?: boolean };
 // The day highlight (30-second story of today's stops and photos).
 const showHighlight = ref(false);
+const showPresentation = ref(false);
 // Posts whose comments are open.
 const openComments = ref(new Set<number>());
 function toggleComments(id: number) { const next = new Set(openComments.value); if (next.has(id)) next.delete(id); else next.add(id); openComments.value = next; }
@@ -206,6 +208,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
             <div><h2 id="photos-title">Photos</h2><p class="muted">Moments from {{ tripName }}, shared by the barkada.</p></div>
             <div class="head-actions">
                 <button v-if="posts.length" type="button" class="btn secondary highlight-btn" @click="showHighlight = true"><Clapperboard :size="16" aria-hidden="true" /> Day highlight</button>
+                <button v-if="posts.length" type="button" class="btn secondary highlight-btn" @click="showPresentation = true"><Presentation :size="16" aria-hidden="true" /> Trip presentation</button>
                 <button v-if="!readOnly" type="button" class="btn post-desktop" @click="openComposer()"><ImagePlus :size="16" aria-hidden="true" /> Post photos</button>
             </div>
         </div>
@@ -254,6 +257,7 @@ const empty = computed(() => loaded.value && !posts.value.length);
         </template>
 
         <HighlightPlayer v-if="showHighlight" :trip-id="tripId" @close="showHighlight = false" />
+        <TripPresentation v-if="showPresentation" :trip-id="tripId" @close="showPresentation = false" />
         <button v-if="!readOnly" type="button" class="post-fab" @click="openComposer()"><ImagePlus :size="20" aria-hidden="true" /> Post photos</button>
 
         <dialog v-if="composing" ref="dialog" class="composer" aria-labelledby="composer-title" @close="onClosed">

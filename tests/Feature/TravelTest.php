@@ -147,6 +147,28 @@ class TravelTest extends TestCase
         $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertRedirect();
         $this->assertSame([$third->id, 0, 0], [$general->fresh()->expense_id, $remaining($third, $this->friendMember), $between($this->friend)]);
     }
+    public function test_organizer_ends_trip_and_everyone_gets_the_presentation(): void
+    {
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/end")->assertForbidden();
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/end")->assertRedirect();
+        $this->assertSame('ended', $this->trip->fresh()->status);
+        $this->assertNotNull($this->trip->fresh()->ended_at);
+        $this->assertDatabaseHas('alerts', ['user_id' => $this->friend->id, 'type' => 'trip']);
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/end")->assertStatus(422);
+
+        $this->trip->itineraryItems()->create(['created_by_user_id' => $this->owner->id, 'title' => 'Big Lagoon', 'location' => 'El Nido', 'starts_at' => '2026-12-02 01:00:00', 'ends_at' => '2026-12-02 03:00:00', 'timezone' => 'Asia/Manila']);
+        $this->createExpense();   // Dec 1
+        $data = $this->actingAs($this->friend)->getJson("/trips/{$this->trip->id}/presentation")->assertOk()->json('data');
+        $this->assertTrue($data['ended']);
+        $this->assertSame(['2026-12-02'], array_column($data['days'], 'date'));
+        $this->assertSame('Big Lagoon', $data['days'][0]['stops'][0]['title']);
+        $this->assertSame(10001, $data['spent_minor']);
+        $budget = $this->actingAs($this->friend)->getJson("/trips/{$this->trip->id}/presentation/budget")->assertOk()->json('data');
+        $this->assertSame([10001, '2026-12-01'], [$budget['total_actual_minor'], $budget['days'][0]['date']]);
+
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/reopen")->assertRedirect();
+        $this->assertSame(['planning', null], [$this->trip->fresh()->status, $this->trip->fresh()->ended_at]);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

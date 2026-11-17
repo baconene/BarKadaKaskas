@@ -24,6 +24,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::delete('trips/{trip}/cover', [TripCoverController::class, 'destroy']);
         Route::post('trips/{trip}/cancel', [TripController::class, 'cancel']);
         Route::post('trips/{trip}/reopen', [TripController::class, 'reopen']);
+        Route::post('trips/{trip}/end', [TripController::class, 'end']);
+        Route::get('trips/{trip}/presentation', [\App\Http\Controllers\PresentationController::class, 'show'])->middleware('throttle:20,1');
+        Route::get('trips/{trip}/presentation/budget', [\App\Http\Controllers\PresentationController::class, 'budget'])->middleware('throttle:20,1');
         Route::patch('trips/{trip}/visibility', [TripController::class, 'visibility']);
         Route::post('trips/{trip}/invitations', [TripController::class, 'invite'])->middleware('throttle:10,1');
         Route::post('invitations/{token}/join', [TripController::class, 'join']);

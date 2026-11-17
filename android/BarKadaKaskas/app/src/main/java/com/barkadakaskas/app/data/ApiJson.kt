@@ -92,6 +92,29 @@ internal object ApiJson {
         Alert(a.getLong("id"), a.text("type"), a.text("title"), a.textOrNull("body"), a.optLong("trip_id"), a.textOrNull("trip_name"), a.optBoolean("read"), a.text("created_at"))
     }, body?.optInt("unread_count") ?: 0)
 
+    fun presentation(d: JSONObject) = Presentation(
+        title = d.text("title"), destination = d.text("destination"), currency = d.text("currency").ifBlank { "PHP" }, dates = d.text("dates"), ended = d.optBoolean("ended"),
+        coverUrl = d.imageUrl("cover_url"), stats = d.optJSONArray("stats").mapObjects { it.text("value") to it.text("label") }, spentMinor = d.optLong("spent_minor"),
+        days = d.optJSONArray("days").mapObjects { day -> DeckDay(
+            date = day.text("date"), dayNumber = day.optInt("day_number"), label = day.text("label"), route = day.text("route"),
+            stops = day.optJSONArray("stops").mapObjects { s -> DeckStop(s.optInt("n"), s.text("time"), s.text("title"), s.textOrNull("location"), s.optBoolean("done"), s.optBoolean("on_map")) },
+            map = day.optJSONObject("map")?.let { m -> DeckMap(m.imageUrl("url").orEmpty(), m.optJSONArray("pins").mapObjects { p -> DeckPin(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.optDouble("x").toFloat(), p.optDouble("y").toFloat()) }) },
+            photos = day.optJSONArray("photos").mapObjects { p -> DeckPhoto(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.textOrNull("by"), p.text("time")) },
+            photoCount = day.optInt("photo_count"), spentMinor = day.optLong("spent_minor"),
+        ) },
+    )
+
+    fun budget(d: JSONObject) = TripBudget(
+        available = d.optBoolean("available"), failed = d.optBoolean("failed"), travellers = d.optInt("travellers", 1),
+        totalEstimateMinor = d.optLong("total_estimate_minor"), totalActualMinor = d.optLong("total_actual_minor"),
+        perPersonEstimateMinor = d.optLong("per_person_estimate_minor"), perPersonActualMinor = d.optLong("per_person_actual_minor"),
+        days = d.optJSONArray("days").mapObjects { day -> BudgetDay(day.text("date"), day.text("label"), day.optLong("estimate_minor"), day.optLong("actual_minor"),
+            day.optJSONArray("items").mapObjects { it.text("label") to it.optLong("amount_minor") }) },
+        categories = d.optJSONArray("categories").mapObjects { it.text("category") to it.optLong("estimate_minor") },
+        actualCategories = d.optJSONArray("actual_categories").mapObjects { it.text("name") to it.optLong("amount_minor") },
+        notes = d.optJSONArray("notes").let { a -> (0 until (a?.length() ?: 0)).mapNotNull { a?.optString(it)?.takeIf(String::isNotBlank) } },
+    )
+
     fun highlight(d: JSONObject) = Highlight(
         date = d.text("date"), dayNumber = d.optInt("day_number"), title = d.text("title"), subtitle = d.text("subtitle"),
         coverUrl = d.imageUrl("cover_url"), basePhotoUrl = d.imageUrl("base_photo_url"),

@@ -91,13 +91,31 @@ class TripController extends Controller
         return $hide ? to_route('dashboard') : back();
     }
 
-    /** Organizer undoes a cancellation; the trip becomes visible and editable again. */
+    /**
+     * Organizer ends the trip: it's over. Everyone is told, and the trip presentation is offered. Expenses and settling
+     * up keep working (bills often come in afterwards); the organizer can reopen it.
+     */
+    public function end(Request $request, Trip $trip)
+    {
+        Gate::authorize('update', $trip);
+        abort_if($trip->isCancelled(), 422, 'This trip was cancelled. Reopen it first.');
+        abort_if($trip->isEnded(), 422, 'This trip has already ended.');
+        $before = $trip->only(['status']);
+        $trip->update(['status' => 'ended', 'ended_at' => now()]);
+        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'ended', 'before' => $before, 'after' => ['status' => 'ended']]);
+        app(\App\Services\Alerts::class)->notify($trip, $request->user(), 'trip', $trip->name.' has ended',
+            'Thanks for travelling together! Open the trip to see the presentation of your days, and settle up any balances.');
+        return $request->is('api/*') ? response()->json(['data' => $trip->fresh()]) : back();
+    }
+
+    /** Organizer undoes a cancellation or an ending; the trip becomes visible and editable again. */
     public function reopen(Request $request, Trip $trip)
     {
         Gate::authorize('update', $trip);
-        abort_unless($trip->isCancelled(), 422, 'Only a cancelled trip can be reopened.');
-        $trip->update(['status' => 'planning', 'cancelled_at' => null, 'cancellation_reason' => null, 'hidden_at' => null]);
-        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'reopened', 'before' => ['status' => 'cancelled'], 'after' => ['status' => 'planning']]);
+        abort_unless($trip->isCancelled() || $trip->isEnded(), 422, 'Only a cancelled or ended trip can be reopened.');
+        $before = $trip->only(['status']);
+        $trip->update(['status' => 'planning', 'cancelled_at' => null, 'cancellation_reason' => null, 'hidden_at' => null, 'ended_at' => null]);
+        ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'trip', 'subject_id' => $trip->id, 'action' => 'reopened', 'before' => $before, 'after' => ['status' => 'planning']]);
         return $request->is('api/*') ? response()->json(['data' => $trip->fresh()]) : back();
     }
 

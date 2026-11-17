@@ -11,6 +11,7 @@ import TravelLayout from '@/layouts/TravelLayout.vue';
  */
 function tripPhase(trip:{starts_on:string;ends_on:string;status:string;timezone?:string}):{label:string;tone:string}{
     if(trip.status==='cancelled')return{label:'Cancelled',tone:'cancelled'};
+    if(trip.status==='ended')return{label:'Ended',tone:'closed'};
     let today:string;
     try{today=new Intl.DateTimeFormat('en-CA',{timeZone:trip.timezone||undefined,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
     catch{today=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}

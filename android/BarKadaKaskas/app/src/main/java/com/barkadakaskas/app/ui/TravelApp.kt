@@ -472,6 +472,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Text("${Itinerary.dateRange(trip.startsOn, trip.endsOn)} · ${trip.memberCount} traveler${if (trip.memberCount == 1) "" else "s"}", color = Muted, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(2.dp))
                 if (trip.cancelled) Pill("Cancelled", Icons.Default.Block, Color(0xFFFCE8E3), Color(0xFFA04735))
+                else if (trip.ended) Pill("Ended", Icons.Default.Flag, Color(0xFFE9EDEF), Color(0xFF4D6168))
                 else Pill(Itinerary.phaseLabel(phase), container = if (phase == Itinerary.Phase.Past) Color(0xFFE9EDEF) else Color(0xFFEDF2E6), content = if (phase == Itinerary.Phase.Past) Color(0xFF4D6168) else Color(0xFF526936))
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted)
@@ -491,6 +492,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     var cancelling by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var confirmHide by remember { mutableStateOf(false) }
+    var presenting by remember { mutableStateOf(false) }
+    var confirmEnd by remember { mutableStateOf(false) }
     // A cancelled trip locks the plan for everyone, organizer included; settling up stays available.
     val planning = if (detail.trip.cancelled) detail.copy(isOrganizer = false) else detail
     ErrorSnackbar(vm, snackbar)
@@ -499,11 +502,13 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         topBar = { TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
             title = { Column { Text(detail.trip.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold); Text("${detail.trip.destination} · ${Itinerary.dateRange(detail.trip.startsOn, detail.trip.endsOn)}", style = MaterialTheme.typography.bodySmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
             navigationIcon = { IconButton(vm::backToTrips, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to trips") } },
-            actions = { AlertsBell(vm); if (detail.isOrganizer) Box {
+            actions = { AlertsBell(vm); IconButton(onClick = { presenting = true }) { Icon(Icons.Default.Slideshow, "Trip presentation") }; if (detail.isOrganizer) Box {
                 IconButton(onClick = { menu = true }, enabled = !vm.busy) { Icon(Icons.Default.MoreVert, "Trip options") }
                 DropdownMenu(menu, { menu = false }) {
                     if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Edit trip & cover photo") }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { menu = false; editing = true })
-                    if (!detail.trip.cancelled) DropdownMenuItem(text = { Text("Cancel trip…", color = Danger) }, leadingIcon = { Icon(Icons.Default.Block, null, tint = Danger) }, onClick = { menu = false; cancelling = true })
+                    if (!detail.trip.cancelled && !detail.trip.ended) DropdownMenuItem(text = { Text("End trip…") }, leadingIcon = { Icon(Icons.Default.Flag, null) }, onClick = { menu = false; confirmEnd = true })
+                    if (detail.trip.ended) DropdownMenuItem(text = { Text("Reopen trip") }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { menu = false; vm.reopenTrip() })
+                    if (!detail.trip.cancelled && !detail.trip.ended) DropdownMenuItem(text = { Text("Cancel trip…", color = Danger) }, leadingIcon = { Icon(Icons.Default.Block, null, tint = Danger) }, onClick = { menu = false; cancelling = true })
                     else {
                         DropdownMenuItem(text = { Text("Reopen trip") }, leadingIcon = { Icon(Icons.Default.Restore, null) }, onClick = { menu = false; vm.reopenTrip() })
                         DropdownMenuItem(text = { Text(if (detail.trip.hidden) "Show in trip lists" else "Hide from trip lists") }, leadingIcon = { Icon(if (detail.trip.hidden) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) },
@@ -519,6 +524,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             AnimatedContent(tab, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "tab") { current ->
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (detail.trip.cancelled) CancelledBanner(detail, vm)
+                    if (detail.trip.ended) EndedBanner(detail, vm) { presenting = true }
                     when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> PhotosTab(vm, detail); 3 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -526,6 +532,11 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
         }
     }
     if (cancelling) CancelTripSheet(vm, detail) { cancelling = false }
+    if (presenting) TripPresentation(vm) { presenting = false }
+    if (confirmEnd) AlertDialog(onDismissRequest = { confirmEnd = false }, title = { Text("End “${detail.trip.name}”?") },
+        text = { Text("Everyone is told the trip is over and gets the trip presentation. Expenses and settling up keep working, and you can reopen it.") },
+        confirmButton = { TextButton(onClick = { confirmEnd = false; vm.endTrip(); presenting = true }) { Text("End trip") } },
+        dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text("Not yet") } })
     if (editing) EditTripSheet(vm, detail) { editing = false }
     if (confirmHide) AlertDialog(onDismissRequest = { confirmHide = false }, icon = { Icon(Icons.Default.VisibilityOff, null) },
         title = { Text("Hide this trip?") }, text = { Text("It won't show in anyone's trip list. You can show it again from this menu.") },
@@ -1142,6 +1153,11 @@ private fun openDocument(context: Context, document: TravelerDocument, bytes: By
         Icon(Icons.Default.Movie, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Day highlight", color = Forest)
     }
     if (highlightOpen) HighlightPlayer(vm) { highlightOpen = false }
+    var presentationOpen by remember { mutableStateOf(false) }
+    if (vm.posts.isNotEmpty()) OutlinedButton(onClick = { presentationOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(14.dp)) {
+        Icon(Icons.Default.Slideshow, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(6.dp)); Text("Trip presentation", color = Forest)
+    }
+    if (presentationOpen) TripPresentation(vm) { presentationOpen = false }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, enabled = !vm.busy, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
             Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Photos & videos")
@@ -2098,6 +2114,22 @@ private data class LineState(val description: String, val amountMinor: Long, val
         Text("Payment method", fontWeight = FontWeight.Bold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("gcash" to "GCash", "cash" to "Cash", "bank_transfer" to "Bank transfer", "other" to "Other").forEach { (key, label) -> FilterChip(method == key, { method = key }, label = { Text(label) }) } }
         Submit("Record reimbursement", vm.busy, recipient.isNotBlank() && amount(total) != null, Icons.AutoMirrored.Filled.Send) { vm.mutate(dismiss) { repo, current -> repo.recordSettlement(current.trip.id, recipient.toLong(), amount(total)!!, method) } }
+    }
+}
+
+@Composable private fun EndedBanner(detail: TripDetail, vm: TravelViewModel, present: () -> Unit) {
+    Surface(color = Color(0xFFEEF6E6), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color(0xFFC9DCB8))) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Flag, null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text("This trip has ended. Thanks for travelling together!", color = Forest, fontWeight = FontWeight.Bold)
+            }
+            Text("Relive it day by day: routes on the map, your photos, and the planned vs actual budget. Expenses and settling up still work.", color = Forest, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = present, colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.Slideshow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Open presentation") }
+                if (detail.isOrganizer) OutlinedButton(onClick = vm::reopenTrip, enabled = !vm.busy) { Text("Reopen") }
+            }
+        }
     }
 }
 

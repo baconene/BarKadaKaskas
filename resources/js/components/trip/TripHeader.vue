@@ -5,8 +5,8 @@ import { googleMapsUrl } from '@/lib/maps';
 import LoadingImage from '@/components/LoadingImage.vue';
 
 /** Compact trip header with the money summary strip. Metrics open the related screen. */
-const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean; cancelled?: boolean; hidden?: boolean; coverUrl?: string | null }>();
-const emit = defineEmits<{ open: [screen: 'expenses' | 'group']; manage: [action: 'cancel' | 'reopen' | 'hide' | 'show' | 'edit'] }>();
+const props = defineProps<{ name: string; destination: string; startsOn: string; endsOn: string; travelers: number; isOrganizer: boolean; spent: string; balanceMinor: number; balance: string; expenseCount: number; openExpenses: number; hideSummary?: boolean; cancelled?: boolean; ended?: boolean; hidden?: boolean; coverUrl?: string | null }>();
+const emit = defineEmits<{ open: [screen: 'expenses' | 'group']; manage: [action: 'cancel' | 'reopen' | 'hide' | 'show' | 'edit' | 'end' | 'present'] }>();
 const range = (() => {
     const fmt = (value: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-PH', { ...options, timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
     const sameYear = props.startsOn.slice(0, 4) === props.endsOn.slice(0, 4);
@@ -31,11 +31,14 @@ const range = (() => {
                     <div class="more-menu" role="menu">
                         <a role="menuitem" :href="googleMapsUrl(destination)" target="_blank" rel="noopener noreferrer">Open destination in Google Maps</a>
                         <button role="menuitem" type="button" @click="emit('open', 'group')">Travelers &amp; balances</button>
+                        <button role="menuitem" type="button" @click="emit('manage', 'present')">Trip presentation</button>
                         <Link role="menuitem" href="/dashboard">All trips</Link>
                         <template v-if="isOrganizer">
                             <hr />
                             <button v-if="!cancelled" role="menuitem" type="button" @click="emit('manage', 'edit')">Edit trip &amp; cover photo</button>
-                            <button v-if="!cancelled" role="menuitem" type="button" class="danger" @click="emit('manage', 'cancel')">Cancel trip…</button>
+                            <button v-if="!cancelled && !ended" role="menuitem" type="button" @click="emit('manage', 'end')">End trip…</button>
+                            <button v-if="ended" role="menuitem" type="button" @click="emit('manage', 'reopen')">Reopen trip</button>
+                            <button v-if="!cancelled && !ended" role="menuitem" type="button" class="danger" @click="emit('manage', 'cancel')">Cancel trip…</button>
                             <template v-else>
                                 <button role="menuitem" type="button" @click="emit('manage', 'reopen')">Reopen trip</button>
                                 <button role="menuitem" type="button" @click="emit('manage', hidden ? 'show' : 'hide')">{{ hidden ? 'Show in trip lists' : 'Hide from trip lists' }}</button>

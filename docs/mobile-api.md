@@ -226,3 +226,23 @@ a stop, the day highlight puts the post's photos at that stop.
 `video_posters[]` (a JPEG still from each video, same order) and `video_durations[]` (milliseconds). Posts can be
 videos only. In the response each item of `photos` may carry `video_url` and `duration_ms`; `url` is then the still.
 Videos are served from `/trip-videos/{file}` with byte-range support.
+
+## Ending a trip and the trip presentation
+
+POST `/trips/{trip}/end` (organizer) → 200 `{data:Trip}` with `status:"ended"`, `ended_at`. Members get an alert
+(type `trip`). Expenses and settling up keep working. POST `/trips/{trip}/reopen` reopens an ended (or cancelled)
+trip. 422 if the trip is cancelled or already ended.
+
+GET `/trips/{trip}/presentation` → `{data:{title,destination,currency,dates,ended,cover_url,stats:[{label,value}],
+spent_minor,days:[{date,day_number,label,route,stops:[{n,time,title,location,transport,done,on_map}],
+map:{url,stops:[{n,title,x,y}],pins:[{url,caption,by,x,y}]}|null,photos:[{url,caption,by,time}],photo_count,spent_minor}]}}`.
+Days with neither stops nor photos are left out. The map is a 640×400 (scale 2) image with the route between the
+day's stops and numbered markers drawn on it; `x`,`y` (0–1 across and down) place stops and photo pins on it.
+The first call can take a while (maps are made and cached).
+
+GET `/trips/{trip}/presentation/budget` → `{data:{available,failed,currency,travellers,total_estimate_minor,
+total_actual_minor,per_person_estimate_minor,per_person_actual_minor,days:[{date,label,estimate_minor,actual_minor,
+items:[{label,category,amount_minor}]}],categories:[{category,estimate_minor}],actual_categories:[{name,amount_minor}],
+notes:[string]}}`. The planned budget is estimated by the AI from the itinerary (cached until the plan changes);
+`available:false` when the AI isn't set up, `failed:true` when it couldn't answer (retry later). Categories are
+`food`, `transport`, `activities`, `lodging`, `other`.

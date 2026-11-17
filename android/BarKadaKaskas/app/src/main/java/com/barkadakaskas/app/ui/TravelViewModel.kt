@@ -347,6 +347,33 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = if (hide) null else repository.trip(current.trip.id)
         done()
     }
+    fun endTrip() = launch { detail?.let { repository.endTrip(it.trip.id); trips = repository.trips(); detail = repository.trip(it.trip.id) } }
+
+    // The trip presentation (slides) and its AI budget, loaded when the presentation opens.
+    var presentation by mutableStateOf<Presentation?>(null); private set
+    var presentationError by mutableStateOf<String?>(null); private set
+    var budget by mutableStateOf<TripBudget?>(null); private set
+    var budgetError by mutableStateOf<String?>(null); private set
+    fun loadPresentation() {
+        val tripId = detail?.trip?.id ?: return
+        if (presentationFor != tripId) { presentation = null; budget = null }
+        presentationError = null
+        viewModelScope.launch {
+            try { presentation = repository.presentation(tripId); presentationFor = tripId }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { presentationError = failure.message ?: "Could not load the presentation." }
+        }
+        loadBudget()
+    }
+    fun loadBudget() {
+        val tripId = detail?.trip?.id ?: return
+        budgetError = null
+        viewModelScope.launch {
+            try { budget = repository.presentationBudget(tripId) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { budgetError = failure.message ?: "Could not load the budget." }
+        }
+    }
+    private var presentationFor: Long? = null
+
     fun reopenTrip() = launch { detail?.let { repository.reopenTrip(it.trip.id); trips = repository.trips(); detail = repository.trip(it.trip.id) } }
     fun setTripHidden(hidden: Boolean) = launch {
         val current = detail ?: return@launch

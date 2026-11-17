@@ -135,7 +135,7 @@ class HighlightController extends Controller
     }
 
     /** @return array{0: CarbonImmutable, 1: CarbonImmutable} the day in the trip's time zone, as UTC */
-    private function range(Trip $trip, string $date): array
+    public function range(Trip $trip, string $date): array
     {
         $start = CarbonImmutable::parse($date, $trip->timezone)->startOfDay();
         return [$start->utc(), $start->endOfDay()->utc()];
@@ -143,7 +143,7 @@ class HighlightController extends Controller
 
     /** Photos posted that day, with a score from the post's hearts and comments. */
     /** Photos taken that day (by their capture time, else when they were posted), with where they were taken. */
-    private function dayPhotos(Trip $trip, CarbonImmutable $from, CarbonImmutable $to)
+    public function dayPhotos(Trip $trip, CarbonImmutable $from, CarbonImmutable $to)
     {
         $posts = $trip->posts()->where(fn ($q) => $q->whereBetween('created_at', [$from, $to])->orWhereHas('photos', fn ($p) => $p->whereBetween('taken_at', [$from, $to])))
             ->with(['photos', 'member.user'])->withCount(['likes', 'comments'])->get();
@@ -156,7 +156,7 @@ class HighlightController extends Controller
         ]))->filter(fn ($photo) => $photo['at']->between($from, $to))->values();
     }
 
-    private static function meters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    public static function meters(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
         $dLat = deg2rad($lat2 - $lat1); $dLng = deg2rad($lng2 - $lng1);
         $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
@@ -199,11 +199,11 @@ class HighlightController extends Controller
     }
 
     /** Drops photos that look like one already kept (best first), so the same scenery isn't shown twice. */
-    private function distinct($photos)
+    public function distinct($photos, int $max = self::MAX_PHOTOS)
     {
         $kept = [];
         foreach ($photos as $photo) {
-            if (count($kept) > self::MAX_PHOTOS) { break; }
+            if (count($kept) > $max) { break; }
             $print = ImageFingerprint::of($photo['path']);
             if (collect($kept)->contains(fn ($k) => ImageFingerprint::similar($k['print'], $print))) { continue; }
             $kept[] = $photo + ['print' => $print];

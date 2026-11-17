@@ -3,7 +3,22 @@ package com.barkadakaskas.app.domain
 data class User(val id: Long, val name: String, val email: String)
 data class Trip(val id: Long, val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val memberCount: Int = 0, val status: String = "planning", val cancellationReason: String? = null, val hidden: Boolean = false, val description: String = "", val coverUrl: String? = null) {
     val cancelled: Boolean get() = status == "cancelled"
+    /** The organizer ended the trip: it's over; expenses and settling up still work, and the presentation is offered. */
+    val ended: Boolean get() = status == "ended"
 }
+
+/** The trip presentation (a slide deck): cover, each day's route on a map with photos pinned, the day's photos. */
+data class Presentation(val title: String, val destination: String, val currency: String, val dates: String, val ended: Boolean, val coverUrl: String?, val stats: List<Pair<String, String>>, val spentMinor: Long, val days: List<DeckDay>)
+data class DeckDay(val date: String, val dayNumber: Int, val label: String, val route: String, val stops: List<DeckStop>, val map: DeckMap?, val photos: List<DeckPhoto>, val photoCount: Int, val spentMinor: Long)
+data class DeckStop(val n: Int, val time: String, val title: String, val location: String?, val done: Boolean, val onMap: Boolean)
+/** A day's map image; stops and photo pins are placed at x, y (0–1 across and down the image). */
+data class DeckMap(val url: String, val pins: List<DeckPin>)
+data class DeckPin(val url: String, val caption: String?, val x: Float, val y: Float)
+data class DeckPhoto(val url: String, val caption: String?, val by: String?, val time: String)
+/** The AI's planned budget (per day and category) next to what was actually spent. */
+data class TripBudget(val available: Boolean, val failed: Boolean, val travellers: Int, val totalEstimateMinor: Long, val totalActualMinor: Long, val perPersonEstimateMinor: Long, val perPersonActualMinor: Long,
+    val days: List<BudgetDay>, val categories: List<Pair<String, Long>>, val actualCategories: List<Pair<String, Long>>, val notes: List<String>)
+data class BudgetDay(val date: String, val label: String, val estimateMinor: Long, val actualMinor: Long, val items: List<Pair<String, Long>>)
 /** A trip member, with the contact details they chose to share with their trip-mates. */
 data class Member(val id: Long, val name: String, val phone: String? = null, val otherContact: String? = null, val avatarUrl: String? = null,
                   val emergencyName: String? = null, val emergencyRelationship: String? = null, val emergencyPhone: String? = null)
@@ -168,5 +183,8 @@ interface TravelRepository {
     /** Organizer only. Cancels the trip; [hide] also removes it from everyone's trip list. */
     suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean)
     suspend fun reopenTrip(tripId: Long)
+    suspend fun endTrip(tripId: Long)
+    suspend fun presentation(tripId: Long): Presentation
+    suspend fun presentationBudget(tripId: Long): TripBudget
     suspend fun setTripHidden(tripId: Long, hidden: Boolean)
 }

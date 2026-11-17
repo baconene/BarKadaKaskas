@@ -11,13 +11,15 @@ class Trip extends Model
     /** Currencies a trip can use (the web plan-a-trip flow mirrors this in resources/js/lib/regions.ts). */
     public const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'JPY', 'KRW', 'THB', 'VND', 'IDR', 'MYR', 'HKD', 'TWD', 'CNY', 'AED', 'NZD', 'CHF'];
 
-    protected $fillable = ['organizer_user_id', 'name', 'description', 'destination', 'starts_on', 'ends_on', 'timezone', 'currency_code', 'status', 'cancelled_at', 'cancellation_reason', 'hidden_at', 'cover_path'];
+    protected $fillable = ['organizer_user_id', 'name', 'description', 'destination', 'starts_on', 'ends_on', 'timezone', 'currency_code', 'status', 'cancelled_at', 'ended_at', 'cancellation_reason', 'hidden_at', 'cover_path'];
     protected $hidden = ['cover_path'];
     protected $appends = ['cover_url'];
-    protected function casts(): array { return ['starts_on' => 'date:Y-m-d', 'ends_on' => 'date:Y-m-d', 'cancelled_at' => 'datetime', 'hidden_at' => 'datetime']; }
+    protected function casts(): array { return ['starts_on' => 'date:Y-m-d', 'ends_on' => 'date:Y-m-d', 'cancelled_at' => 'datetime', 'ended_at' => 'datetime', 'hidden_at' => 'datetime']; }
     /** Public URL of the organizer's cover photo, or null. */
     public function getCoverUrlAttribute(): ?string { return \App\Support\PublicImages::url($this->cover_path); }
     public function isCancelled(): bool { return $this->status === 'cancelled'; }
+    /** The organizer ended the trip: it's over. Expenses and settling up still work; the presentation is ready. */
+    public function isEnded(): bool { return $this->status === 'ended'; }
     public function organizer(): BelongsTo { return $this->belongsTo(User::class, 'organizer_user_id'); }
     public function members(): HasMany { return $this->hasMany(TripMember::class); }
     public function expenses(): HasMany { return $this->hasMany(Expense::class); }

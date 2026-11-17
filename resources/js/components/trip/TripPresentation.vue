@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ChevronLeft, ChevronRight, LoaderCircle, Maximize2, Printer, Sparkles, X } from 'lucide-vue-next';
+import { usePage } from '@inertiajs/vue3';
 import { appFetch } from '@/lib/uploads';
+import PresentationMap, { type MapPhoto } from '@/components/trip/PresentationMap.vue';
 
 /**
  * The trip presentation: a slide deck built from the trip. Cover, overview, then for each day its map (the route
@@ -10,10 +12,10 @@ import { appFetch } from '@/lib/uploads';
  * between slides; Print saves every slide as a page (e.g. to PDF).
  */
 type Point = { x: number; y: number };
-type Stop = { n: number; time: string; title: string; location: string | null; transport: string | null; done: boolean; on_map: boolean };
+type Stop = { n: number; time: string; title: string; location: string | null; transport: string | null; done: boolean; on_map: boolean; lat: number | null; lng: number | null };
 type Pin = Point & { url: string; caption: string | null; by: string | null };
 type Photo = { url: string; caption: string | null; by: string | null; time: string };
-type Day = { date: string; day_number: number; label: string; route: string; stops: Stop[]; map: { url: string; stops: (Point & { n: number; title: string })[]; pins: Pin[] } | null; photos: Photo[]; photo_count: number; spent_minor: number };
+type Day = { date: string; day_number: number; label: string; route: string; stops: Stop[]; pins?: MapPhoto[]; map: { url: string; stops: (Point & { n: number; title: string })[]; pins: Pin[] } | null; photos: Photo[]; photo_count: number; spent_minor: number };
 type Deck = { title: string; destination: string; currency: string; dates: string; ended: boolean; cover_url: string | null; stats: { label: string; value: string }[]; spent_minor: number; days: Day[] };
 type BudgetItem = { label: string; category: string; amount_minor: number };
 type Budget = { available: boolean; failed: boolean; currency: string; travellers: number; total_estimate_minor: number; total_actual_minor: number; per_person_estimate_minor: number; per_person_actual_minor: number;
@@ -44,16 +46,22 @@ const categoryLabel: Record<string, string> = { food: 'Food & drinks', transport
 const budgetMax = computed(() => Math.max(1, ...(budget.value?.days ?? []).flatMap(d => [d.estimate_minor, d.actual_minor])));
 const categoryMax = computed(() => Math.max(1, ...(budget.value?.categories ?? []).map(c => c.estimate_minor)));
 const onMap = (p: Point) => p.x >= 0.02 && p.x <= 0.98 && p.y >= 0.04 && p.y <= 0.99;
+// The day maps are drawn with Google Maps in the browser, with the same key as the trip's Map screen.
+const googleMaps = computed(() => (usePage().props as { googleMaps?: { browserKey?: string; mapId?: string } }).googleMaps ?? {});
+const viewing = ref<MapPhoto | null>(null);
 
 function go(to: number) { index.value = Math.max(0, Math.min(slides.value.length - 1, to)); }
 function onKey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && viewing.value) { viewing.value = null; return; }
     if (e.key === 'Escape') emit('close');
     else if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(index.value + 1); }
     else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(index.value - 1); }
 }
 let touchX = 0;
-const touchStart = (e: TouchEvent) => { touchX = e.touches[0]?.clientX ?? 0; };
-const touchEnd = (e: TouchEvent) => { const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX; if (Math.abs(dx) > 50) go(index.value + (dx < 0 ? 1 : -1)); };
+let multiTouch = false;
+// One-finger swipes move between slides; two fingers pan and zoom the map.
+const touchStart = (e: TouchEvent) => { multiTouch = e.touches.length > 1; touchX = e.touches[0]?.clientX ?? 0; };
+const touchEnd = (e: TouchEvent) => { if (multiTouch || e.touches.length) { multiTouch = e.touches.length > 0; return; } const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX; if (Math.abs(dx) > 50) go(index.value + (dx < 0 ? 1 : -1)); };
 function fullscreen() { if (document.fullscreenElement) void document.exitFullscreen(); else void root.value?.requestFullscreen?.().catch(() => {}); }
 function print() { window.print(); }
 
@@ -117,7 +125,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); document.b
                 <template v-else-if="slide.kind === 'map' && slide.day">
                     <div class="slide-head"><span class="eyebrow">{{ slide.day.label }}</span><h2>{{ slide.day.route }}</h2></div>
                     <div class="map-layout">
-                        <div v-if="slide.day.map" class="map-frame">
+                        <PresentationMap v-if="googleMaps.browserKey && i === index && (slide.day.stops.length || slide.day.pins?.length)" :stops="slide.day.stops" :pins="slide.day.pins ?? []" :browser-key="googleMaps.browserKey" :map-id="googleMaps.mapId ?? ''" @open="viewing = $event" />
+                        <div v-else-if="slide.day.map" class="map-frame">
                             <img :src="slide.day.map.url" :alt="`Map of the route on ${slide.day.label}`" loading="lazy" />
                             <figure v-for="(pin, p) in slide.day.map.pins.filter(onMap)" :key="p" class="pin" :style="{ left: pin.x * 100 + '%', top: pin.y * 100 + '%' }">
                                 <img :src="pin.url" :alt="pin.caption ?? 'Photo'" loading="lazy" />
@@ -207,6 +216,13 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); document.b
             </div>
             <button type="button" class="deck-arrow" aria-label="Next slide" :disabled="index === slides.length - 1" @click="go(index + 1)"><ChevronRight :size="22" /></button>
         </footer>
+        <div v-if="viewing" class="viewer" role="dialog" aria-label="Photo" @click="viewing = null">
+            <figure @click.stop>
+                <img :src="viewing.url" :alt="viewing.caption ?? 'Photo'" />
+                <figcaption><span v-if="viewing.caption">{{ viewing.caption }}</span><small>{{ [viewing.by, viewing.time].filter(Boolean).join(' · ') }}</small></figcaption>
+            </figure>
+            <button type="button" class="deck-icon viewer-close" aria-label="Close photo" @click="viewing = null"><X :size="20" /></button>
+        </div>
     </div>
     </Teleport>
 </template>
@@ -251,6 +267,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); document.b
 .map-frame{position:relative;border-radius:16px;overflow:hidden;background:#e7ece2;aspect-ratio:640/400}
 .map-frame>img{display:block;width:100%;height:100%;object-fit:cover}
 .map-empty{display:grid;place-items:center;padding:20px;text-align:center;color:#6c7c72}
+.viewer{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:24px;background:rgba(6,16,12,.88)}
+.viewer figure{margin:0;max-width:min(900px,100%);display:grid;gap:8px}
+.viewer img{max-width:100%;max-height:75vh;border-radius:14px;object-fit:contain}
+.viewer figcaption{display:grid;color:#fff;font-size:14px}.viewer figcaption small{opacity:.8}
+.viewer-close{position:absolute;top:14px;right:14px}
 .pin{position:absolute;margin:0;width:54px;height:54px;transform:translate(-50%,calc(-100% - 8px));border-radius:50%;border:3px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,.35);background:#fff}
 .pin::after{content:'';position:absolute;left:50%;bottom:-11px;transform:translateX(-50%);border:7px solid transparent;border-top:8px solid #fff}
 .pin img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}

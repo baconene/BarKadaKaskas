@@ -97,7 +97,8 @@ internal object ApiJson {
         coverUrl = d.imageUrl("cover_url"), stats = d.optJSONArray("stats").mapObjects { it.text("value") to it.text("label") }, spentMinor = d.optLong("spent_minor"),
         days = d.optJSONArray("days").mapObjects { day -> DeckDay(
             date = day.text("date"), dayNumber = day.optInt("day_number"), label = day.text("label"), route = day.text("route"),
-            stops = day.optJSONArray("stops").mapObjects { s -> DeckStop(s.optInt("n"), s.text("time"), s.text("title"), s.textOrNull("location"), s.optBoolean("done"), s.optBoolean("on_map")) },
+            stops = day.optJSONArray("stops").mapObjects { s -> DeckStop(s.optInt("n"), s.text("time"), s.text("title"), s.textOrNull("location"), s.optBoolean("done"), s.optBoolean("on_map"), s.doubleOrNull("lat"), s.doubleOrNull("lng"), s.textOrNull("transport")) },
+            pins = day.optJSONArray("pins").mapObjects { p -> DeckMapPhoto(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.textOrNull("by"), p.text("time"), p.doubleOrNull("lat"), p.doubleOrNull("lng"), if (p.has("stop") && !p.isNull("stop")) p.optInt("stop") else null) },
             map = day.optJSONObject("map")?.let { m -> DeckMap(m.imageUrl("url").orEmpty(), m.optJSONArray("pins").mapObjects { p -> DeckPin(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.optDouble("x").toFloat(), p.optDouble("y").toFloat()) }) },
             photos = day.optJSONArray("photos").mapObjects { p -> DeckPhoto(p.imageUrl("url").orEmpty(), p.textOrNull("caption"), p.textOrNull("by"), p.text("time")) },
             photoCount = day.optInt("photo_count"), spentMinor = day.optLong("spent_minor"),

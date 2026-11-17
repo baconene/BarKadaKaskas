@@ -9,8 +9,10 @@ data class Trip(val id: Long, val name: String, val destination: String, val sta
 
 /** The trip presentation (a slide deck): cover, each day's route on a map with photos pinned, the day's photos. */
 data class Presentation(val title: String, val destination: String, val currency: String, val dates: String, val ended: Boolean, val coverUrl: String?, val stats: List<Pair<String, String>>, val spentMinor: Long, val days: List<DeckDay>)
-data class DeckDay(val date: String, val dayNumber: Int, val label: String, val route: String, val stops: List<DeckStop>, val map: DeckMap?, val photos: List<DeckPhoto>, val photoCount: Int, val spentMinor: Long)
-data class DeckStop(val n: Int, val time: String, val title: String, val location: String?, val done: Boolean, val onMap: Boolean)
+data class DeckDay(val date: String, val dayNumber: Int, val label: String, val route: String, val stops: List<DeckStop>, val map: DeckMap?, val photos: List<DeckPhoto>, val photoCount: Int, val spentMinor: Long, val pins: List<DeckMapPhoto> = emptyList())
+/** A photo pinned on the day's map: where it was taken, else at stop number [stop]. */
+data class DeckMapPhoto(val url: String, val caption: String?, val by: String?, val time: String, val lat: Double?, val lng: Double?, val stop: Int?)
+data class DeckStop(val n: Int, val time: String, val title: String, val location: String?, val done: Boolean, val onMap: Boolean, val lat: Double? = null, val lng: Double? = null, val transport: String? = null)
 /** A day's map image; stops and photo pins are placed at x, y (0–1 across and down the image). */
 data class DeckMap(val url: String, val pins: List<DeckPin>)
 data class DeckPin(val url: String, val caption: String?, val x: Float, val y: Float)

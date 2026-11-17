@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Trip;
-use App\Services\HighlightMaps;
 use App\Services\Vertex\BudgetEstimator;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -18,13 +17,14 @@ use Illuminate\Support\Facades\Gate;
  */
 class PresentationController extends Controller
 {
-    private const MAX_DAYS = 31, PINS = 5, PHOTOS = 6;
+    private const MAX_DAYS = 31, PINS = 6, PHOTOS = 6;
+    private string $tz = 'UTC';
 
-    public function show(Request $request, Trip $trip, HighlightMaps $maps, HighlightController $highlights)
+    public function show(Request $request, Trip $trip, HighlightController $highlights)
     {
         Gate::authorize('view', $trip);
         @set_time_limit(90);
-        $tz = $trip->timezone;
+        $tz = $this->tz = $trip->timezone;
         $start = CarbonImmutable::parse($trip->starts_on->format('Y-m-d')); $end = CarbonImmutable::parse($trip->ends_on->format('Y-m-d'));
         $dayCount = (int) $start->diffInDays($end) + 1;
         $items = $trip->itineraryItems()->orderBy('starts_at')->orderBy('id')->get()->groupBy(fn ($i) => $i->starts_at->setTimezone($tz)->format('Y-m-d'));
@@ -40,30 +40,28 @@ class PresentationController extends Controller
             $unique = $highlights->distinct($photos->sortByDesc('score')->values(), self::PHOTOS + self::PINS);
             if ($unique->isNotEmpty() && (! $best || $unique->first()['score'] > $best['score'])) { $best = $unique->first(); }
 
-            // Stops on the map (those with a known place), numbered in visiting order.
-            $positions = $stops->mapWithKeys(fn ($item) => [$item->id => $maps->position($item, $trip)]);
-            $mapped = $stops->values()->map(fn ($item, $i) => ['n' => $i + 1, 'item' => $item, 'at' => $positions[$item->id]])->filter(fn ($s) => $s['at'])->values();
-            // Pinned photos: the best ones with a place, where they were taken, else at the stop they were posted for.
-            $pins = $unique->map(function ($p) use ($positions) {
-                $at = $p['latitude'] !== null ? [(float) $p['latitude'], (float) $p['longitude']] : ($p['stop_id'] ? ($positions[$p['stop_id']] ?? null) : null);
-                return $at ? ['photo' => $p, 'at' => $at] : null;
-            })->filter()->take(self::PINS)->values();
-            $map = ($mapped->isNotEmpty() || $pins->isNotEmpty())
-                ? $maps->dayMap($mapped->pluck('at')->all(), $mapped->map(fn ($s) => $s['item']->transport_mode)->all(), $pins->pluck('at')->all(), $mapped->pluck('n')->all())
-                : null;
+            // The map is drawn by the apps (Google Maps, like the trip's Map screen): each stop with its saved pin (or
+            // its address, for the app to look up), and the best photos pinned where they were taken, else at the
+            // stop they were posted for, else the stop the group was at when it was taken.
+            $numbers = $stops->values()->mapWithKeys(fn ($item, $i) => [$item->id => $i + 1]);
+            $pins = $unique->map(function ($p) use ($stops, $numbers) {
+                $stopId = $p['stop_id'] ?: ($p['latitude'] === null ? $stops->filter(fn ($s) => $s->starts_at->lte($p['at']))->last()?->id : null);
+                $stop = $stopId ? ($numbers[$stopId] ?? null) : null;   // a stop of this day
+                if ($p['latitude'] === null && ! $stop) { return null; }
+                return ['url' => $p['url'], 'caption' => $p['caption'], 'by' => $p['by'], 'time' => $p['at']->setTimezone($this->tz)->format('g:i A'),
+                    'lat' => $p['latitude'] !== null ? (float) $p['latitude'] : null, 'lng' => $p['longitude'] !== null ? (float) $p['longitude'] : null, 'stop' => $stop];
+            })->filter()->take(self::PINS)->values()->all();
 
             $days[] = [
                 'date' => $date, 'day_number' => $n, 'label' => 'Day '.$n.' · '.$d->format('D, M j'),
                 'route' => $stops->count() > 1 ? $stops->pluck('title')->take(4)->implode(' → ').($stops->count() > 4 ? ' → …' : '') : ($stops->first()?->title ?? $trip->destination),
                 'stops' => $stops->values()->map(fn ($item, $i) => [
                     'n' => $i + 1, 'time' => $item->starts_at->setTimezone($tz)->format('g:i A'), 'title' => $item->title, 'location' => $item->location,
-                    'transport' => $item->transport_mode, 'done' => $item->completed_at !== null, 'on_map' => isset($positions[$item->id]),
+                    'transport' => $item->transport_mode, 'done' => $item->completed_at !== null, 'on_map' => $item->latitude !== null || (bool) $item->location,
+                    'lat' => $item->latitude !== null ? (float) $item->latitude : null, 'lng' => $item->longitude !== null ? (float) $item->longitude : null,
                 ])->all(),
-                'map' => $map ? [
-                    'url' => $map['url'],
-                    'stops' => $mapped->map(fn ($s, $i) => ['n' => $s['n'], 'title' => $s['item']->title] + $map['stops'][$i])->all(),
-                    'pins' => $pins->map(fn ($p, $i) => ['url' => $p['photo']['url'], 'caption' => $p['photo']['caption'], 'by' => $p['photo']['by']] + $map['extra'][$i])->all(),
-                ] : null,
+                'pins' => $pins,
+                'map' => null,
                 'photos' => $unique->take(self::PHOTOS)->map(fn ($p) => ['url' => $p['url'], 'caption' => $p['caption'], 'by' => $p['by'], 'time' => $p['at']->setTimezone($tz)->format('g:i A')])->values()->all(),
                 'photo_count' => $photos->count(),
                 'spent_minor' => $spent[$date] ?? 0,

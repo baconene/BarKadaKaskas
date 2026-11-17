@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.barkadakaskas.app.domain.DeckDay
+import com.barkadakaskas.app.domain.DeckMapPhoto
 import com.barkadakaskas.app.domain.Presentation
 import com.barkadakaskas.app.domain.TripBudget
 import kotlin.math.abs
@@ -70,6 +72,7 @@ private val categoryLabels = mapOf("food" to "Food & drinks", "transport" to "Ge
         deck?.let { d -> buildList { add(DeckSlide.Cover); add(DeckSlide.Overview); d.days.forEach { add(DeckSlide.DayMap(it)); if (it.photos.isNotEmpty()) add(DeckSlide.DayPhotos(it)) }; add(DeckSlide.Budget); add(DeckSlide.End) } } ?: emptyList()
     }
     var index by remember(deck) { mutableIntStateOf(0) }
+    var viewing by remember { mutableStateOf<DeckMapPhoto?>(null) }
     val go = { to: Int -> index = to.coerceIn(0, (slides.size - 1).coerceAtLeast(0)) }
     // Full screen, told the bar sizes so the controls keep clear of the clock and the phone's buttons.
     Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -79,6 +82,7 @@ private val categoryLabels = mapOf("food" to "Food & drinks", "transport" to "Ge
                 androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
             }
         }
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(DeckDark).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(deck?.title ?: "Trip presentation", color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -105,7 +109,7 @@ private val categoryLabels = mapOf("food" to "Food & drinks", "transport" to "Ge
                                 DeckSlide.Cover -> CoverSlide(deck, end = false)
                                 DeckSlide.End -> CoverSlide(deck, end = true)
                                 DeckSlide.Overview -> OverviewSlide(deck) { day -> go(slides.indexOfFirst { it is DeckSlide.DayMap && it.day == day }) }
-                                is DeckSlide.DayMap -> DayMapSlide(slide.day)
+                                is DeckSlide.DayMap -> DayMapSlide(slide.day) { viewing = it }
                                 is DeckSlide.DayPhotos -> DayPhotosSlide(slide.day)
                                 DeckSlide.Budget -> BudgetSlide(vm.budget, vm.budgetError, deck.currency, vm::loadBudget)
                                 null -> Box(Modifier.fillMaxSize())
@@ -119,6 +123,18 @@ private val categoryLabels = mapOf("food" to "Food & drinks", "transport" to "Ge
                 LinearProgressIndicator(progress = { (index + 1f) / slides.size }, modifier = Modifier.weight(1f).padding(horizontal = 12.dp).height(4.dp).clip(CircleShape), color = Color.White, trackColor = Color.White.copy(alpha = 0.2f))
                 FilledTonalIconButton(onClick = { go(index + 1) }, enabled = index < slides.size - 1) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next slide") }
             }
+        }
+        viewing?.let { photo ->
+            androidx.activity.compose.BackHandler { viewing = null }
+            Box(Modifier.fillMaxSize().background(Color(0xE6060F0C)).systemBarsPadding().pointerInput(photo) { detectTapGestures { viewing = null } }, contentAlignment = Alignment.Center) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AsyncImage(photo.url, photo.caption ?: "Photo", Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.FillWidth)
+                    photo.caption?.let { Text(it, color = Color.White) }
+                    Text(listOfNotNull(photo.by, photo.time).joinToString(" · "), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
+                }
+                IconButton(onClick = { viewing = null }, modifier = Modifier.align(Alignment.TopEnd)) { Icon(Icons.Default.Close, "Close photo", tint = Color.White) }
+            }
+        }
         }
     }
 }
@@ -165,11 +181,15 @@ private val categoryLabels = mapOf("food" to "Food & drinks", "transport" to "Ge
     if (deck.spentMinor > 0) Text("Group spending so far: ${money(deck.spentMinor, deck.currency)}", color = Color(0xFF1D2D24))
 }
 
-@Composable private fun DayMapSlide(day: DeckDay) = SlidePage {
+@Composable private fun DayMapSlide(day: DeckDay, onPhoto: (DeckMapPhoto) -> Unit) = SlidePage {
     Eyebrow(day.label)
     Text(day.route, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 27.sp, color = Color(0xFF1D2D24))
     val map = day.map
-    if (map != null) BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(640f / 400f).clip(RoundedCornerShape(16.dp)).background(Color(0xFFE7ECE2))) {
+    // Google Maps, like the trip's Map tab: the route between the numbered stops and the day's photos pinned on it.
+    if (hasGoogleMaps && (day.stops.any { it.onMap } || day.pins.isNotEmpty())) Box(Modifier.fillMaxWidth().height(380.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFE7ECE2))) {
+        PresentationDayMap(day.stops, day.pins, Modifier.fillMaxSize(), onPhoto)
+    }
+    else if (map != null) BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(640f / 400f).clip(RoundedCornerShape(16.dp)).background(Color(0xFFE7ECE2))) {
         AsyncImage(map.url, "Map of the route on ${day.label}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         val pin = 42.dp
         map.pins.filter { it.x in 0.03f..0.97f && it.y in 0.08f..0.99f }.forEach { p ->

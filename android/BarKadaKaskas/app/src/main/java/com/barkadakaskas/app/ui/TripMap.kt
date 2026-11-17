@@ -286,3 +286,102 @@ private fun configureOsm(context: Context) {
         })
     }
 }
+
+/**
+ * A day's map for the trip presentation: numbered stops joined in visiting order (dashed for boats and planes), and
+ * the day's photos pinned as round thumbnails where they were taken, or around the stop they belong to. Stops without
+ * a saved pin are looked up from their address. Tapping a photo calls [onPhoto]. Google Maps only (null otherwise).
+ */
+@Composable fun PresentationDayMap(stops: List<com.barkadakaskas.app.domain.DeckStop>, photos: List<com.barkadakaskas.app.domain.DeckMapPhoto>, modifier: Modifier = Modifier, onPhoto: (com.barkadakaskas.app.domain.DeckMapPhoto) -> Unit = {}) {
+    val context = LocalContext.current
+    val density = context.resources.displayMetrics.density
+    // Where each stop is: its saved pin, else its address looked up on the phone.
+    val positions by produceState<List<LatLng?>?>(null, stops) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            stops.map { s ->
+                if (s.lat != null && s.lng != null) LatLng(s.lat, s.lng)
+                else s.location?.let { address -> runCatching { @Suppress("DEPRECATION") android.location.Geocoder(context).getFromLocationName(address, 1)?.firstOrNull()?.let { LatLng(it.latitude, it.longitude) } }.getOrNull() }
+            }
+        }
+    }
+    // Round photo thumbnails for the pins (loaded once, then drawn as marker icons).
+    val thumbs by produceState<Map<String, Bitmap>>(emptyMap(), photos) {
+        val loader = coil.ImageLoader(context)
+        val size = (52 * density).toInt()
+        value = photos.mapNotNull { photo ->
+            val drawable = runCatching { loader.execute(coil.request.ImageRequest.Builder(context).data(photo.url).size(size).allowHardware(false).build()).drawable }.getOrNull()
+            val source = (drawable as? BitmapDrawable)?.bitmap ?: return@mapNotNull null
+            photo.url to roundPhoto(source, size, density)
+        }.toMap()
+    }
+    val points = positions
+    val photoPoints = remember(points, photos) {
+        val perStop = mutableMapOf<Int, Int>()
+        photos.map { photo ->
+            if (photo.lat != null && photo.lng != null) LatLng(photo.lat, photo.lng)
+            else photo.stop?.let { n -> points?.getOrNull(stops.indexOfFirst { it.n == n })?.let { base ->
+                val k = perStop.getOrDefault(n, 0).also { perStop[n] = it + 1 }
+                val angle = k * 2 * Math.PI / 5 - Math.PI / 2
+                LatLng(base.latitude + 0.0009 * kotlin.math.sin(angle) + 0.0006, base.longitude + 0.0011 * kotlin.math.cos(angle))
+            } }
+        }
+    }
+    val all = (points.orEmpty() + photoPoints).filterNotNull()
+    val camera = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(all.firstOrNull() ?: LatLng(12.88, 121.77), 11f) }
+    var loaded by remember { mutableStateOf(false) }
+    LaunchedEffect(loaded, all) {
+        if (!loaded || all.isEmpty()) return@LaunchedEffect
+        val update = if (all.distinct().size == 1) CameraUpdateFactory.newLatLngZoom(all[0], 15f)
+        else CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { all.forEach { include(it) } }.build(), (48 * density).toInt())
+        runCatching { camera.move(update) }
+    }
+    GoogleMap(
+        modifier = modifier,
+        cameraPositionState = camera,
+        uiSettings = MapUiSettings(zoomControlsEnabled = false, mapToolbarEnabled = false, myLocationButtonEnabled = false),
+        onMapLoaded = { loaded = true },
+    ) {
+        val stopPoints = points.orEmpty()
+        for (i in 1 until stops.size) {
+            val from = stopPoints.getOrNull(i - 1); val to = stopPoints.getOrNull(i)
+            if (from == null || to == null || from == to) continue
+            val water = stops[i].transport in listOf("ferry", "flight")
+            Polyline(points = listOf(from, to), color = if (water) Color(0xFF2F7FA6) else Color(0xFF214E3E), width = 6 * density, geodesic = water,
+                pattern = if (water) listOf(com.google.android.gms.maps.model.Dash(20 * density), com.google.android.gms.maps.model.Gap(12 * density)) else null,
+                jointType = JointType.ROUND, startCap = RoundCap(), endCap = RoundCap())
+        }
+        stops.forEachIndexed { i, stop ->
+            val at = stopPoints.getOrNull(i) ?: return@forEachIndexed
+            key("stop", stop.n, at) {
+                val icon = remember(stop.n) { BitmapDescriptorFactory.fromBitmap(numberedPin(context, stop.n, 0xFFD9643A.toInt(), false)) }
+                Marker(state = rememberMarkerState(position = at), title = "${stop.n}. ${stop.title}", icon = icon, anchor = Offset(0.5f, 0.5f), zIndex = 1f)
+            }
+        }
+        photos.forEachIndexed { i, photo ->
+            val at = photoPoints.getOrNull(i) ?: return@forEachIndexed
+            val bitmap = thumbs[photo.url] ?: return@forEachIndexed
+            key("photo", photo.url, at) {
+                val icon = remember(bitmap) { BitmapDescriptorFactory.fromBitmap(bitmap) }
+                Marker(state = rememberMarkerState(position = at), title = photo.caption, icon = icon, anchor = Offset(0.5f, 1f), zIndex = 2f, onClick = { onPhoto(photo); true })
+            }
+        }
+    }
+}
+
+/** A photo as a round pin: white ring, a small pointer underneath. */
+private fun roundPhoto(source: Bitmap, size: Int, density: Float): Bitmap {
+    val pointer = (8 * density).toInt()
+    val out = Bitmap.createBitmap(size, size + pointer, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+    val r = size / 2f
+    canvas.drawPath(android.graphics.Path().apply { moveTo(r - pointer, size - pointer / 2f); lineTo(r + pointer, size - pointer / 2f); lineTo(r, (size + pointer).toFloat()); close() }, white)
+    canvas.drawCircle(r, r, r, white)
+    val inner = r - 3 * density
+    val scale = maxOf(inner * 2 / source.width, inner * 2 / source.height)
+    val shader = android.graphics.BitmapShader(source, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP).apply {
+        setLocalMatrix(android.graphics.Matrix().apply { setScale(scale, scale); postTranslate(r - source.width * scale / 2, r - source.height * scale / 2) })
+    }
+    canvas.drawCircle(r, r, inner, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.shader = shader })
+    return out
+}

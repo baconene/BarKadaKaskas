@@ -235,10 +235,11 @@ trip. 422 if the trip is cancelled or already ended.
 
 GET `/trips/{trip}/presentation` → `{data:{title,destination,currency,dates,ended,cover_url,stats:[{label,value}],
 spent_minor,days:[{date,day_number,label,route,stops:[{n,time,title,location,transport,done,on_map}],
-map:{url,stops:[{n,title,x,y}],pins:[{url,caption,by,x,y}]}|null,photos:[{url,caption,by,time}],photo_count,spent_minor}]}}`.
-Days with neither stops nor photos are left out. The map is a 640×400 (scale 2) image with the route between the
-day's stops and numbered markers drawn on it; `x`,`y` (0–1 across and down) place stops and photo pins on it.
-The first call can take a while (maps are made and cached).
+pins:[{url,caption,by,time,lat,lng,stop}],map:null,photos:[{url,caption,by,time}],photo_count,spent_minor}]}}`.
+Stops also carry `lat`,`lng` (saved pin, or null: look up `location`). The apps draw the day map with Google Maps: the
+route between the stops, numbered markers, and each pin at `lat`,`lng`, or around stop number `stop` when it has no
+location. `map` is always null now (kept for older apps).
+Days with neither stops nor photos are left out.
 
 GET `/trips/{trip}/presentation/budget` → `{data:{available,failed,currency,travellers,total_estimate_minor,
 total_actual_minor,per_person_estimate_minor,per_person_actual_minor,days:[{date,label,estimate_minor,actual_minor,

@@ -71,5 +71,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('receipts/{receipt}', [ExpenseController::class, 'download']);
         Route::post('trips/{trip}/settlements', [SettlementController::class, 'store']);
         Route::post('trips/{trip}/settlements/{settlement}/confirm', [SettlementController::class, 'confirm']);
+        Route::post('trips/{trip}/between/{member}/settle', [SettlementController::class, 'settleWith'])->whereNumber('member');
     });
 });

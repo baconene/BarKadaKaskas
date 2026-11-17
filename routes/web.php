@@ -75,6 +75,7 @@ Route::middleware('auth')->group(function () {
     Route::get('receipts/{receipt}', [ExpenseController::class, 'download'])->name('receipts.download');
     Route::post('trips/{trip}/settlements', [SettlementController::class, 'store'])->name('settlements.store');
     Route::post('trips/{trip}/settlements/{settlement}/confirm', [SettlementController::class, 'confirm'])->name('settlements.confirm');
+    Route::post('trips/{trip}/between/{member}/settle', [SettlementController::class, 'settleWith'])->whereNumber('member')->name('settlements.settle-with');
 });
 
 require __DIR__.'/settings.php';

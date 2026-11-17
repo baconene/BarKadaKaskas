@@ -106,6 +106,25 @@ class TravelTest extends TestCase
         $this->assertSame(3000, $between($this->owner)[0]['net_minor']);
         $this->assertSame(-3000, $between($this->friend)[0]['net_minor']);
     }
+    public function test_mark_all_paid_settles_each_bill_between_two_travellers(): void
+    {
+        $expense = $this->createExpense();   // owner fronted the friend's 50.00
+        $between = fn ($user) => $this->actingAs($user)->get("/trips/{$this->trip->id}")->viewData('page')['props']['between'];
+        // You owe them: recorded as sent, waiting for the owner to confirm.
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/between/{$this->ownerMember}/settle")->assertRedirect();
+        $sent = Settlement::firstOrFail();
+        $this->assertSame([$expense->id, 5000, 'pending'], [$sent->expense_id, $sent->amount_minor, $sent->status]);
+        $this->assertSame(-5000, $between($this->friend)[0]['net_minor']);
+        // Not sent twice while it waits.
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/between/{$this->ownerMember}/settle");
+        $this->assertSame(1, Settlement::count());
+        $sent->delete();
+        // They owe you: the receiver marks it, so it counts at once.
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertRedirect();
+        $this->assertSame([0, 0], [$between($this->owner)[0]['net_minor'], $between($this->friend)[0]['net_minor']]);
+        $this->assertSame('confirmed', Settlement::firstOrFail()->status);
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertStatus(422);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

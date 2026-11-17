@@ -62,6 +62,22 @@ function shareInvite() { if (props.invitationUrl) navigator.share({ title: props
 
 // Record money sent (unchanged behaviour from the former Balances tab)
 const settlement = useForm({ to_member_id: props.members.find(m => m.id !== props.currentMemberId)?.id ?? '', amount: '', payment_method: 'gcash' });
+// "Mark all as paid" with one traveller: first list the bills still open between you (each bill's line less repayments
+// already recorded for it, including ones waiting for confirmation), then settle them all on confirm.
+const settling = ref<number | null>(null);
+const settleBusy = ref(false);
+function openBills(b: Between) {
+    const repaid = new Map<number, number>();
+    b.lines.filter(l => l.type === 'payment' && l.expense_id).forEach(l => repaid.set(l.expense_id!, (repaid.get(l.expense_id!) ?? 0) + l.amount_minor));
+    const toSettle = b.lines.reduce((sum, l) => sum + l.amount_minor, 0);
+    const bills = b.lines.filter(l => l.type === 'expense').map(l => ({ ...l, amount_minor: l.amount_minor + (repaid.get(l.expense_id!) ?? 0) }))
+        .filter(l => toSettle > 0 ? l.amount_minor > 0 : l.amount_minor < 0);
+    return { bills, total: Math.abs(toSettle), waiting: b.net_minor !== 0 && (toSettle === 0 || Math.sign(toSettle) !== Math.sign(b.net_minor)) };
+}
+function settleAll(b: Between) {
+    settleBusy.value = true;
+    router.post(`/trips/${props.tripId}/between/${b.member_id}/settle`, {}, { preserveScroll: true, onSuccess: () => { settling.value = null; }, onFinish: () => { settleBusy.value = false; } });
+}
 function prefill(to: number, amount: number) { settlement.to_member_id = to; settlement.amount = (amount / 100).toFixed(2); document.getElementById('record-payment')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function recordSettlement() {
     settlement.transform(d => ({ to_member_id: d.to_member_id, amount_minor: minor(d.amount), payment_method: d.payment_method }))
@@ -119,7 +135,25 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
                             <li class="total"><span>{{ b.net_minor > 0 ? `${b.name.split(' ')[0]} owes you` : b.net_minor < 0 ? `You owe ${b.name.split(' ')[0]}` : 'All square' }}</span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ money(Math.abs(b.net_minor)) }}</strong></li>
                         </ul>
                         <p v-else class="muted fine">Nothing between you yet.</p>
-                        <button v-if="b.net_minor < 0" type="button" class="btn secondary pay-btn" @click="prefill(b.member_id, -b.net_minor)"><HandCoins :size="14" aria-hidden="true" /> I paid {{ money(-b.net_minor) }}</button>
+                        <template v-if="b.net_minor !== 0">
+                            <p v-if="openBills(b).waiting" class="muted fine settle-note">Repayments for this are waiting for {{ b.net_minor > 0 ? 'you' : b.name.split(' ')[0] }} to confirm.</p>
+                            <div v-else-if="settling === b.member_id" class="settle-confirm">
+                                <p><strong>{{ b.net_minor > 0 ? `Bills ${b.name.split(' ')[0]} still owes you` : `Bills you still owe ${b.name.split(' ')[0]}` }}</strong></p>
+                                <ul class="breakdown">
+                                    <li v-for="bill in openBills(b).bills" :key="bill.expense_id ?? bill.label"><span><strong>{{ bill.label }}</strong><small>{{ bill.date }}</small></span><span :class="bill.amount_minor > 0 ? 'receive' : 'owe'">{{ money(Math.abs(bill.amount_minor)) }}</span></li>
+                                    <li class="total"><span>Mark as paid</span><strong>{{ money(openBills(b).total) }}</strong></li>
+                                </ul>
+                                <p class="muted fine">{{ b.net_minor > 0 ? `Records that ${b.name.split(' ')[0]} paid you back for each bill. It counts right away and their shares show as paid.` : `Records that you paid ${b.name.split(' ')[0]} back for each bill. It counts once they confirm.` }}</p>
+                                <div class="settle-actions">
+                                    <button type="button" class="btn secondary" :disabled="settleBusy" @click="settling = null">Cancel</button>
+                                    <button type="button" class="btn" :disabled="settleBusy" @click="settleAll(b)"><Check :size="14" aria-hidden="true" /> {{ settleBusy ? 'Saving…' : `Mark all ${money(openBills(b).total)} paid` }}</button>
+                                </div>
+                            </div>
+                            <div v-else class="settle-actions pay-btn">
+                                <button type="button" class="btn" @click="settling = b.member_id"><Check :size="14" aria-hidden="true" /> Mark all as paid</button>
+                                <button v-if="b.net_minor < 0" type="button" class="btn secondary" @click="prefill(b.member_id, -b.net_minor)"><HandCoins :size="14" aria-hidden="true" /> Record a payment</button>
+                            </div>
+                        </template>
                     </details>
                 </li>
             </ul>
@@ -187,6 +221,11 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
 .breakdown li.pending{opacity:.6}
 .breakdown li.total{border-top:1px dashed #d8e0d5;padding-top:8px;font-weight:600}
 .between-list .pay-btn{margin:0 12px 12px}
+.settle-confirm{margin:0 12px 12px;padding:10px 0 0;border-top:1px solid #eef2ec;display:grid;gap:8px}
+.settle-confirm p{margin:0}
+.settle-confirm .breakdown{padding:0}
+.settle-actions{display:flex;flex-wrap:wrap;gap:8px}
+.settle-note{margin:0 12px 12px}
 .owe{color:#a6573e}
 .receive{color:#3d7650}
 .invite{display:grid;gap:10px;padding-top:4px}

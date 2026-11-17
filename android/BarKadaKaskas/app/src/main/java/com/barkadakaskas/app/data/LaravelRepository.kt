@@ -164,6 +164,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     }
 
     override suspend fun confirmSettlement(tripId: Long, settlementId: Long) { request("POST", "/trips/$tripId/settlements/$settlementId/confirm") }
+    override suspend fun settleBetween(tripId: Long, memberId: Long) { request("POST", "/trips/$tripId/between/$memberId/settle") }
 
     override suspend fun createInvitation(tripId: Long): String = data(request("POST", "/trips/$tripId/invitations")).getString("url")
 

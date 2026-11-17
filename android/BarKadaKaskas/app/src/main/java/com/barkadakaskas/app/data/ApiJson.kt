@@ -55,7 +55,7 @@ internal object ApiJson {
             aiPlanner = data.optBoolean("ai_planner"),
             dues = data.optJSONArray("dues").mapObjects { Dues(it.getLong("member_id"), it.optLong("owes_minor"), it.optLong("owed_minor")) },
             between = data.optJSONArray("between")?.let { list -> list.mapObjects { b -> Between(b.getLong("member_id"), b.text("name"), b.optLong("net_minor"),
-                b.optJSONArray("lines").mapObjects { l -> BetweenLine(l.text("type"), l.text("label"), l.textOrNull("date"), l.text("detail"), l.optLong("amount_minor"), l.optBoolean("pending")) }) } },
+                b.optJSONArray("lines").mapObjects { l -> BetweenLine(l.text("type"), l.text("label"), l.textOrNull("date"), l.text("detail"), l.optLong("amount_minor"), l.optBoolean("pending"), if (l.isNull("expense_id")) null else l.optLong("expense_id")) }) } },
         )
     }
 

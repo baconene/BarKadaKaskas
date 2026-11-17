@@ -867,7 +867,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             Text(money(abs(balance.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { balance.netMinor < 0 -> Danger; balance.netMinor > 0 -> Forest; else -> Muted })
         } }
     }
-    between?.find { it.memberId == opened }?.let { b -> BetweenSheet(b, detail.trip.currency, onPay = { opened = null; form = true }) { opened = null } }
+    between?.find { it.memberId == opened }?.let { b -> BetweenSheet(b, detail.trip.currency, vm.busy, onPay = { opened = null; form = true }, onSettle = { vm.mutate({ opened = null }) { repo, current -> repo.settleBetween(current.trip.id, b.memberId) } }) { opened = null } }
     Text("Payment history", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     if (detail.settlements.isEmpty()) Text("No reimbursements recorded yet.", color = Muted)
     detail.settlements.forEach { payment -> val sender = detail.members.find { it.id == payment.fromMemberId }?.name ?: "Traveler"; val recipient = detail.members.find { it.id == payment.toMemberId }?.name ?: "Traveler"
@@ -885,8 +885,14 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 /** The bills and repayments behind what you and one traveller owe each other. */
-@Composable private fun BetweenSheet(b: Between, currency: String, onPay: () -> Unit, close: () -> Unit) {
+@Composable private fun BetweenSheet(b: Between, currency: String, busy: Boolean, onPay: () -> Unit, onSettle: () -> Unit, close: () -> Unit) {
     val first = b.name.substringBefore(" ")
+    var confirming by remember { mutableStateOf(false) }
+    // Bills still open between you: each bill's line less repayments already recorded for it (pending ones too).
+    val toSettle = b.lines.sumOf { it.amountMinor }
+    val repaid = b.lines.filter { it.type == "payment" && it.expenseId != null }.groupBy { it.expenseId }.mapValues { (_, g) -> g.sumOf { it.amountMinor } }
+    val openBills = b.lines.filter { it.type == "expense" }.map { it.copy(amountMinor = it.amountMinor + (repaid[it.expenseId] ?: 0L)) }.filter { if (toSettle > 0) it.amountMinor > 0 else it.amountMinor < 0 }
+    val waiting = b.netMinor != 0L && (toSettle == 0L || (toSettle > 0) != (b.netMinor > 0))
     ModalBottomSheet(onDismissRequest = close, containerColor = Color.White) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("You and ${b.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -908,7 +914,23 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             HorizontalDivider(color = Line)
             Row { Text(if (b.netMinor >= 0) "$first owes you" else "You owe $first", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(abs(b.netMinor), currency), fontWeight = FontWeight.Bold) }
             Text("+ adds to what they owe you, − to what you owe them. Pending repayments count once confirmed.", color = Muted, style = MaterialTheme.typography.bodySmall)
-            if (b.netMinor < 0) Submit("Record money you sent to $first", false, icon = Icons.AutoMirrored.Filled.Send, click = onPay)
+            if (b.netMinor != 0L && waiting) Text("Repayments for this are waiting for ${if (b.netMinor > 0) "you" else first} to confirm.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            else if (b.netMinor != 0L && confirming) Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFF4F8F1), border = BorderStroke(1.dp, Line)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (b.netMinor > 0) "Bills $first still owes you" else "Bills you still owe $first", fontWeight = FontWeight.Bold)
+                    openBills.forEach { bill -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) { Text(bill.label, fontWeight = FontWeight.Medium); bill.date?.let { Text(it, color = Muted, style = MaterialTheme.typography.labelSmall) } }
+                        Text(money(abs(bill.amountMinor), currency), fontWeight = FontWeight.SemiBold, color = if (bill.amountMinor > 0) Forest else Danger)
+                    } }
+                    HorizontalDivider(color = Line)
+                    Row { Text("Mark as paid", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(abs(toSettle), currency), fontWeight = FontWeight.Bold) }
+                    Text(if (b.netMinor > 0) "Records that $first paid you back for each bill. It counts right away and their shares show as paid." else "Records that you paid $first back for each bill. It counts once they confirm.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Submit("Mark all ${money(abs(toSettle), currency)} paid", busy, icon = Icons.Default.Check, click = onSettle)
+                    TextButton(onClick = { confirming = false }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+                }
+            }
+            else if (b.netMinor != 0L) Submit("Mark all as paid", busy, icon = Icons.Default.Check) { confirming = true }
+            if (b.netMinor < 0 && !confirming) Submit("Record money you sent to $first", false, icon = Icons.AutoMirrored.Filled.Send, click = onPay)
         }
     }
 }

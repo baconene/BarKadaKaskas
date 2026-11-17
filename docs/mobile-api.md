@@ -133,6 +133,12 @@ recipient only. Settlement includes `id,expense_id` (nullable), `from_member_id,
 to_member_id,amount_minor,currency_code,payment_method,status,paid_at,confirmed_at`.
 Pending settlements do not affect balances. Repeating confirmation is safe.
 
+POST `/trips/{trip}/between/{member}/settle` ("Mark all as paid" with one traveller) → 200
+`{data:{settled_minor,repayments,confirmed}}`. Settles the net shown in `between` for that member, one settlement per
+open bill (`expense_id` set), oldest first, plus one general settlement for any rest. If they owe you, the settlements
+are created `confirmed`; if you owe them, they are `pending` until that traveller confirms. 422 when nothing is left
+or repayments are already waiting for confirmation. `between[].lines[]` include `expense_id`.
+
 ## Errors
 
 Always JSON, including missing Accept header: 401 unauthenticated/expired,

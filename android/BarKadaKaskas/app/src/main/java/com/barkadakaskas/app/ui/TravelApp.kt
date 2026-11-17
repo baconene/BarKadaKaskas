@@ -861,6 +861,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(if (b.netMinor == 0L) "Settled" else money(abs(b.netMinor), detail.trip.currency), fontWeight = FontWeight.Bold, color = when { b.netMinor < 0 -> Danger; b.netMinor > 0 -> Forest; else -> Muted })
                 if (b.netMinor != 0L) Text(if (b.netMinor > 0) "owes you" else "you owe", color = Muted, style = MaterialTheme.typography.labelSmall)
+                else if (settlePlan(b).canSettle) Text("bills not marked paid", color = Muted, style = MaterialTheme.typography.labelSmall)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Muted)
         } }
@@ -888,15 +889,33 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     if (form) SettlementForm(vm, detail) { form = false }
 }
 
+/** What "Mark all as paid" would do with one traveller (mirrors the server): bills still open each way, the part that cancels out, and the rest to pay. */
+private data class SettlePlan(val theirs: List<BetweenLine>, val mine: List<BetweenLine>, val offset: Long, val rest: Long, val theyOwe: Boolean, val canSettle: Boolean, val waiting: Boolean)
+private fun settlePlan(b: Between): SettlePlan {
+    val repaid = b.lines.filter { it.type == "payment" && it.expenseId != null }.groupBy { it.expenseId }.mapValues { (_, g) -> g.sumOf { it.amountMinor } }
+    val bills = b.lines.filter { it.type == "expense" }.map { it.copy(amountMinor = it.amountMinor + (repaid[it.expenseId] ?: 0L)) }.filter { it.amountMinor != 0L }
+    val theirs = bills.filter { it.amountMinor > 0 }; val mine = bills.filter { it.amountMinor < 0 }
+    val theirSum = theirs.sumOf { it.amountMinor }; val mySum = -mine.sumOf { it.amountMinor }
+    val general = b.lines.filter { it.type == "payment" && it.expenseId == null && !it.pending }
+    val applies = (general.any { it.amountMinor < 0 } && theirs.isNotEmpty()) || (general.any { it.amountMinor > 0 } && mine.isNotEmpty())
+    val owed = b.lines.sumOf { it.amountMinor }
+    val offset = minOf(theirSum, mySum)
+    val theyOwe = theirSum > mySum
+    val rest = if (theyOwe) minOf(theirSum - offset, maxOf(0L, owed)) else minOf(mySum - offset, maxOf(0L, -owed))
+    return SettlePlan(theirs, mine, offset, rest, theyOwe, offset > 0 || rest > 0 || applies, bills.isNotEmpty() && offset == 0L && rest == 0L && !applies)
+}
+
+@Composable private fun BillRow(bill: BetweenLine, currency: String) = Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.weight(1f)) { Text(bill.label, fontWeight = FontWeight.Medium); bill.date?.let { Text(it, color = Muted, style = MaterialTheme.typography.labelSmall) } }
+    Text(money(abs(bill.amountMinor), currency), fontWeight = FontWeight.SemiBold, color = if (bill.amountMinor > 0) Forest else Danger)
+}
+
 /** The bills and repayments behind what you and one traveller owe each other. */
 @Composable private fun BetweenSheet(b: Between, currency: String, busy: Boolean, onPay: () -> Unit, onSettle: () -> Unit, close: () -> Unit) {
     val first = b.name.substringBefore(" ")
     var confirming by remember { mutableStateOf(false) }
     // Bills still open between you: each bill's line less repayments already recorded for it (pending ones too).
-    val toSettle = b.lines.sumOf { it.amountMinor }
-    val repaid = b.lines.filter { it.type == "payment" && it.expenseId != null }.groupBy { it.expenseId }.mapValues { (_, g) -> g.sumOf { it.amountMinor } }
-    val openBills = b.lines.filter { it.type == "expense" }.map { it.copy(amountMinor = it.amountMinor + (repaid[it.expenseId] ?: 0L)) }.filter { if (toSettle > 0) it.amountMinor > 0 else it.amountMinor < 0 }
-    val waiting = b.netMinor != 0L && (toSettle == 0L || (toSettle > 0) != (b.netMinor > 0))
+    val plan = settlePlan(b)
     ModalBottomSheet(onDismissRequest = close, containerColor = Color.White) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("You and ${b.name}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -918,22 +937,22 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             HorizontalDivider(color = Line)
             Row { Text(if (b.netMinor >= 0) "$first owes you" else "You owe $first", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(abs(b.netMinor), currency), fontWeight = FontWeight.Bold) }
             Text("+ adds to what they owe you, − to what you owe them. Pending repayments count once confirmed.", color = Muted, style = MaterialTheme.typography.bodySmall)
-            if (b.netMinor != 0L && waiting) Text("Repayments for this are waiting for ${if (b.netMinor > 0) "you" else first} to confirm.", color = Muted, style = MaterialTheme.typography.bodySmall)
-            else if (b.netMinor != 0L && confirming) Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFF4F8F1), border = BorderStroke(1.dp, Line)) {
+            if (plan.waiting) Text("Repayments for this are waiting for ${if (b.netMinor > 0) "you" else first} to confirm.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            else if (confirming) Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFF4F8F1), border = BorderStroke(1.dp, Line)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (b.netMinor > 0) "Bills $first still owes you" else "Bills you still owe $first", fontWeight = FontWeight.Bold)
-                    openBills.forEach { bill -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) { Text(bill.label, fontWeight = FontWeight.Medium); bill.date?.let { Text(it, color = Muted, style = MaterialTheme.typography.labelSmall) } }
-                        Text(money(abs(bill.amountMinor), currency), fontWeight = FontWeight.SemiBold, color = if (bill.amountMinor > 0) Forest else Danger)
-                    } }
+                    if (plan.theirs.isNotEmpty()) { Text("$first owes you for", fontWeight = FontWeight.Bold); plan.theirs.forEach { BillRow(it, currency) } }
+                    if (plan.mine.isNotEmpty()) { Text("You owe $first for", fontWeight = FontWeight.Bold); plan.mine.forEach { BillRow(it, currency) } }
                     HorizontalDivider(color = Line)
-                    Row { Text("Mark as paid", Modifier.weight(1f), fontWeight = FontWeight.Bold); Text(money(abs(toSettle), currency), fontWeight = FontWeight.Bold) }
-                    Text(if (b.netMinor > 0) "Records that $first paid you back for each bill. It counts right away and their shares show as paid." else "Records that you paid $first back for each bill. It counts once they confirm.", color = Muted, style = MaterialTheme.typography.bodySmall)
-                    Submit("Mark all ${money(abs(toSettle), currency)} paid", busy, icon = Icons.Default.Check, click = onSettle)
+                    if (plan.offset > 0) Row { Text("Cancels out", Modifier.weight(1f)); Text(money(plan.offset, currency), fontWeight = FontWeight.SemiBold) }
+                    Row { Text(if (plan.rest == 0L) "Nothing more to pay" else if (plan.theyOwe) "$first pays you" else "You pay $first", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        Text(money(plan.rest, currency), fontWeight = FontWeight.Bold, color = if (plan.rest == 0L) Muted else if (plan.theyOwe) Forest else Danger) }
+                    Text("Every bill above is marked paid on the expense, for both of you." + (if (plan.offset > 0) " Bills that cancel out count right away." else "") +
+                        (if (plan.rest == 0L) "" else if (plan.theyOwe) " The ${money(plan.rest, currency)} from $first counts right away." else " Your ${money(plan.rest, currency)} counts once $first confirms."), color = Muted, style = MaterialTheme.typography.bodySmall)
+                    Submit("Mark all as paid", busy, icon = Icons.Default.Check, click = onSettle)
                     TextButton(onClick = { confirming = false }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                 }
             }
-            else if (b.netMinor != 0L) Submit("Mark all as paid", busy, icon = Icons.Default.Check) { confirming = true }
+            else if (plan.canSettle) Submit("Mark all as paid", busy, icon = Icons.Default.Check) { confirming = true }
             if (b.netMinor < 0 && !confirming) Submit("Record money you sent to $first", false, icon = Icons.AutoMirrored.Filled.Send, click = onPay)
         }
     }

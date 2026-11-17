@@ -125,6 +125,28 @@ class TravelTest extends TestCase
         $this->assertSame('confirmed', Settlement::firstOrFail()->status);
         $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertStatus(422);
     }
+    public function test_mark_all_paid_clears_bills_that_cancel_out_and_attaches_earlier_repayments(): void
+    {
+        $remaining = fn (Expense $e, int $member) => collect((new \App\Services\ExpenseShares)->rows($e->fresh()))->firstWhere('member_id', $member)['remaining_minor'];
+        $mineFirst = $this->createExpense();   // owner fronted the friend's 50.00
+        $data = $this->payload(); $data['total_minor'] = 10000; $data['payments'] = [['trip_member_id' => $this->friendMember, 'amount_minor' => 10000]];
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/expenses", $data)->assertSessionHasNoErrors();
+        $theirs = Expense::latest('id')->firstOrFail();   // friend fronted the owner's 50.00
+        $between = fn ($user) => $this->actingAs($user)->get("/trips/{$this->trip->id}")->viewData('page')['props']['between'][0]['net_minor'];
+        $this->assertSame(0, $between($this->owner));   // "Settled", but both shares still show unpaid
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertRedirect();
+        $this->assertSame([0, 0, 0], [$remaining($mineFirst, $this->friendMember), $remaining($theirs, $this->ownerMember), $between($this->owner)]);
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertStatus(422);
+
+        // A repayment recorded without a bill goes onto the bill it paid for.
+        $third = $this->createExpense();
+        $this->actingAs($this->friend)->post("/trips/{$this->trip->id}/settlements", ['to_member_id' => $this->ownerMember, 'amount_minor' => 5000, 'payment_method' => 'gcash'])->assertSessionHasNoErrors();
+        $general = Settlement::whereNull('expense_id')->firstOrFail();
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/settlements/{$general->id}/confirm");
+        $this->assertSame(5000, $remaining($third, $this->friendMember));
+        $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/between/{$this->friendMember}/settle")->assertRedirect();
+        $this->assertSame([$third->id, 0, 0], [$general->fresh()->expense_id, $remaining($third, $this->friendMember), $between($this->friend)]);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

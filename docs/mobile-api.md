@@ -134,10 +134,11 @@ to_member_id,amount_minor,currency_code,payment_method,status,paid_at,confirmed_
 Pending settlements do not affect balances. Repeating confirmation is safe.
 
 POST `/trips/{trip}/between/{member}/settle` ("Mark all as paid" with one traveller) → 200
-`{data:{settled_minor,repayments,confirmed}}`. Settles the net shown in `between` for that member, one settlement per
-open bill (`expense_id` set), oldest first, plus one general settlement for any rest. If they owe you, the settlements
-are created `confirmed`; if you owe them, they are `pending` until that traveller confirms. 422 when nothing is left
-or repayments are already waiting for confirmation. `between[].lines[]` include `expense_id`.
+`{data:{bills,offset_minor,paid_minor,confirmed}}`. Marks every bill between you two as paid on the expense: confirmed
+repayments without a bill are attached to the bills they cover; bills that cancel out are cleared with confirmed
+settlements both ways (`offset_minor`); the rest (`paid_minor`) is one settlement per bill, oldest first, `confirmed`
+if they owe you, `pending` until they confirm if you owe them. 422 when nothing is left or it is already waiting
+for confirmation. `between[].lines[]` include `expense_id`.
 
 ## Errors
 

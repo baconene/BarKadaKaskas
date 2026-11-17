@@ -69,10 +69,17 @@ const settleBusy = ref(false);
 function openBills(b: Between) {
     const repaid = new Map<number, number>();
     b.lines.filter(l => l.type === 'payment' && l.expense_id).forEach(l => repaid.set(l.expense_id!, (repaid.get(l.expense_id!) ?? 0) + l.amount_minor));
-    const toSettle = b.lines.reduce((sum, l) => sum + l.amount_minor, 0);
-    const bills = b.lines.filter(l => l.type === 'expense').map(l => ({ ...l, amount_minor: l.amount_minor + (repaid.get(l.expense_id!) ?? 0) }))
-        .filter(l => toSettle > 0 ? l.amount_minor > 0 : l.amount_minor < 0);
-    return { bills, total: Math.abs(toSettle), waiting: b.net_minor !== 0 && (toSettle === 0 || Math.sign(toSettle) !== Math.sign(b.net_minor)) };
+    const bills = b.lines.filter(l => l.type === 'expense').map(l => ({ ...l, amount_minor: l.amount_minor + (repaid.get(l.expense_id!) ?? 0) })).filter(l => l.amount_minor !== 0);
+    const theirs = bills.filter(l => l.amount_minor > 0), mine = bills.filter(l => l.amount_minor < 0);
+    const sum = (list: BetweenLine[]) => Math.abs(list.reduce((t, l) => t + l.amount_minor, 0));
+    // Repayments already made without a bill get attached to the bills they cover.
+    const general = b.lines.filter(l => l.type === 'payment' && !l.expense_id && !l.pending);
+    const fromThem = sum(general.filter(l => l.amount_minor < 0)), fromMe = sum(general.filter(l => l.amount_minor > 0));
+    const owed = b.lines.reduce((t, l) => t + l.amount_minor, 0);   // counting repayments waiting for confirmation
+    const offset = Math.min(sum(theirs), sum(mine));
+    const rest = sum(theirs) > sum(mine) ? Math.min(sum(theirs) - offset, Math.max(0, owed)) : Math.min(sum(mine) - offset, Math.max(0, -owed));
+    const applies = (fromThem > 0 && theirs.length > 0) || (fromMe > 0 && mine.length > 0);
+    return { theirs, mine, offset, rest, theyOwe: sum(theirs) > sum(mine), canSettle: offset > 0 || rest > 0 || applies, waiting: bills.length > 0 && offset === 0 && rest === 0 && !applies };
 }
 function settleAll(b: Between) {
     settleBusy.value = true;
@@ -124,7 +131,7 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
                 <li v-for="b in between ?? []" :key="b.member_id">
                     <details>
                         <summary>
-                            <span class="between-who"><span class="avatar" aria-hidden="true">{{ initials(b.name) }}</span><span>{{ b.name }}<small class="dues">{{ b.net_minor > 0 ? 'owes you' : b.net_minor < 0 ? 'you owe' : 'settled' }} · {{ b.lines.length }} {{ b.lines.length === 1 ? 'item' : 'items' }}</small></span></span>
+                            <span class="between-who"><span class="avatar" aria-hidden="true">{{ initials(b.name) }}</span><span>{{ b.name }}<small class="dues">{{ b.net_minor > 0 ? 'owes you' : b.net_minor < 0 ? 'you owe' : openBills(b).canSettle ? 'settled · bills not marked paid' : 'settled' }} · {{ b.lines.length }} {{ b.lines.length === 1 ? 'item' : 'items' }}</small></span></span>
                             <strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ b.net_minor === 0 ? 'Settled' : money(Math.abs(b.net_minor)) }}</strong>
                         </summary>
                         <ul v-if="b.lines.length" class="breakdown">
@@ -135,25 +142,32 @@ const pendingForMe = computed(() => props.settlements.filter(s => s.status === '
                             <li class="total"><span>{{ b.net_minor > 0 ? `${b.name.split(' ')[0]} owes you` : b.net_minor < 0 ? `You owe ${b.name.split(' ')[0]}` : 'All square' }}</span><strong :class="{ owe: b.net_minor < 0, receive: b.net_minor > 0 }">{{ money(Math.abs(b.net_minor)) }}</strong></li>
                         </ul>
                         <p v-else class="muted fine">Nothing between you yet.</p>
-                        <template v-if="b.net_minor !== 0">
-                            <p v-if="openBills(b).waiting" class="muted fine settle-note">Repayments for this are waiting for {{ b.net_minor > 0 ? 'you' : b.name.split(' ')[0] }} to confirm.</p>
-                            <div v-else-if="settling === b.member_id" class="settle-confirm">
-                                <p><strong>{{ b.net_minor > 0 ? `Bills ${b.name.split(' ')[0]} still owes you` : `Bills you still owe ${b.name.split(' ')[0]}` }}</strong></p>
-                                <ul class="breakdown">
-                                    <li v-for="bill in openBills(b).bills" :key="bill.expense_id ?? bill.label"><span><strong>{{ bill.label }}</strong><small>{{ bill.date }}</small></span><span :class="bill.amount_minor > 0 ? 'receive' : 'owe'">{{ money(Math.abs(bill.amount_minor)) }}</span></li>
-                                    <li class="total"><span>Mark as paid</span><strong>{{ money(openBills(b).total) }}</strong></li>
-                                </ul>
-                                <p class="muted fine">{{ b.net_minor > 0 ? `Records that ${b.name.split(' ')[0]} paid you back for each bill. It counts right away and their shares show as paid.` : `Records that you paid ${b.name.split(' ')[0]} back for each bill. It counts once they confirm.` }}</p>
-                                <div class="settle-actions">
-                                    <button type="button" class="btn secondary" :disabled="settleBusy" @click="settling = null">Cancel</button>
-                                    <button type="button" class="btn" :disabled="settleBusy" @click="settleAll(b)"><Check :size="14" aria-hidden="true" /> {{ settleBusy ? 'Saving…' : `Mark all ${money(openBills(b).total)} paid` }}</button>
-                                </div>
-                            </div>
-                            <div v-else class="settle-actions pay-btn">
-                                <button type="button" class="btn" @click="settling = b.member_id"><Check :size="14" aria-hidden="true" /> Mark all as paid</button>
-                                <button v-if="b.net_minor < 0" type="button" class="btn secondary" @click="prefill(b.member_id, -b.net_minor)"><HandCoins :size="14" aria-hidden="true" /> Record a payment</button>
-                            </div>
+                        <template v-if="openBills(b).waiting">
+                            <p class="muted fine settle-note">Repayments for this are waiting for {{ b.net_minor > 0 ? 'you' : b.name.split(' ')[0] }} to confirm.</p>
                         </template>
+                        <div v-else-if="settling === b.member_id" class="settle-confirm">
+                            <template v-if="openBills(b).theirs.length">
+                                <p><strong>{{ b.name.split(' ')[0] }} owes you for</strong></p>
+                                <ul class="breakdown"><li v-for="bill in openBills(b).theirs" :key="'t' + bill.expense_id"><span><strong>{{ bill.label }}</strong><small>{{ bill.date }}</small></span><span class="receive">{{ money(bill.amount_minor) }}</span></li></ul>
+                            </template>
+                            <template v-if="openBills(b).mine.length">
+                                <p><strong>You owe {{ b.name.split(' ')[0] }} for</strong></p>
+                                <ul class="breakdown"><li v-for="bill in openBills(b).mine" :key="'m' + bill.expense_id"><span><strong>{{ bill.label }}</strong><small>{{ bill.date }}</small></span><span class="owe">{{ money(-bill.amount_minor) }}</span></li></ul>
+                            </template>
+                            <ul class="breakdown">
+                                <li v-if="openBills(b).offset"><span>Cancels out</span><strong>{{ money(openBills(b).offset) }}</strong></li>
+                                <li class="total"><span>{{ openBills(b).rest ? (openBills(b).theyOwe ? `${b.name.split(' ')[0]} pays you` : `You pay ${b.name.split(' ')[0]}`) : 'Nothing more to pay' }}</span><strong :class="openBills(b).rest ? (openBills(b).theyOwe ? 'receive' : 'owe') : ''">{{ money(openBills(b).rest) }}</strong></li>
+                            </ul>
+                            <p class="muted fine">Every bill above is marked paid on the expense, for both of you. {{ openBills(b).offset ? 'Bills that cancel out count right away. ' : '' }}{{ openBills(b).rest ? (openBills(b).theyOwe ? `The ${money(openBills(b).rest)} from ${b.name.split(' ')[0]} counts right away.` : `Your ${money(openBills(b).rest)} counts once ${b.name.split(' ')[0]} confirms.`) : '' }}</p>
+                            <div class="settle-actions">
+                                <button type="button" class="btn secondary" :disabled="settleBusy" @click="settling = null">Cancel</button>
+                                <button type="button" class="btn" :disabled="settleBusy" @click="settleAll(b)"><Check :size="14" aria-hidden="true" /> {{ settleBusy ? 'Saving…' : 'Mark all as paid' }}</button>
+                            </div>
+                        </div>
+                        <div v-else-if="openBills(b).canSettle || b.net_minor < 0" class="settle-actions pay-btn">
+                            <button v-if="openBills(b).canSettle" type="button" class="btn" @click="settling = b.member_id"><Check :size="14" aria-hidden="true" /> Mark all as paid</button>
+                            <button v-if="b.net_minor < 0" type="button" class="btn secondary" @click="prefill(b.member_id, -b.net_minor)"><HandCoins :size="14" aria-hidden="true" /> Record a payment</button>
+                        </div>
                     </details>
                 </li>
             </ul>

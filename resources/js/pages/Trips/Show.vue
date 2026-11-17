@@ -99,7 +99,9 @@ type QuickFilter='all'|'paid'|'unpaid'|'created'|'unsettled';
 const quickFilter=ref<QuickFilter>('all');
 const quickFilters=[['all','All'],['paid','Paid'],['unpaid','Unpaid'],['created','Created by me'],['unsettled','Unsettled']] as const;
 const merchantPaidFull=(e:Expense)=>e.payments.filter(p=>p.paid_at!==null).reduce((t,p)=>t+p.amount_minor,0)>=e.total_minor;
-const matches=(e:Expense,f:QuickFilter)=>f==='all'||(f==='paid'?e.status!=='cancelled'&&e.status!=='draft'&&merchantPaidFull(e):f==='unpaid'?e.status!=='cancelled'&&!merchantPaidFull(e):f==='created'?e.created_by_member_id===props.currentMemberId:unsettled(e));
+// Paid, Unpaid and Unsettled only list bills you're part of: you have a share in it or you paid for it.
+const involved=(e:Expense)=>e.allocations.some(a=>a.trip_member_id===props.currentMemberId)||e.payments.some(p=>p.trip_member_id===props.currentMemberId);
+const matches=(e:Expense,f:QuickFilter)=>f==='all'||(f!=='created'&&!involved(e)?false:f==='paid'?e.status!=='cancelled'&&e.status!=='draft'&&merchantPaidFull(e):f==='unpaid'?e.status!=='cancelled'&&!merchantPaidFull(e):f==='created'?e.created_by_member_id===props.currentMemberId:unsettled(e));
 const quickCount=(f:QuickFilter)=>props.trip.expenses.filter(e=>(statusFilter.value==='all'||e.status===statusFilter.value)&&matches(e,f)).length;
 const unsettled=(e:Expense)=>['open','draft'].includes(e.status)||(e.status!=='cancelled'&&(props.expenseShares[e.id]??[]).some(s=>s.remaining_minor>0));
 const shown=computed(()=>props.trip.expenses.filter(e=>(statusFilter.value==='all'||e.status===statusFilter.value)&&matches(e,quickFilter.value)));

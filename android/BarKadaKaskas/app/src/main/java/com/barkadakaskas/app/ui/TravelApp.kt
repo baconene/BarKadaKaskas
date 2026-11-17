@@ -792,13 +792,17 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     if (detail.expenses.isEmpty()) EmptyState(Icons.AutoMirrored.Filled.ReceiptLong, "No expenses yet", "Record your first shared bill to keep everyone on the same page.", if (detail.trip.cancelled) null else "Add an expense") { create = true }
     // Filters with counts: all; paid to the merchant in full or not yet; ones you recorded; ones where someone still owes a share.
     val paidFull = { e: Expense -> e.payments.sumOf { it.amountMinor } >= e.totalMinor }
-    val matches = { e: Expense, f: String -> when (f) {
+    // Paid, Unpaid and Unsettled only list bills you're part of: you have a share in it or you paid for it.
+    val involved = { e: Expense -> e.shares.any { it.memberId == detail.currentMemberId } || e.payments.any { it.memberId == detail.currentMemberId } }
+    val matches = { e: Expense, f: String -> when {
+        f != "all" && f != "created" && !involved(e) -> false
+        else -> when (f) {
         "paid" -> e.status !in listOf("cancelled", "draft") && paidFull(e)
         "unpaid" -> e.status != "cancelled" && !paidFull(e)
         "created" -> e.createdByMemberId == detail.currentMemberId
         "unsettled" -> e.status in listOf("open", "draft") || (e.status != "cancelled" && e.shares.any { it.remainingMinor > 0 })
         else -> true
-    } }
+    } } }
     if (detail.expenses.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(listOf("all" to "All", "paid" to "Paid", "unpaid" to "Unpaid", "created" to "Created by me", "unsettled" to "Unsettled")) { (key, label) ->
             val count = detail.expenses.count { matches(it, key) }

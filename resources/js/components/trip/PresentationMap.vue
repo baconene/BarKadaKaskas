@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { loadGoogleMaps, transport } from '@/lib/itinerary';
 
 /**
@@ -9,7 +9,8 @@ import { loadGoogleMaps, transport } from '@/lib/itinerary';
  */
 export type MapStop = { n: number; title: string; location: string | null; transport: string | null; lat: number | null; lng: number | null };
 export type MapPhoto = { url: string; caption: string | null; by: string | null; time: string; lat: number | null; lng: number | null; stop: number | null };
-const props = defineProps<{ stops: MapStop[]; pins: MapPhoto[]; browserKey: string; mapId: string }>();
+/** [focus] is a stop number to zoom to (null shows the whole day). */
+const props = defineProps<{ stops: MapStop[]; pins: MapPhoto[]; browserKey: string; mapId: string; focus?: number | null }>();
 const emit = defineEmits<{ open: [photo: MapPhoto] }>();
 const canvas = ref<HTMLElement>();
 const state = ref<'loading' | 'ready' | 'empty' | 'error'>('loading');
@@ -17,6 +18,16 @@ let map: google.maps.Map | undefined;
 const drawn: { setMap?: (m: google.maps.Map | null) => void; map?: google.maps.Map | null }[] = [];
 let alive = true;
 const geocoded = new Map<string, google.maps.LatLngLiteral | null>();
+let stopPositions: (google.maps.LatLngLiteral | null)[] = [];
+let wholeDay: google.maps.LatLngBounds | undefined;
+function frame() {
+    if (!map) return;
+    const at = props.focus != null ? stopPositions[props.stops.findIndex(s => s.n === props.focus)] : null;
+    if (at) { map.panTo(at); map.setZoom(16); return; }
+    if (!wholeDay || wholeDay.isEmpty()) return;
+    if (wholeDay.getNorthEast().equals(wholeDay.getSouthWest())) { map.setCenter(wholeDay.getCenter()); map.setZoom(15); } else map.fitBounds(wholeDay, 50);
+}
+watch(() => props.focus, frame);
 
 async function draw() {
     if (!props.browserKey || !canvas.value) { state.value = 'error'; return; }
@@ -29,7 +40,7 @@ async function draw() {
             google.maps.importLibrary('geocoding') as Promise<google.maps.GeocodingLibrary>,
         ]);
         if (!alive || !canvas.value) return;
-        map = new maps.Map(canvas.value, { center: { lat: 12.88, lng: 121.77 }, zoom: 6, mapId: props.mapId || 'DEMO_MAP_ID', mapTypeControl: false, streetViewControl: false, fullscreenControl: false, gestureHandling: 'cooperative', clickableIcons: false });
+        map = new maps.Map(canvas.value, { center: { lat: 12.88, lng: 121.77 }, zoom: 6, mapId: props.mapId || 'DEMO_MAP_ID', mapTypeControl: false, streetViewControl: false, fullscreenControl: false, zoomControl: false, gestureHandling: 'cooperative', clickableIcons: false });
         const geocoder = new geocoding.Geocoder();
         const locate = async (address: string) => {
             if (geocoded.has(address)) return geocoded.get(address)!;
@@ -91,7 +102,8 @@ async function draw() {
             bounds.extend(at);
         });
         if (bounds.isEmpty()) { state.value = 'empty'; return; }
-        if (bounds.getNorthEast().equals(bounds.getSouthWest())) { map.setCenter(bounds.getCenter()); map.setZoom(15); } else map.fitBounds(bounds, 60);
+        stopPositions = positions; wholeDay = bounds;
+        frame();
         state.value = 'ready';
     } catch {
         if (alive) state.value = 'error';
@@ -111,9 +123,8 @@ onBeforeUnmount(() => { alive = false; drawn.forEach(o => { if (o.setMap) o.setM
 </template>
 
 <style scoped>
-.pmap{position:relative;border-radius:16px;overflow:hidden;background:#e7ece2;aspect-ratio:16/10;min-height:260px}
+.pmap{position:relative;border-radius:16px;overflow:hidden;background:#e7ece2;height:100%;min-height:0}
 .pmap-canvas{position:absolute;inset:0}
 .pmap-note{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;color:#3e5243;box-shadow:0 4px 14px #0002}
 .pmap-cover{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;color:#6c7c72;background:#e7ece2}
-@media (max-width:760px){.pmap{aspect-ratio:4/5}}
 </style>

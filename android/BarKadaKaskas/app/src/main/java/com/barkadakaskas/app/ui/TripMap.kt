@@ -292,7 +292,7 @@ private fun configureOsm(context: Context) {
  * the day's photos pinned as round thumbnails where they were taken, or around the stop they belong to. Stops without
  * a saved pin are looked up from their address. Tapping a photo calls [onPhoto]. Google Maps only (null otherwise).
  */
-@Composable fun PresentationDayMap(stops: List<com.barkadakaskas.app.domain.DeckStop>, photos: List<com.barkadakaskas.app.domain.DeckMapPhoto>, modifier: Modifier = Modifier, onPhoto: (com.barkadakaskas.app.domain.DeckMapPhoto) -> Unit = {}) {
+@Composable fun PresentationDayMap(stops: List<com.barkadakaskas.app.domain.DeckStop>, photos: List<com.barkadakaskas.app.domain.DeckMapPhoto>, modifier: Modifier = Modifier, focus: Int? = null, onPhoto: (com.barkadakaskas.app.domain.DeckMapPhoto) -> Unit = {}) {
     val context = LocalContext.current
     val density = context.resources.displayMetrics.density
     // Where each stop is: its saved pin, else its address looked up on the phone.
@@ -329,11 +329,14 @@ private fun configureOsm(context: Context) {
     val all = (points.orEmpty() + photoPoints).filterNotNull()
     val camera = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(all.firstOrNull() ?: LatLng(12.88, 121.77), 11f) }
     var loaded by remember { mutableStateOf(false) }
-    LaunchedEffect(loaded, all) {
+    LaunchedEffect(loaded, all, focus) {
         if (!loaded || all.isEmpty()) return@LaunchedEffect
+        // A tapped stop: zoom to it; otherwise frame the whole day.
+        val stopAt = focus?.let { n -> points?.getOrNull(stops.indexOfFirst { it.n == n }) }
+        if (stopAt != null) { runCatching { camera.animate(CameraUpdateFactory.newLatLngZoom(stopAt, 16f), 500) }; return@LaunchedEffect }
         val update = if (all.distinct().size == 1) CameraUpdateFactory.newLatLngZoom(all[0], 15f)
         else CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { all.forEach { include(it) } }.build(), (48 * density).toInt())
-        runCatching { camera.move(update) }
+        runCatching { camera.animate(update, 500) }
     }
     GoogleMap(
         modifier = modifier,

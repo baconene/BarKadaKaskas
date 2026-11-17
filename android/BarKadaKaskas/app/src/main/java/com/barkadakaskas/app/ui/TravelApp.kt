@@ -1763,6 +1763,17 @@ private fun jpegBytes(bitmap: android.graphics.Bitmap, maxSide: Int = 2000): Byt
                 repo.saveStop(current.trip.id, stop?.id, StopDraft(title, location, notes, "${date}T$from", "${endDate}T$until", transport.ifBlank { null }, pin?.first, pin?.second))
             }
         }
+        // Removing keeps linked expenses and photos (they're just no longer tied to this stop).
+        if (stop != null) {
+            var confirmRemove by remember { mutableStateOf(false) }
+            TextButton(onClick = { confirmRemove = true }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Default.Delete, null, Modifier.size(18.dp), tint = Danger); Spacer(Modifier.width(6.dp)); Text("Remove from itinerary", color = Danger)
+            }
+            if (confirmRemove) AlertDialog(onDismissRequest = { confirmRemove = false }, title = { Text("Remove “${stop.title}”?") },
+                text = { Text("Everyone on the trip is told. Expenses and photos linked to it are kept.") },
+                confirmButton = { TextButton(onClick = { confirmRemove = false; vm.mutate(dismiss) { repo, current -> repo.deleteStop(current.trip.id, stop.id) } }) { Text("Remove", color = Danger) } },
+                dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Keep") } })
+        }
     }
 }
 

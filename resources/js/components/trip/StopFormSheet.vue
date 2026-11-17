@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
-import { X } from 'lucide-vue-next';
+import { router, useForm } from '@inertiajs/vue3';
+import { Trash2, X } from 'lucide-vue-next';
 import LocationSearch, { type PickedPlace } from '@/components/LocationSearch.vue';
 import { transportOptions, type ItineraryStop } from '@/lib/itinerary';
 
@@ -52,6 +52,14 @@ function save() {
     if (editing.value) payload.patch(`/trips/${props.tripId}/itinerary/${editing.value.id}`, options);
     else payload.post(`/trips/${props.tripId}/itinerary`, options);
 }
+// Removing an activity keeps linked expenses and photos (they're just no longer tied to it).
+const removing = ref(false);
+function remove() {
+    const item = editing.value; if (!item) return;
+    if (!confirm(`Remove “${item.title}” from the itinerary? Everyone on the trip is told. Expenses and photos linked to it are kept.`)) return;
+    removing.value = true;
+    router.delete(`/trips/${props.tripId}/itinerary/${item.id}`, { preserveScroll: true, preserveState: true, onSuccess: () => emit('close'), onFinish: () => { removing.value = false; } });
+}
 function backdropClick(event: MouseEvent) { if (event.target === dialog.value && !form.processing) emit('close'); }
 </script>
 
@@ -71,7 +79,7 @@ function backdropClick(event: MouseEvent) { if (event.target === dialog.value &&
             </fieldset>
             <label class="field full">Notes<textarea v-model="form.description" maxlength="4000" rows="3" placeholder="Booking details, meeting point, or reminders" /></label>
             <ul v-if="Object.keys(form.errors).length" class="full form-errors" role="alert"><li v-for="(message, field) in form.errors" :key="field">{{ message }}</li></ul>
-            <div class="row full sheet-buttons"><button class="btn" :disabled="form.processing">{{ form.processing ? 'Saving…' : editing ? 'Save activity' : 'Add activity' }}</button><button class="btn secondary" type="button" :disabled="form.processing" @click="emit('close')">Cancel</button></div>
+            <div class="row full sheet-buttons"><button class="btn" :disabled="form.processing">{{ form.processing ? 'Saving…' : editing ? 'Save activity' : 'Add activity' }}</button><button class="btn secondary" type="button" :disabled="form.processing" @click="emit('close')">Cancel</button><button v-if="editing" class="btn danger remove-stop" type="button" :disabled="form.processing || removing" @click="remove"><Trash2 :size="16" aria-hidden="true" /> {{ removing ? 'Removing…' : 'Remove' }}</button></div>
         </form>
     </dialog>
 </template>
@@ -79,6 +87,7 @@ function backdropClick(event: MouseEvent) { if (event.target === dialog.value &&
 <style scoped>
 .form-sheet{border:0;padding:0;margin:auto auto 0;width:100%;max-width:640px;max-height:92dvh;border-radius:22px 22px 0 0;background:#fffefb;color:#172f2a;box-shadow:0 -10px 40px #1d33281f}
 .form-sheet::backdrop{background:#10221a66}
+.remove-stop{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
 .sheet-form{padding:20px 20px calc(20px + env(safe-area-inset-bottom));overflow-y:auto;max-height:inherit}
 .sheet-form h2{font-size:20px;font-weight:750;letter-spacing:-.4px}
 .sheet-close{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;border:1px solid #dfe6da;background:#fff;color:#214e3e;cursor:pointer}

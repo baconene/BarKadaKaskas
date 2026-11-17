@@ -54,6 +54,7 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         if (stopId == null) request("POST", "/trips/$tripId/itinerary", ApiJson.stopBody(draft))
         else request("PATCH", "/trips/$tripId/itinerary/$stopId", ApiJson.stopBody(draft))
     }
+    override suspend fun deleteStop(tripId: Long, stopId: Long) { request("DELETE", "/trips/$tripId/itinerary/$stopId") }
     override suspend fun documents(tripId: Long): List<TravelerDocument> = ApiJson.documents(request("GET", "/trips/$tripId/documents"))
     override suspend fun uploadDocument(tripId: Long, type: String, label: String, visibility: String, bytes: ByteArray, mimeType: String, fileName: String): TravelerDocument =
         ApiJson.document(data(request("POST", "/trips/$tripId/documents", raw = multipart(mapOf("type" to type, "label" to label.trim(), "visibility" to visibility), listOf(FilePart("file", fileName, mimeType, bytes))))))

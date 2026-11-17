@@ -112,6 +112,8 @@ interface TravelRepository {
     suspend fun createTrip(draft: TripDraft): Trip
     suspend fun trip(id: Long): TripDetail
     suspend fun saveStop(tripId: Long, stopId: Long?, draft: StopDraft)
+    /** Removes an activity from the itinerary (organizer). Linked expenses and photos are kept. */
+    suspend fun deleteStop(tripId: Long, stopId: Long)
     /** Ticks an activity off for everyone on the trip, or undoes it. Any traveller on the trip may do this. */
     suspend fun setStopDone(tripId: Long, stopId: Long, done: Boolean)
     /** Organizer: the AI planner drafts activities for [prompt]; nothing is saved. */

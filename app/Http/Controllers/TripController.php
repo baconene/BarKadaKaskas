@@ -191,6 +191,25 @@ class TripController extends Controller
         return $request->is('api/*') ? response()->json(['data' => $item->fresh()]) : back();
     }
 
+    /**
+     * Removes an activity from the itinerary (organizer, while the plan isn't locked). Expenses and photo posts that
+     * were linked to it are kept, just no longer linked to a stop.
+     */
+    public function destroyItinerary(Request $request, Trip $trip, \App\Models\ItineraryItem $item)
+    {
+        Gate::authorize('plan', $trip);
+        abort_unless($item->trip_id === $trip->id, 404);
+        $this->itineraryAlert($request, $trip, 'removed “'.$item->title.'”', $item);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $trip, $item) {
+            \App\Models\Expense::where('itinerary_item_id', $item->id)->update(['itinerary_item_id' => null]);
+            \App\Models\TripPost::where('itinerary_item_id', $item->id)->update(['itinerary_item_id' => null]);
+            \App\Models\ItineraryParticipant::where('itinerary_item_id', $item->id)->delete();
+            ActivityLog::create(['trip_id' => $trip->id, 'actor_user_id' => $request->user()->id, 'subject_type' => 'itinerary_item', 'subject_id' => $item->id, 'action' => 'deleted', 'before' => $item->toArray()]);
+            $item->delete();
+        });
+        return $request->is('api/*') ? response()->noContent() : back();
+    }
+
     /** Lets everyone else on the trip know the plan changed. */
     private function itineraryAlert(Request $request, Trip $trip, string $what, \App\Models\ItineraryItem $item): void
     {

@@ -247,3 +247,6 @@ items:[{label,category,amount_minor}]}],categories:[{category,estimate_minor}],a
 notes:[string]}}`. The planned budget is estimated by the AI from the itinerary (cached until the plan changes);
 `available:false` when the AI isn't set up, `failed:true` when it couldn't answer (retry later). Categories are
 `food`, `transport`, `activities`, `lodging`, `other`.
+
+DELETE `/trips/{trip}/itinerary/{item}` (organizer, plan not locked) → 204. Removes the activity; expenses and photo
+posts linked to it are kept but no longer linked. Everyone else gets an `itinerary` alert.

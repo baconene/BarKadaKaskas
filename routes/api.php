@@ -34,6 +34,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('trips/{trip}/itinerary/suggestions', [ItineraryPlanController::class, 'suggest'])->middleware('throttle:10,1');
         Route::post('trips/{trip}/itinerary/batch', [ItineraryPlanController::class, 'store'])->middleware('throttle:20,1');
         Route::patch('trips/{trip}/itinerary/{item}', [TripController::class, 'updateItinerary']);
+        Route::delete('trips/{trip}/itinerary/{item}', [TripController::class, 'destroyItinerary']);
         Route::patch('trips/{trip}/itinerary/{item}/done', [TripController::class, 'itineraryDone']);
         Route::get('trips/{trip}/itinerary-day', [\App\Http\Controllers\ItineraryPhotoController::class, 'day'])->middleware('throttle:30,1');
         Route::get('trips/{trip}/itinerary/{item}/tips', [\App\Http\Controllers\ItineraryPhotoController::class, 'tips'])->middleware('throttle:30,1');

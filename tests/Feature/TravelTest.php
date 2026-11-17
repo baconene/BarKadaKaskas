@@ -169,6 +169,16 @@ class TravelTest extends TestCase
         $this->actingAs($this->owner)->post("/trips/{$this->trip->id}/reopen")->assertRedirect();
         $this->assertSame(['planning', null], [$this->trip->fresh()->status, $this->trip->fresh()->ended_at]);
     }
+    public function test_organizer_removes_an_itinerary_stop_keeping_linked_expenses(): void
+    {
+        $item = $this->trip->itineraryItems()->create(['created_by_user_id' => $this->owner->id, 'title' => 'Big Lagoon', 'starts_at' => '2026-12-02 01:00:00', 'ends_at' => '2026-12-02 03:00:00', 'timezone' => 'Asia/Manila']);
+        $expense = $this->createExpense(); $expense->update(['itinerary_item_id' => $item->id]);
+        $this->actingAs($this->friend)->delete("/trips/{$this->trip->id}/itinerary/{$item->id}")->assertForbidden();
+        $this->actingAs($this->owner)->delete("/trips/{$this->trip->id}/itinerary/{$item->id}")->assertRedirect();
+        $this->assertDatabaseMissing('itinerary_items', ['id' => $item->id]);
+        $this->assertNull($expense->fresh()->itinerary_item_id);
+        $this->assertDatabaseHas('alerts', ['user_id' => $this->friend->id, 'type' => 'itinerary']);
+    }
     public function test_unpaid_expense_can_cancel_and_is_excluded_from_balances(): void
     {
         $expense = $this->createExpense(false);

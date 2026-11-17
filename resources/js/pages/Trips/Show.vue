@@ -239,7 +239,7 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 </TravelLayout>
 </template>
 <style scoped>.expense-actions{display:inline-flex;gap:4px;align-items:center}.icon-action{display:inline-flex;align-items:center;justify-content:center;min-width:34px;min-height:34px;border-radius:8px;color:#62745b;background:#f2f5ed;border:1px solid #e2e8da}.icon-action:hover{background:#e3ecd9;color:#254d3d}.icon-action:disabled,.share-paid:disabled{opacity:.5;cursor:wait}.danger-icon{color:#a3543e}.danger-icon:hover{background:#fff0e9;color:#9d3e27}.assigned-share{padding:10px 0;border-bottom:1px solid #edf0e8}.share-status{justify-content:flex-end;margin-top:7px;gap:8px}.share-status .muted{font-size:11px}.share-paid{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border:1px solid #cadbc3;background:#f0f7eb;color:#37623c;padding:5px 9px;border-radius:7px;min-height:32px}.paid-label{display:flex;gap:4px;align-items:center;color:#427648;font-size:11px;font-weight:650}.share-confirm,.cancel-panel{border:1px solid #dedfcd;background:#fbfcf6;padding:16px;border-radius:10px}.share-help{margin:0 0 12px 18px;font-size:12px;line-height:1.7;list-style:disc}.share-confirm p{font-size:12px;line-height:1.7;margin-bottom:12px}.void-confirm{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.6;margin-top:16px}.void-confirm input{margin-top:4px}.filter{border:1px solid #dce5d7;border-radius:8px;background:white;font-size:12px;padding:7px 28px 7px 10px}.expense-card{margin-bottom:16px}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:20px 0}.detail-grid h3{font-size:13px;margin-bottom:12px}.item-entry{padding:18px;border:1px solid #e0e7da;border-radius:10px;margin:14px 0}.balance-row{display:flex;justify-content:space-between;gap:12px;padding:18px 0;border-bottom:1px solid #e8ede3;font-size:14px}.balance-row:last-child{border:0}@media(max-width:640px){.detail-grid{grid-template-columns:1fr}}
-.expenses-screen{display:grid;gap:12px}
+.expenses-screen{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)} /* minmax(0) keeps wide content (the filter chips) from widening the page */
 .screen-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .travel-app .screen-top h2{font-size:22px;letter-spacing:-.6px}
 .chip-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:4px;border-radius:999px;background:#e8efe3;color:#214e3e;font-size:11px;font-weight:800}
@@ -254,7 +254,8 @@ function upload(event:Event,e:Expense){receipt.receipt=(event.target as HTMLInpu
 .money-strip span,.balance-card span{font-size:11px;color:#6c7c72;font-weight:600}
 .money-strip strong,.balance-card strong{font-size:16px;font-weight:800;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .owe{color:#a6573e}.receive{color:#3d7650}
-.filter-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.filter-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
+.filter-row .chips{flex:1 1 100%;width:100%;padding-bottom:2px}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0;max-width:100%}
 .chips button{white-space:nowrap;flex:none}
 .chips button{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid #d5dfd5;background:#fff;color:#214e3e;font-size:13px;font-weight:650;cursor:pointer}

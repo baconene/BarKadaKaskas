@@ -113,3 +113,20 @@ export function dayDirectionsUrl(stops: ItineraryStop[]): string | null {
     if (waypoints.length) params.set('waypoints', waypoints.join('|'));
     return `https://www.google.com/maps/dir/?${params}`;
 }
+
+/**
+ * The transport for a leg of the presentation map: the one saved on the stop; otherwise a guess from the stop's
+ * name and place (airports and flights → plane; ports, piers and ferries → boat; walks → on foot), then the distance
+ * (over 300 km → plane). Car is the default. A road leg with no road route over a few km is treated as a boat by the map.
+ */
+export function guessTransport(stop: { transport: string | null; title: string; location: string | null }, meters: number | null): string {
+    if (stop.transport && stop.transport !== 'other') return stop.transport;
+    const text = `${stop.title} ${stop.location ?? ''}`.toLowerCase();
+    if (/\b(flight|airport|plane|fly to|depart(?:ure)? to)\b/.test(text)) return 'flight';
+    if (/\b(ferry|boat|pier|seaport|port|wharf|banca|bangka|fast ?craft|roro|island hopping)\b/.test(text)) return 'ferry';
+    if (/\b(walk|hike|trek)\b/.test(text)) return 'walking';
+    if (meters != null && meters > 300_000) return 'flight';
+    return 'car';
+}
+/** The icon shown travelling along a leg. */
+export const transportIcon = (mode: string): string => ({ flight: '✈️', ferry: '⛴️', walking: '🚶', motorcycle: '🏍️', tricycle: '🛺', bicycle: '🚲', transit: '🚌', van: '🚐', taxi: '🚕' } as Record<string, string>)[mode] ?? '🚗';

@@ -326,13 +326,50 @@ private fun configureOsm(context: Context) {
             } }
         }
     }
+    // Each leg (index of the stop it arrives at): the road route from Google's Routes API (a straight line when there
+    // is none) and the transport used: the stop's own, else a guess (plane, boat, on foot), car by default.
+    val legs by produceState<Map<Int, Leg>>(emptyMap(), points) {
+        val known = points ?: return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            (1 until stops.size).mapNotNull { i ->
+                val from = known.getOrNull(i - 1); val to = known.getOrNull(i)
+                if (from == null || to == null || from == to) return@mapNotNull null
+                val meters = distance(from, to)
+                var mode = guessTransport(stops[i].transport, stops[i].title, stops[i].location, meters)
+                val road = travelMode(mode)?.let { roadRoute(context, from, to, it) }
+                // No road over a few km (an island hop): it was a boat.
+                if (road == null && travelMode(mode) != null && meters > 3000) mode = "ferry"
+                i to Leg(road ?: listOf(from, to), mode, road != null)
+            }.toMap()
+        }
+    }
     val all = (points.orEmpty() + photoPoints).filterNotNull()
     val camera = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(all.firstOrNull() ?: LatLng(12.88, 121.77), 11f) }
     var loaded by remember { mutableStateOf(false) }
-    LaunchedEffect(loaded, all, focus) {
+    // The transport icon travelling along the focused leg.
+    val traveller = rememberMarkerState()
+    var travelling by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(loaded, all, focus, legs) {
+        travelling = null
         if (!loaded || all.isEmpty()) return@LaunchedEffect
-        // A tapped stop: zoom to it; otherwise frame the whole day.
-        val stopAt = focus?.let { n -> points?.getOrNull(stops.indexOfFirst { it.n == n }) }
+        val index = focus?.let { n -> stops.indexOfFirst { it.n == n } } ?: -1
+        val leg = if (index > 0) legs[index] else null
+        if (leg != null) {
+            // Frame the leg, then send the icon along it.
+            runCatching { camera.animate(CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { leg.path.forEach { include(it) } }.build(), (64 * density).toInt()), 600) }
+            val steps = leg.path.zipWithNext { a, b -> distance(a, b) }.runningFold(0.0) { sum, d -> sum + d }
+            val total = steps.last().coerceAtLeast(1.0)
+            traveller.position = leg.path.first(); travelling = leg.mode
+            val progress = androidx.compose.animation.core.Animatable(0f)
+            progress.animateTo(1f, androidx.compose.animation.core.tween(2600, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
+                val at = value * total
+                val i = steps.indexOfFirst { it >= at }.coerceAtLeast(1)
+                val a = leg.path[i - 1]; val b = leg.path[i]; val f = ((at - steps[i - 1]) / (steps[i] - steps[i - 1]).coerceAtLeast(1e-6)).toFloat()
+                traveller.position = LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f)
+            }
+            return@LaunchedEffect
+        }
+        val stopAt = if (index >= 0) points?.getOrNull(index) else null
         if (stopAt != null) { runCatching { camera.animate(CameraUpdateFactory.newLatLngZoom(stopAt, 16f), 500) }; return@LaunchedEffect }
         val update = if (all.distinct().size == 1) CameraUpdateFactory.newLatLngZoom(all[0], 15f)
         else CameraUpdateFactory.newLatLngBounds(LatLngBounds.builder().apply { all.forEach { include(it) } }.build(), (48 * density).toInt())
@@ -345,12 +382,10 @@ private fun configureOsm(context: Context) {
         onMapLoaded = { loaded = true },
     ) {
         val stopPoints = points.orEmpty()
-        for (i in 1 until stops.size) {
-            val from = stopPoints.getOrNull(i - 1); val to = stopPoints.getOrNull(i)
-            if (from == null || to == null || from == to) continue
-            val water = stops[i].transport in listOf("ferry", "flight")
-            Polyline(points = listOf(from, to), color = if (water) Color(0xFF2F7FA6) else Color(0xFF214E3E), width = 6 * density, geodesic = water,
-                pattern = if (water) listOf(com.google.android.gms.maps.model.Dash(20 * density), com.google.android.gms.maps.model.Gap(12 * density)) else null,
+        legs.forEach { (_, leg) ->
+            val dashed = !leg.road
+            Polyline(points = leg.path, color = when (leg.mode) { "ferry" -> Color(0xFF2F7FA6); "flight" -> Color(0xFF6B7F3A); else -> Color(0xFF214E3E) }, width = 6 * density, geodesic = dashed,
+                pattern = if (dashed) listOf(com.google.android.gms.maps.model.Dash(20 * density), com.google.android.gms.maps.model.Gap(12 * density)) else null,
                 jointType = JointType.ROUND, startCap = RoundCap(), endCap = RoundCap())
         }
         stops.forEachIndexed { i, stop ->
@@ -368,7 +403,104 @@ private fun configureOsm(context: Context) {
                 Marker(state = rememberMarkerState(position = at), title = photo.caption, icon = icon, anchor = Offset(0.5f, 1f), zIndex = 2f, onClick = { onPhoto(photo); true })
             }
         }
+        travelling?.let { mode ->
+            val icon = remember(mode) { BitmapDescriptorFactory.fromBitmap(transportBadge(context, mode)) }
+            Marker(state = traveller, icon = icon, anchor = Offset(0.5f, 0.5f), zIndex = 3f)
+        }
     }
+}
+
+/** A leg of the presentation map: its path, the transport, and whether the path follows the roads. */
+private data class Leg(val path: List<LatLng>, val mode: String, val road: Boolean)
+
+private fun distance(a: LatLng, b: LatLng): Double {
+    val result = FloatArray(1)
+    Location.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude, result)
+    return result[0].toDouble()
+}
+
+/**
+ * The transport for a leg: the stop's own; else a guess from its name and place (airports and flights → plane,
+ * ports, piers and ferries → boat, walks → on foot), then the distance (over 300 km → plane). Car by default.
+ */
+internal fun guessTransport(saved: String?, title: String, location: String?, meters: Double?): String {
+    if (!saved.isNullOrBlank() && saved != "other") return saved
+    val text = "$title ${location.orEmpty()}".lowercase()
+    if (Regex("\\b(flight|airport|plane|fly to|departure to|depart to)\\b").containsMatchIn(text)) return "flight"
+    if (Regex("\\b(ferry|boat|pier|seaport|port|wharf|banca|bangka|fast ?craft|roro|island hopping)\\b").containsMatchIn(text)) return "ferry"
+    if (Regex("\\b(walk|hike|trek)\\b").containsMatchIn(text)) return "walking"
+    if (meters != null && meters > 300_000) return "flight"
+    return "car"
+}
+
+/** The Routes API travel mode for a transport, or null for boats and planes (drawn as straight lines). */
+private fun travelMode(mode: String): String? = when (mode) {
+    "flight", "ferry" -> null
+    "walking" -> "WALK"; "bicycle" -> "BICYCLE"; "motorcycle" -> "TWO_WHEELER"; "transit" -> "TRANSIT"
+    else -> "DRIVE"
+}
+
+/** The road route between two points from Google's Routes API (with the app's Maps key), or null. */
+private fun roadRoute(context: Context, from: LatLng, to: LatLng, mode: String): List<LatLng>? = runCatching {
+    val point = { p: LatLng -> org.json.JSONObject().put("location", org.json.JSONObject().put("latLng", org.json.JSONObject().put("latitude", p.latitude).put("longitude", p.longitude))) }
+    val body = org.json.JSONObject().put("origin", point(from)).put("destination", point(to)).put("travelMode", mode)
+    val connection = java.net.URL("https://routes.googleapis.com/directions/v2:computeRoutes").openConnection() as java.net.HttpURLConnection
+    try {
+        connection.requestMethod = "POST"; connection.doOutput = true
+        connection.connectTimeout = 10_000; connection.readTimeout = 15_000
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty("X-Goog-Api-Key", BuildConfig.MAPS_API_KEY)
+        connection.setRequestProperty("X-Goog-FieldMask", "routes.polyline.encodedPolyline")
+        // Lets a key restricted to this Android app be accepted.
+        connection.setRequestProperty("X-Android-Package", context.packageName)
+        signingSha1(context)?.let { connection.setRequestProperty("X-Android-Cert", it) }
+        connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        if (connection.responseCode !in 200..299) return@runCatching null
+        val text = connection.inputStream.bufferedReader().use { it.readText() }
+        val encoded = org.json.JSONObject(text).optJSONArray("routes")?.optJSONObject(0)?.optJSONObject("polyline")?.optString("encodedPolyline").orEmpty()
+        decodePolyline(encoded).takeIf { it.size >= 2 }
+    } finally { connection.disconnect() }
+}.getOrNull()
+
+/** The SHA-1 of the app's signing certificate, as Google's key restrictions expect it (hex, no colons). */
+@Suppress("DEPRECATION")
+private fun signingSha1(context: Context): String? = runCatching {
+    val signatures = if (android.os.Build.VERSION.SDK_INT >= 28)
+        context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners
+    else context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
+    val cert = signatures?.firstOrNull()?.toByteArray() ?: return@runCatching null
+    java.security.MessageDigest.getInstance("SHA-1").digest(cert).joinToString("") { "%02X".format(it) }
+}.getOrNull()
+
+/** Google's encoded polyline format to points. */
+private fun decodePolyline(encoded: String): List<LatLng> {
+    val points = mutableListOf<LatLng>()
+    var index = 0; var lat = 0; var lng = 0
+    while (index < encoded.length) {
+        for (axis in 0..1) {
+            var shift = 0; var result = 0; var b: Int
+            do { b = encoded[index++].code - 63; result = result or ((b and 0x1f) shl shift); shift += 5 } while (b >= 0x20 && index < encoded.length)
+            val delta = if (result and 1 != 0) (result shr 1).inv() else result shr 1
+            if (axis == 0) lat += delta else lng += delta
+        }
+        points += LatLng(lat / 1e5, lng / 1e5)
+    }
+    return points
+}
+
+/** The travelling icon: the transport's emoji in a white circle with a green ring. */
+private fun transportBadge(context: Context, mode: String): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val size = (42 * density).toInt()
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val r = size / 2f
+    canvas.drawCircle(r, r, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF214E3E.toInt() })
+    canvas.drawCircle(r, r, r - 2.5f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+    val emoji = when (mode) { "flight" -> "✈️"; "ferry" -> "⛴️"; "walking" -> "🚶"; "motorcycle" -> "🏍️"; "tricycle" -> "🛺"; "bicycle" -> "🚲"; "transit" -> "🚌"; "van" -> "🚐"; "taxi" -> "🚕"; else -> "🚗" }
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22 * density; textAlign = Paint.Align.CENTER }
+    canvas.drawText(emoji, r, r - (text.descent() + text.ascent()) / 2, text)
+    return bitmap
 }
 
 /** A photo as a round pin: white ring, a small pointer underneath. */

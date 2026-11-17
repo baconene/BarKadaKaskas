@@ -89,6 +89,10 @@ private data class ViewerPhoto(val url: String, val caption: String?, val by: St
         delay(7000)
         if (index >= slides.size - 1) playing = false else index++
     }
+    // The phone's status and navigation bar sizes, read from the app's window: some phones report none inside a
+    // full-screen dialog, which put the slide controls under the back/home buttons.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val outerTop = WindowInsets.statusBars.getTop(density); val outerBottom = WindowInsets.navigationBars.getBottom(density)
     // Full screen, told the bar sizes so the controls keep clear of the clock and the phone's buttons.
     Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = androidx.compose.ui.platform.LocalView.current
@@ -97,8 +101,10 @@ private data class ViewerPhoto(val url: String, val caption: String?, val by: St
                 androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = false; isAppearanceLightNavigationBars = false }
             }
         }
-        Box(Modifier.fillMaxSize().background(DeckDark)) {
-            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+        val top = with(density) { maxOf(outerTop, WindowInsets.statusBars.getTop(density)).toDp() }
+        val bottom = with(density) { maxOf(outerBottom, WindowInsets.navigationBars.getBottom(density)).toDp() }
+        Box(Modifier.fillMaxSize().background(DeckDark).padding(top = top, bottom = bottom)) {
+            Column(Modifier.fillMaxSize()) {
                 val progress by animateFloatAsState(if (slides.isEmpty()) 0f else (index + 1f) / slides.size, label = "progress")
                 LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp), color = Color(0xFFF0A47E), trackColor = Color.White.copy(alpha = 0.12f))
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -153,7 +159,7 @@ private data class ViewerPhoto(val url: String, val caption: String?, val by: St
     val photo = photos.getOrNull(at) ?: return
     val step = { by: Int -> onStep((at + by + photos.size) % photos.size) }
     var drag by remember { mutableFloatStateOf(0f) }
-    Box(Modifier.fillMaxSize().background(Color(0xF0060F0C)).systemBarsPadding().pointerInput(at) {
+    Box(Modifier.fillMaxSize().background(Color(0xF0060F0C)).pointerInput(at) {
         detectHorizontalDragGestures(onDragStart = { drag = 0f }, onDragEnd = { if (abs(drag) > 100f && photos.size > 1) step(if (drag < 0) 1 else -1) }) { _, amount -> drag += amount }
     }) {
         Column(Modifier.align(Alignment.Center).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -175,10 +181,12 @@ private data class ViewerPhoto(val url: String, val caption: String?, val by: St
 }
 
 @Composable private fun SlideHead(title: String, chip: String? = null, sub: String? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        chip?.let { Surface(shape = CircleShape, color = DeckGreen) { Text(it, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)) }; Spacer(Modifier.width(8.dp)) }
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 19.sp, color = DeckInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-        sub?.let { Spacer(Modifier.width(8.dp)); Text(it, color = DeckMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            chip?.let { Surface(shape = CircleShape, color = DeckGreen) { Text(it, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)) }; Spacer(Modifier.width(8.dp)) }
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DeckInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        sub?.let { Text(it, color = DeckMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 

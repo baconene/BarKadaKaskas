@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { loadGoogleMaps, transport } from '@/lib/itinerary';
+import { guessTransport, loadGoogleMaps, transport, transportIcon } from '@/lib/itinerary';
 
 /**
  * A day's map for the trip presentation, drawn like the trip's Map screen: the route between the day's stops (by
  * road for road trips, a dashed line for boats and planes), numbered stop pins, and the day's photos pinned where
- * they were taken (or at the stop they belong to). Tapping a photo pin shows it larger.
+ * they were taken (or at the stop they belong to). Tapping a photo pin shows it larger. Focusing a stop flies a
+ * transport icon (car by default; plane, boat, on foot… from the stop's transport or a guess) along the leg to it.
  */
 export type MapStop = { n: number; title: string; location: string | null; transport: string | null; lat: number | null; lng: number | null };
 export type MapPhoto = { url: string; caption: string | null; by: string | null; time: string; lat: number | null; lng: number | null; stop: number | null };
@@ -20,9 +21,45 @@ let alive = true;
 const geocoded = new Map<string, google.maps.LatLngLiteral | null>();
 let stopPositions: (google.maps.LatLngLiteral | null)[] = [];
 let wholeDay: google.maps.LatLngBounds | undefined;
+// Each leg (index of the stop it arrives at): its path on the map and the transport used.
+const legs = new Map<number, { path: google.maps.LatLngLiteral[]; mode: string }>();
+let traveller: google.maps.marker.AdvancedMarkerElement | undefined;
+let travellerIcon: HTMLElement | undefined;
+let animation = 0;
+/** Moves the transport icon along a path over [ms]. */
+function travel(path: google.maps.LatLngLiteral[], mode: string, ms = 2600) {
+    if (!map || !traveller || !travellerIcon || path.length < 2) return;
+    travellerIcon.textContent = transportIcon(mode);
+    traveller.map = map;
+    const steps = [0];
+    for (let i = 1; i < path.length; i++) steps.push(steps[i - 1]! + google.maps.geometry.spherical.computeDistanceBetween(path[i - 1]!, path[i]!));
+    const total = steps[steps.length - 1]! || 1;
+    const started = performance.now();
+    cancelAnimationFrame(animation);
+    const tick = (now: number) => {
+        const t = Math.min(1, (now - started) / ms); const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+        const at = eased * total;
+        let i = steps.findIndex(s => s >= at); if (i <= 0) i = 1;
+        const a = path[i - 1]!, b = path[i]!; const span = steps[i]! - steps[i - 1]! || 1; const f = (at - steps[i - 1]!) / span;
+        traveller!.position = { lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f };
+        if (t < 1 && alive) animation = requestAnimationFrame(tick);
+    };
+    animation = requestAnimationFrame(tick);
+}
 function frame() {
     if (!map) return;
-    const at = props.focus != null ? stopPositions[props.stops.findIndex(s => s.n === props.focus)] : null;
+    cancelAnimationFrame(animation);
+    if (traveller) traveller.map = null;
+    const index = props.focus != null ? props.stops.findIndex(s => s.n === props.focus) : -1;
+    const leg = index > 0 ? legs.get(index) : undefined;
+    if (leg) {
+        // Frame the leg, then send the transport icon along it.
+        const legBounds = new google.maps.LatLngBounds(); leg.path.forEach(p => legBounds.extend(p));
+        map.fitBounds(legBounds, 70);
+        travel(leg.path, leg.mode);
+        return;
+    }
+    const at = index >= 0 ? stopPositions[index] : null;
     if (at) { map.panTo(at); map.setZoom(16); return; }
     if (!wholeDay || wholeDay.isEmpty()) return;
     if (wholeDay.getNorthEast().equals(wholeDay.getSouthWest())) { map.setCenter(wholeDay.getCenter()); map.setZoom(15); } else map.fitBounds(wholeDay, 50);
@@ -38,6 +75,7 @@ async function draw() {
             google.maps.importLibrary('routes') as Promise<google.maps.RoutesLibrary>,
             google.maps.importLibrary('marker') as Promise<google.maps.MarkerLibrary>,
             google.maps.importLibrary('geocoding') as Promise<google.maps.GeocodingLibrary>,
+            google.maps.importLibrary('geometry'),
         ]);
         if (!alive || !canvas.value) return;
         map = new maps.Map(canvas.value, { center: { lat: 12.88, lng: 121.77 }, zoom: 6, mapId: props.mapId || 'DEMO_MAP_ID', mapTypeControl: false, streetViewControl: false, fullscreenControl: false, zoomControl: false, gestureHandling: 'cooperative', clickableIcons: false });
@@ -55,17 +93,22 @@ async function draw() {
         for (let i = 1; i < props.stops.length; i++) {
             const from = positions[i - 1], to = positions[i];
             if (!from || !to || (from.lat === to.lat && from.lng === to.lng)) continue;
-            const mode = transport(props.stops[i]!.transport);
+            let kind = guessTransport(props.stops[i]!, google.maps.geometry.spherical.computeDistanceBetween(from, to));
+            const mode = transport(kind === 'car' && !props.stops[i]!.transport ? 'car' : kind);
             let lines: google.maps.Polyline[] = [];
+            let path: google.maps.LatLngLiteral[] = [from, to];
             if (mode?.route) {
                 try {
                     const response = await routes.Route.computeRoutes({ origin: from, destination: to, travelMode: mode.route, fields: ['path'] });
                     const route = response.routes?.[0];
-                    if (route?.path?.length) { lines = route.createPolylines(); route.path.forEach(p => bounds.extend(p)); }
+                    if (route?.path?.length) { lines = route.createPolylines(); route.path.forEach(p => bounds.extend(p)); path = route.path.map(p => { const q = p as unknown as { lat: number | (() => number); lng: number | (() => number) }; return { lat: typeof q.lat === 'function' ? q.lat() : q.lat, lng: typeof q.lng === 'function' ? q.lng() : q.lng }; }); }
                 } catch { /* no road route: drawn as a dashed line below */ }
+                // No road over a few km (an island hop): it was a boat.
+                if (!lines.length && google.maps.geometry.spherical.computeDistanceBetween(from, to) > 3000) kind = 'ferry';
             }
+            legs.set(i, { path, mode: kind });
             if (!lines.length) {
-                const color = props.stops[i]!.transport === 'ferry' ? '#2f7fa6' : '#6b7f3a';
+                const color = kind === 'ferry' ? '#2f7fa6' : '#6b7f3a';
                 lines = [new maps.Polyline({ path: [from, to], geodesic: true, strokeOpacity: 0, icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3, strokeColor: color }, offset: '0', repeat: '16px' }] })];
             }
             if (!alive) return;
@@ -101,6 +144,11 @@ async function draw() {
             drawn.push(marker);
             bounds.extend(at);
         });
+        // The transport icon that travels along a leg when a stop is focused.
+        travellerIcon = document.createElement('span');
+        travellerIcon.style.cssText = 'display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#fff;border:2px solid #214e3e;box-shadow:0 4px 12px #0005;font-size:22px;line-height:1';
+        traveller = new markerLibrary.AdvancedMarkerElement({ position: positions.find(Boolean) ?? null, content: travellerIcon, zIndex: 3 });
+        drawn.push(traveller);
         if (bounds.isEmpty()) { state.value = 'empty'; return; }
         stopPositions = positions; wholeDay = bounds;
         frame();
@@ -110,7 +158,7 @@ async function draw() {
     }
 }
 onMounted(draw);
-onBeforeUnmount(() => { alive = false; drawn.forEach(o => { if (o.setMap) o.setMap(null); else o.map = null; }); });
+onBeforeUnmount(() => { alive = false; cancelAnimationFrame(animation); drawn.forEach(o => { if (o.setMap) o.setMap(null); else o.map = null; }); });
 </script>
 
 <template>

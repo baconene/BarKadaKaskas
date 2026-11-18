@@ -53,6 +53,9 @@ class ItineraryPlannerTest extends TestCase
         $this->assertSame([10000, 25050], [$items[1]['cost_min_minor'], $items[1]['cost_max_minor']]);
         $this->assertDatabaseCount('itinerary_items', 0);
         Http::assertSent(fn ($request) => str_contains($request->body(), 'Waterfalls and beaches') && str_contains($request->body(), '2026-11-11 to 2026-11-12'));
+        // An outline, then each of the two days planned at the same time.
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => str_contains($request->body(), 'plan ONLY 2026-11-12'));
     }
 
     public function test_approved_suggestions_are_added_in_one_go(): void

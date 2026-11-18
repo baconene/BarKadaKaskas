@@ -35,6 +35,10 @@ class TripPlanner
     {
         if (! $this->configured()) { throw new HttpException(503, 'The AI planner is not set up yet. You can still add activities by hand.'); }
         $model = (string) (config('services.gemini.model') ?: 'gemini-2.5-flash');
+        // A plan over several days is too much for one answer within a minute: plan each day at the same time,
+        // from a quick outline of the whole trip so the days don't repeat places.
+        $start = CarbonImmutable::parse($trip->starts_on->format('Y-m-d')); $end = CarbonImmutable::parse($trip->ends_on->format('Y-m-d'));
+        if ($start->lt($end) && $start->diffInDays($end) < 31) { return $this->planByDay($trip, $request, $model, $start, $end); }
         $body = [
             'contents' => [['role' => 'user', 'parts' => [['text' => $this->prompt($trip, $request)]]]],
             'generationConfig' => ['temperature' => 0.6, 'responseMimeType' => 'application/json', 'responseSchema' => $this->schema()],
@@ -69,6 +73,62 @@ class TripPlanner
         $changes = $this->changes($trip, $answer['changes'] ?? null);
         if (! $items && ! $changes) { throw new HttpException(422, 'The AI planner could not suggest anything for that. Try describing what you want differently.'); }
         return ['activities' => $items, 'changes' => $changes];
+    }
+
+    /**
+     * @return array{activities: list<array<string, mixed>>, changes: list<array<string, mixed>>}
+     */
+    private function planByDay(Trip $trip, string $request, string $model, CarbonImmutable $start, CarbonImmutable $end): array
+    {
+        $dates = [];
+        for ($d = $start; $d->lte($end); $d = $d->addDay()) { $dates[] = $d->format('Y-m-d'); }
+        $thinkingOff = ! Cache::get('gemini-rejects-thinking:'.$model);
+        $body = function (string $prompt, array $schema) use (&$thinkingOff) { return ['contents' => [['role' => 'user', 'parts' => [['text' => $prompt]]]],
+            'generationConfig' => ['temperature' => 0.6, 'responseMimeType' => 'application/json', 'responseSchema' => $schema] + ($thinkingOff ? ['thinkingConfig' => ['thinkingBudget' => 0]] : [])]; };
+        try {
+            // 1. A short outline: what each day is about and its main places (a few seconds).
+            $outline = null;
+            $outlineAnswer = $this->vertex->generateMany($model, [$body(implode("\n", [
+                $this->prompt($trip, $request),
+                'First, only outline the trip: for each date ('.implode(', ', $dates).') a short theme and the 2 to 5 main places, so no place is visited twice. Fit what they asked for (budget, pace, interests).',
+            ]), ['type' => 'object', 'properties' => ['days' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
+                'date' => ['type' => 'string'], 'theme' => ['type' => 'string'], 'places' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ], 'required' => ['date', 'theme', 'places']]]], 'required' => ['days']])], 12)[0];
+            if ($outlineAnswer?->status() === 400 && str_contains(strtolower((string) $outlineAnswer->json('error.message')), 'think')) { Cache::forever('gemini-rejects-thinking:'.$model, true); $thinkingOff = false; }
+            if ($outlineAnswer?->successful()) {
+                $days = json_decode(collect($outlineAnswer->json('candidates.0.content.parts', []))->pluck('text')->filter()->implode(''), true)['days'] ?? [];
+                $outline = collect(is_array($days) ? $days : [])->filter(fn ($d) => is_array($d) && in_array($d['date'] ?? null, $dates, true))
+                    ->map(fn ($d) => '- '.$d['date'].': '.mb_substr((string) ($d['theme'] ?? ''), 0, 120).' — '.implode(', ', array_map(fn ($p) => mb_substr((string) $p, 0, 80), array_slice(is_array($d['places'] ?? null) ? $d['places'] : [], 0, 6))))->implode("\n") ?: null;
+            }
+            // 2. Every day in detail, all at once.
+            $responses = $this->vertex->generateMany($model, array_map(fn ($date, $i) => $body(implode("\n", array_filter([
+                $this->prompt($trip, $request),
+                $outline ? "Outline of the whole trip (follow it; other days are planned separately):\n{$outline}" : null,
+                'Now plan ONLY '.$date.' (day '.($i + 1).' of '.count($dates).'). Every new activity must be on '.$date.'. Only put planned activities of '.$date.' in "changes". At most 12 activities for this day.',
+            ])), $this->schema()), $dates, array_keys($dates)), 38);
+        } catch (VertexException) {
+            throw new HttpException(503, 'The AI planner is misconfigured. Ask the app admin to check the Vertex AI key.');
+        }
+        $activities = []; $changes = []; $failure = null;
+        foreach ($responses as $i => $response) {
+            if (! $response) { continue; }
+            if ($response->failed()) { $failure ??= $response; continue; }
+            $answer = json_decode(collect($response->json('candidates.0.content.parts', []))->pluck('text')->filter()->implode(''), true);
+            foreach ($this->normalize($trip, $answer['activities'] ?? null) as $item) { if (str_starts_with($item['starts_at'], $dates[$i])) { $activities[] = $item; } }
+            array_push($changes, ...(is_array($answer['changes'] ?? null) ? $answer['changes'] : []));
+        }
+        $changes = $this->changes($trip, $changes);
+        if (! $activities && ! $changes) {
+            if ($failure) {
+                Log::warning('AI trip planner failed', ['status' => $failure->status(), 'error' => $failure->json('error.status').': '.$failure->json('error.message')]);
+                $reason = trim((string) ($failure->json('error.status') ?: 'HTTP '.$failure->status()).': '.mb_substr((string) $failure->json('error.message'), 0, 300), ': ');
+                throw new HttpException(502, 'The AI planner is unavailable right now ('.$reason.'). Please try again, or add activities by hand.');
+            }
+            if (collect($responses)->every(fn ($r) => $r === null)) { throw new HttpException(504, 'The AI planner took too long to answer. Please try again.'); }
+            throw new HttpException(422, 'The AI planner could not suggest anything for that. Try describing what you want differently.');
+        }
+        usort($activities, fn ($a, $b) => strcmp($a['starts_at'], $b['starts_at']));
+        return ['activities' => array_slice($activities, 0, self::MAX_ITEMS), 'changes' => $changes];
     }
 
     private function prompt(Trip $trip, string $request): string

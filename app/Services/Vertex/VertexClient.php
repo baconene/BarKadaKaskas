@@ -2,7 +2,7 @@
 
 namespace App\Services\Vertex;
 
-use Illuminate\Http\Client\Response;
+use Illuminate\Http\Client\{Pool, Response};
 use Illuminate\Support\Facades\{Cache, Http, Log};
 
 /**
@@ -45,6 +45,39 @@ class VertexClient
             return $response;
         }
         return $request->post($url, $body);
+    }
+
+    /**
+     * Sends several generateContent requests for [model] at the same time (so a multi-part job takes as long as its
+     * slowest part, not the sum). Returns the responses in the same order; null where the request didn't complete in
+     * time. Throws VertexException when misconfigured.
+     *
+     * @param  list<array<string, mixed>>  $bodies
+     * @return list<Response|null>
+     */
+    public function generateMany(string $model, array $bodies, int $timeout = 40): array
+    {
+        if (! $this->configured()) { throw new VertexException('Vertex AI is not set up.'); }
+        $token = null;
+        if ($credentials = $this->credentials()) {
+            $token = $this->accessToken($credentials);
+            $url = $this->endpoint($credentials['project_id'], $model);
+        } elseif ($project = config('services.gemini.project') ?: Cache::get(self::LEARNED_PROJECT)) {
+            $url = $this->endpoint((string) $project, $model).'?key='.urlencode((string) $this->apiKey());
+        } else {
+            $url = 'https://aiplatform.googleapis.com/v1/publishers/google/models/'.$model.':generateContent?key='.urlencode((string) $this->apiKey());
+        }
+        $send = fn (string $url) => array_values(array_map(fn ($r) => $r instanceof Response ? $r : null,
+            Http::pool(fn (Pool $pool) => array_map(fn ($body) => ($token ? $pool->withToken($token) : $pool)->connectTimeout(10)->timeout($timeout)->acceptJson()->post($url, $body), $bodies))));
+        $responses = $send($url);
+        // Express mode: learn the key's project from Google's 404 (as in generate) and resend there.
+        foreach ($responses as $response) {
+            if ($response && ! $token && $response->status() === 404 && preg_match('#projects/([a-z0-9-]+)/locations/us-central1/#', (string) $response->json('error.message'), $m)) {
+                Cache::forever(self::LEARNED_PROJECT, $m[1]);
+                return $send($this->endpoint($m[1], $model).'?key='.urlencode((string) $this->apiKey()));
+            }
+        }
+        return $responses;
     }
 
     private function endpoint(string $project, string $model): string

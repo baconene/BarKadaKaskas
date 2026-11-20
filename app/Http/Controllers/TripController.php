@@ -21,7 +21,7 @@ class TripController extends Controller
             ? response()->json(['data' => $trips, 'meta' => ['hidden_count' => $hiddenCount]])
             : Inertia::render('Trips/Index', ['trips' => $trips, 'hiddenCount' => $hiddenCount, 'showingHidden' => $showHidden,
                 // For the plan-a-trip flow: destination suggestions (Google Places) and the optional AI planner.
-                'mapsKey' => config('services.google_maps.browser_key'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured()]);
+                'mapsKey' => config('services.google_maps.browser_key'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured() && \App\Support\Premium::active($request->user())]);
     }
     public function store(Request $request)
     {
@@ -49,7 +49,10 @@ class TripController extends Controller
                 'between' => $balances->between($trip, $trip->members()->where('user_id', $request->user()->id)->value('id')),
                 'current_member_id' => $trip->members()->where('user_id', $request->user()->id)->value('id'),
                 'is_organizer' => $trip->organizer_user_id === $request->user()->id,
-                'ai_planner' => app(\App\Services\Vertex\TripPlanner::class)->configured(),
+                // AI only for the organizer with Premium; ai_upsell: the organizer could unlock it by going Premium.
+                'ai_planner' => app(\App\Services\Vertex\TripPlanner::class)->configured() && \App\Support\Premium::allows($request->user(), $trip),
+                'ai_upsell' => app(\App\Services\Vertex\TripPlanner::class)->configured() && $trip->organizer_user_id === $request->user()->id && ! \App\Support\Premium::active($request->user()),
+                'premium' => \App\Support\Premium::status($request->user()),
             ]]);
         }
         return Inertia::render('Trips/Show', [
@@ -60,7 +63,8 @@ class TripController extends Controller
             'between' => $balances->between($trip, $trip->members()->where('user_id', $request->user()->id)->value('id')),
             'googleMaps' => ['browserKey' => config('services.google_maps.browser_key'), 'mapId' => config('services.google_maps.map_id')],
             'currentMemberId' => $trip->members()->where('user_id', $request->user()->id)->value('id'), 'invitationUrl' => session('invitation_url'),
-            'aiPrompt' => session('ai_prompt'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured(),
+            'aiPrompt' => session('ai_prompt'), 'aiPlanner' => app(\App\Services\Vertex\TripPlanner::class)->configured() && \App\Support\Premium::allows($request->user(), $trip),
+            'aiUpsell' => app(\App\Services\Vertex\TripPlanner::class)->configured() && $trip->organizer_user_id === $request->user()->id && ! \App\Support\Premium::active($request->user()),
         ]);
     }
     /** Organizer edits the trip details. Currency is fixed once expenses exist, so amounts keep their meaning. */

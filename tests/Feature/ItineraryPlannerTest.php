@@ -28,6 +28,7 @@ class ItineraryPlannerTest extends TestCase
     private function headers(User $user): array
     {
         $this->app['auth']->forgetGuards();
+        $user->forceFill(['premium_until' => now()->addMonth()])->save();   // AI features need Premium
         return ['Authorization' => 'Bearer '.$user->createToken('Test device', ['mobile'], now()->addDay())->plainTextToken];
     }
 

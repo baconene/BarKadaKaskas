@@ -67,4 +67,16 @@ return [
         ],
     ],
 
+    // Premium (AI features) is paid monthly through PayMongo Checkout (cards, GCash, Maya, GrabPay).
+    'paymongo' => [
+        'secret_key' => env('PAYMONGO_SECRET_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+    ],
+    'premium' => [
+        // Price of 30 days of Premium, in centavos (PayMongo charges in pesos). Default ≈ US$25.
+        'price_minor' => (int) env('PREMIUM_PRICE_MINOR', 145000),
+        'currency' => 'PHP',
+        // Comma-separated emails that always count as Premium (the app owner).
+        'owner_emails' => env('PREMIUM_OWNER_EMAILS', ''),
+    ],
 ];

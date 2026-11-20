@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ChevronLeft, ChevronRight, ChevronUp, List, Navigation, Sparkles, Plus, Route as RouteIcon, Wallet, X } from 'lucide-vue-next';
 import ItineraryRouteMap, { type LegResult } from '@/components/ItineraryRouteMap.vue';
@@ -13,7 +14,7 @@ import { costRange, dayKey, directionsUrl, orderedStops, totalCost, transport, t
 import { appFetch } from '@/lib/uploads';
 
 export type PlanView = 'today' | 'itinerary' | 'map';
-const props = defineProps<{ tripId: number; destination?: string; aiPlanner?: boolean; aiPrompt?: string | null; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
+const props = defineProps<{ tripId: number; destination?: string; aiPlanner?: boolean; aiUpsell?: boolean; aiPrompt?: string | null; items: ItineraryStop[]; timezone: string; isOrganizer: boolean; googleMaps: { browserKey: string; mapId: string }; view: PlanView; visible: boolean }>();
 const emit = defineEmits<{ navigate: [view: PlanView] }>();
 
 // ---- Days -----------------------------------------------------------------------------
@@ -169,6 +170,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
                 <p class="muted">Add your arrival point, then the places you want to visit. Activities show on the map with their budget.</p>
                 <div v-if="isOrganizer" class="empty-actions">
                     <button v-if="canPlanWithAi" type="button" class="btn" @click="plannerOpen = true"><Sparkles :size="16" aria-hidden="true" /> Plan it with AI</button>
+                    <Link v-else-if="aiUpsell && isOrganizer" href="/settings/premium" class="btn secondary"><Sparkles :size="16" aria-hidden="true" /> Plan with AI · Premium</Link>
                     <button type="button" class="btn" :class="{ secondary: canPlanWithAi }" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> Add the first activity</button>
                 </div>
             </div>
@@ -193,6 +195,7 @@ const shownBudget = computed(() => (props.view === 'itinerary' && !selectedDay.v
                     <div class="head-actions">
                         <span v-if="shownBudget" class="budget-pill"><Wallet :size="15" aria-hidden="true" /> {{ costRange(shownBudget.min, shownBudget.max) }}<small>/person</small></span>
                         <button v-if="canPlanWithAi" type="button" class="btn secondary add-btn" @click="plannerOpen = true"><Sparkles :size="16" aria-hidden="true" /> <span>AI plan</span></button>
+                        <Link v-else-if="aiUpsell && isOrganizer" href="/settings/premium" class="btn secondary add-btn" title="AI planning is part of Premium"><Sparkles :size="16" aria-hidden="true" /> <span>AI · Premium</span></Link>
                         <button v-if="isOrganizer" type="button" class="btn add-btn" @click="formOpen = 'new'"><Plus :size="16" aria-hidden="true" /> <span>Add</span></button>
                     </div>
                 </header>

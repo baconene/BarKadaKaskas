@@ -18,6 +18,7 @@ class ItineraryPlanController extends Controller
     public function suggest(Request $request, Trip $trip, TripPlanner $planner)
     {
         Gate::authorize('plan', $trip);
+        \App\Support\Premium::require($request->user(), $trip);
         $data = $request->validate(['prompt' => 'required|string|min:3|max:2000']);
         @set_time_limit(90);
         $plan = $planner->plan($trip, trim($data['prompt']));

@@ -58,6 +58,7 @@ class TravelerProfileController extends Controller
      */
     public function restyle(Request $request, \App\Services\Vertex\PhotoRestyler $restyler)
     {
+        \App\Support\Premium::require($request->user());
         $request->validate([
             'photo' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
             'style' => ['nullable', 'string', \Illuminate\Validation\Rule::in(array_merge(array_keys(\App\Services\Vertex\PhotoRestyler::STYLES), array_keys(\App\Services\Vertex\PhotoRestyler::EDITS)))],

@@ -25,6 +25,7 @@ class HighlightTest extends TestCase
         [$this->owner, $this->friend] = [User::factory()->create(), User::factory()->create()];
         $this->trip = Trip::create(['organizer_user_id' => $this->owner->id, 'name' => 'Siquijor Barkada Trip', 'destination' => 'Siquijor', 'starts_on' => '2026-11-10', 'ends_on' => '2026-11-17', 'timezone' => 'Asia/Manila', 'currency_code' => 'PHP']);
         foreach ([$this->owner, $this->friend] as $user) { $this->trip->members()->create(['user_id' => $user->id, 'status' => 'active']); }
+        $this->owner->forceFill(['premium_until' => now()->addMonth()])->save();   // AI covers need a Premium organizer
     }
 
     protected function tearDown(): void

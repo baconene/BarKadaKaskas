@@ -1,6 +1,8 @@
 package com.barkadakaskas.app.domain
 
 data class User(val id: Long, val name: String, val email: String)
+/** Premium (AI features): paid monthly through PayMongo; AI works on trips the user organizes. */
+data class PremiumStatus(val active: Boolean, val owner: Boolean, val until: String?, val priceLabel: String, val days: Int, val checkoutAvailable: Boolean)
 data class Trip(val id: Long, val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val memberCount: Int = 0, val status: String = "planning", val cancellationReason: String? = null, val hidden: Boolean = false, val description: String = "", val coverUrl: String? = null) {
     val cancelled: Boolean get() = status == "cancelled"
     /** The organizer ended the trip: it's over; expenses and settling up still work, and the presentation is offered. */
@@ -66,7 +68,7 @@ data class Settlement(val id: Long, val fromMemberId: Long, val toMemberId: Long
 /** What you and one other traveller owe each other: net > 0 they owe you, < 0 you owe them; the bills and repayments behind it. */
 data class BetweenLine(val type: String, val label: String, val date: String?, val detail: String, val amountMinor: Long, val pending: Boolean, val expenseId: Long? = null)
 data class Between(val memberId: Long, val name: String, val netMinor: Long, val lines: List<BetweenLine>)
-data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList(), val aiPlanner: Boolean = false, val between: List<Between>? = null) {
+data class TripDetail(val trip: Trip, val members: List<Member>, val categories: List<Category>, val stops: List<Stop>, val expenses: List<Expense>, val balances: List<Balance>, val settlements: List<Settlement>, val currentMemberId: Long, val isOrganizer: Boolean, val dues: List<Dues> = emptyList(), val aiPlanner: Boolean = false, val between: List<Between>? = null, val aiUpsell: Boolean = false) {
     fun duesOf(memberId: Long): Dues = dues.find { it.memberId == memberId } ?: Dues(memberId, 0, 0)
 }
 data class TripDraft(val name: String, val destination: String, val startsOn: String, val endsOn: String, val currency: String = "PHP", val timezone: String = "Asia/Manila", val description: String = "")
@@ -188,6 +190,9 @@ interface TravelRepository {
     suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean)
     suspend fun reopenTrip(tripId: Long)
     suspend fun endTrip(tripId: Long)
+    suspend fun premium(): PremiumStatus
+    /** Starts a PayMongo checkout; returns the page to open. */
+    suspend fun premiumCheckout(): String
     suspend fun presentation(tripId: Long): Presentation
     suspend fun presentationBudget(tripId: Long): TripBudget
     suspend fun setTripHidden(tripId: Long, hidden: Boolean)

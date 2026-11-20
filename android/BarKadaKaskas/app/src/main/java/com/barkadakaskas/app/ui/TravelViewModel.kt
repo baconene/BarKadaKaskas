@@ -347,6 +347,13 @@ class TravelViewModel(val repository: TravelRepository) : ViewModel() {
         detail = if (hide) null else repository.trip(current.trip.id)
         done()
     }
+    // Premium (AI features): status for the Premium sheet, and starting a PayMongo checkout in the browser.
+    var premium by mutableStateOf<PremiumStatus?>(null); private set
+    fun loadPremium() = viewModelScope.launch {
+        try { premium = repository.premium() } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { error = failure.message ?: "Could not load Premium." }
+    }
+    fun goPremium(open: (String) -> Unit) = launch { open(repository.premiumCheckout()) }
+
     fun endTrip() = launch { detail?.let { repository.endTrip(it.trip.id); trips = repository.trips(); detail = repository.trip(it.trip.id) } }
 
     // The trip presentation (slides) and its AI budget, loaded when the presentation opens.

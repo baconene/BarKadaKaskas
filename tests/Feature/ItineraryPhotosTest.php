@@ -14,6 +14,7 @@ class ItineraryPhotosTest extends TestCase
     private function setUpTrip(): array
     {
         $owner = User::factory()->create();
+        $owner->forceFill(['premium_until' => now()->addMonth()])->save();   // AI tips and day prep need a Premium organizer
         $trip = Trip::create(['organizer_user_id' => $owner->id, 'name' => 'Siquijor', 'destination' => 'Siquijor', 'starts_on' => '2026-11-11', 'ends_on' => '2026-11-12', 'timezone' => 'Asia/Manila']);
         $trip->members()->create(['user_id' => $owner->id, 'status' => 'active']);
         $item = $trip->itineraryItems()->create(['title' => 'Cambugahay Falls', 'location' => 'Lazi, Siquijor', 'starts_at' => now(), 'ends_at' => now()->addHour(), 'timezone' => 'Asia/Manila', 'created_by_user_id' => $owner->id]);

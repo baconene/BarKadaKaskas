@@ -25,6 +25,7 @@ class ReceiptScanTest extends TestCase
         Storage::fake('local');
         config(['services.gemini.api_key' => 'test-key', 'services.gemini.credentials' => null, 'services.gemini.model' => 'gemini-2.5-flash']);
         $this->owner = User::factory()->create(); $this->friend = User::factory()->create();
+        $this->owner->forceFill(['premium_until' => now()->addMonth()])->save();   // receipt scanning (AI) is for the Premium organizer
         $this->trip = Trip::create(['organizer_user_id' => $this->owner->id, 'name' => 'Siquijor', 'destination' => 'Siquijor', 'starts_on' => '2026-11-11', 'ends_on' => '2026-11-17', 'timezone' => 'Asia/Manila', 'currency_code' => 'PHP']);
         $this->ownerMember = $this->trip->members()->create(['user_id' => $this->owner->id, 'status' => 'active'])->id;
         $this->friendMember = $this->trip->members()->create(['user_id' => $this->friend->id, 'status' => 'active'])->id;
@@ -51,7 +52,7 @@ class ReceiptScanTest extends TestCase
     {
         $this->fakeGemini(['is_receipt' => true, 'merchant' => 'Baha Ba\'r', 'date' => '2026-11-12', 'currency' => 'PHP', 'category' => 'food', 'items' => [['description' => 'Sisig', 'quantity' => 1, 'amount' => 280], ['description' => 'Halo-halo', 'quantity' => 2, 'amount' => 300]], 'service_charge' => 58, 'tax_added' => 0, 'discount' => 0, 'total' => 638, 'notes' => null]);
 
-        $data = $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->friend))->assertCreated()->json('data');
+        $data = $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->assertCreated()->json('data');
 
         $this->assertSame('Baha Ba\'r', $data['merchant']);
         $this->assertSame(63800, $data['total_minor']);
@@ -83,8 +84,8 @@ class ReceiptScanTest extends TestCase
     public function test_someone_elses_scan_is_not_attached(): void
     {
         $this->fakeGemini(['is_receipt' => true, 'category' => 'food', 'items' => [], 'total' => 100]);
-        $scanId = $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->friend))->json('data.scan_id');
-        $this->postJson("/api/v1/trips/{$this->trip->id}/expenses", ['title' => 'X', 'category_id' => ExpenseCategory::first()->id, 'incurred_at' => '2026-11-12', 'total_minor' => 10000, 'split_method' => 'equal', 'payments' => [], 'allocations' => [['trip_member_id' => $this->ownerMember, 'weight' => 1]], 'items' => [], 'receipt_scan_id' => $scanId], $this->headers($this->owner))
+        $scanId = $this->postJson("/api/v1/trips/{$this->trip->id}/receipt-scans", ['receipt' => $this->photo()], $this->headers($this->owner))->json('data.scan_id');
+        $this->postJson("/api/v1/trips/{$this->trip->id}/expenses", ['title' => 'X', 'category_id' => ExpenseCategory::first()->id, 'incurred_at' => '2026-11-12', 'total_minor' => 10000, 'split_method' => 'equal', 'payments' => [], 'allocations' => [['trip_member_id' => $this->ownerMember, 'weight' => 1]], 'items' => [], 'receipt_scan_id' => $scanId], $this->headers($this->friend))
             ->assertCreated()->assertJsonCount(0, 'data.receipts');
         $this->assertNull(ReceiptScan::find($scanId)->expense_id);
     }

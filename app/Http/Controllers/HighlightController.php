@@ -102,6 +102,7 @@ class HighlightController extends Controller
     public function cover(Request $request, Trip $trip, PhotoRestyler $restyler)
     {
         Gate::authorize('view', $trip);
+        \App\Support\Premium::require($request->user(), $trip);
         $date = $this->date($request, $trip);
         [$from, $to] = $this->range($trip, $date);
         $best = $this->dayPhotos($trip, $from, $to)->sortByDesc('score')->first();   // the same photo the highlight's cover uses

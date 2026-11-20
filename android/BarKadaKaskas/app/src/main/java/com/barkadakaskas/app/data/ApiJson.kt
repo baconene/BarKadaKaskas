@@ -53,6 +53,7 @@ internal object ApiJson {
             currentMemberId = data.optLong("current_member_id"),
             isOrganizer = data.optBoolean("is_organizer"),
             aiPlanner = data.optBoolean("ai_planner"),
+            aiUpsell = data.optBoolean("ai_upsell"),
             dues = data.optJSONArray("dues").mapObjects { Dues(it.getLong("member_id"), it.optLong("owes_minor"), it.optLong("owed_minor")) },
             between = data.optJSONArray("between")?.let { list -> list.mapObjects { b -> Between(b.getLong("member_id"), b.text("name"), b.optLong("net_minor"),
                 b.optJSONArray("lines").mapObjects { l -> BetweenLine(l.text("type"), l.text("label"), l.textOrNull("date"), l.text("detail"), l.optLong("amount_minor"), l.optBoolean("pending"), if (l.isNull("expense_id")) null else l.optLong("expense_id")) }) } },
@@ -91,6 +92,8 @@ internal object ApiJson {
     fun alertPage(body: JSONObject?) = AlertPage(body?.optJSONArray("data").mapObjects { a ->
         Alert(a.getLong("id"), a.text("type"), a.text("title"), a.textOrNull("body"), a.optLong("trip_id"), a.textOrNull("trip_name"), a.optBoolean("read"), a.text("created_at"))
     }, body?.optInt("unread_count") ?: 0)
+
+    fun premium(d: JSONObject) = PremiumStatus(d.optBoolean("active"), d.optBoolean("owner"), d.textOrNull("until"), d.text("price_label"), d.optInt("days", 30), d.optBoolean("checkout_available"))
 
     fun presentation(d: JSONObject) = Presentation(
         title = d.text("title"), destination = d.text("destination"), currency = d.text("currency").ifBlank { "PHP" }, dates = d.text("dates"), ended = d.optBoolean("ended"),

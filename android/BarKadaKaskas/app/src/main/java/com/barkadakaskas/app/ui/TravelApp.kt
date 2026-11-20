@@ -356,10 +356,12 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val sorted = remember(vm.trips) { vm.trips.sortedBy { it.startsOn } }
     val active = sorted.filter { !it.cancelled && Itinerary.phase(it, today) != Itinerary.Phase.Past }
     val past = sorted.filter { it.cancelled || Itinerary.phase(it, today) == Itinerary.Phase.Past }.reversed()
+    var premiumOpen by remember { mutableStateOf(false) }
+    if (premiumOpen) PremiumSheet(vm) { premiumOpen = false }
     ErrorSnackbar(vm, snackbar)
     Scaffold(containerColor = Cream, snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(title = { Text("My trips", fontWeight = FontWeight.Bold) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Cream),
-            actions = { AlertsBell(vm); IconButton(vm::signOut, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.Logout, "Log out") } }) },
+            actions = { AlertsBell(vm); IconButton(onClick = { premiumOpen = true }) { Icon(Icons.Default.AutoAwesome, "Premium", tint = Color(0xFFC2603A)) }; IconButton(vm::signOut, enabled = !vm.busy) { Icon(Icons.AutoMirrored.Filled.Logout, "Log out") } }) },
         floatingActionButton = { ExtendedFloatingActionButton(onClick = { create = true }, expanded = list.firstVisibleItemIndex == 0, containerColor = Forest, contentColor = Color.White,
             icon = { Icon(Icons.Default.Add, null) }, text = { Text("Plan a trip", fontWeight = FontWeight.SemiBold) }) }) { padding ->
         PullToRefreshBox(isRefreshing = vm.busy, onRefresh = vm::refresh, modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -556,6 +558,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     var editing by remember { mutableStateOf<Stop?>(null) }; var form by remember { mutableStateOf(false) }
     val canPlanWithAi = detail.isOrganizer && detail.aiPlanner && !trip.cancelled
     var planner by remember { mutableStateOf(false) }
+    var premiumSheet by remember { mutableStateOf(false) }
+    if (premiumSheet) PremiumSheet(vm) { premiumSheet = false }
     LaunchedEffect(vm.pendingAiPrompt) { if (vm.pendingAiPrompt != null && canPlanWithAi) planner = true }
     if (planner) AiPlannerSheet(vm, detail) { planner = false; vm.pendingAiPrompt = null }
     // Typed addresses have no pin; look them up on the device so they still show on the map.
@@ -570,6 +574,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
             Text("${days.size} day${if (days.size == 1) "" else "s"} · ${detail.stops.size} activit${if (detail.stops.size == 1) "y" else "ies"}", color = Muted)
         }
         if (canPlanWithAi) OutlinedButton(onClick = { planner = true }, enabled = !vm.busy, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("AI plan") }
+        else if (detail.aiUpsell && detail.isOrganizer && detail.stops.isNotEmpty()) OutlinedButton(onClick = { premiumSheet = true }, contentPadding = PaddingValues(horizontal = 12.dp)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("AI · Premium") }
         if (canPlanWithAi && detail.isOrganizer) Spacer(Modifier.width(8.dp))
         if (detail.isOrganizer) FilledTonalButton(onClick = { editing = null; form = true }, enabled = !vm.busy) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add") }
     }
@@ -577,6 +582,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     if (days.isEmpty()) {
         EmptyState(Icons.Default.Map, "A blank itinerary", if (canPlanWithAi) "Let AI suggest an itinerary, or add your arrival point and the places you want to visit." else "Add your arrival point, then the places you want to visit.", if (detail.isOrganizer) "Add the first stop" else null) { editing = null; form = true }
         if (canPlanWithAi) Button(onClick = { planner = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Plan it with AI") }
+        else if (detail.aiUpsell && detail.isOrganizer) OutlinedButton(onClick = { premiumSheet = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = Forest); Spacer(Modifier.width(8.dp)); Text("Plan with AI · Premium", color = Forest) }
         if (form) StopForm(vm, detail, editing) { form = false }; return
     }
 
@@ -2232,6 +2238,42 @@ private data class LineState(val description: String, val amountMinor: Long, val
         Field("About this trip", about, { about = it }, singleLine = false)
         Submit("Save changes", vm.busy, changed && name.isNotBlank() && destination.isNotBlank() && end >= start, Icons.Default.Check) {
             vm.updateTrip(TripDraft(name, destination, start, end, currency, zone, about), dismiss)
+        }
+    }
+}
+
+
+/** Premium: what it unlocks, the status, and a button that opens PayMongo checkout in the browser. */
+@Composable private fun PremiumSheet(vm: TravelViewModel, dismiss: () -> Unit) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { vm.loadPremium() }
+    val status = vm.premium
+    ModalBottomSheet(onDismissRequest = dismiss, containerColor = Color.White) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 22.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFFC2603A)); Spacer(Modifier.width(8.dp))
+                Text("BarkadaKasKas Premium", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            Text("AI features for the trips you organize. Travellers who join don't need Premium; AI is used by the organizer.", color = Muted, style = MaterialTheme.typography.bodyMedium)
+            if (status == null) CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp))
+            else {
+                Surface(shape = RoundedCornerShape(12.dp), color = if (status.active) Color(0xFFE8F4E4) else Color(0xFFF3F6EF)) {
+                    Text(when {
+                        status.owner -> "Premium is on: app owner account."
+                        status.active -> "Premium is on until ${status.until?.take(10) ?: ""}."
+                        else -> "You're on the free plan. Trips, expenses, photos and maps are free; AI needs Premium."
+                    }, color = Forest, modifier = Modifier.fillMaxWidth().padding(12.dp))
+                }
+                listOf("AI trip planner", "Prep for the day and place tips", "Receipt scanning", "AI budget in the presentation", "AI photo styles and highlight covers").forEach {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Check, null, tint = Forest, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text(it) }
+                }
+                if (!status.owner) {
+                    Text("${status.priceLabel} for ${status.days} days", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Submit(if (status.active) "Add ${status.days} more days" else "Go Premium", vm.busy, status.checkoutAvailable, Icons.Default.AutoAwesome) { vm.goPremium { url -> openUrl(context, url) } }
+                    Text("Pay with card, GCash, Maya or GrabPay through PayMongo. It doesn't renew by itself. Come back to the app after paying and pull to refresh.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    if (!status.checkoutAvailable) Text("Online payment isn't set up yet.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }

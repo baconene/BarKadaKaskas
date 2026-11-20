@@ -45,6 +45,8 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Premium (AI features) for the signed-in user.
+            'premium' => fn () => $request->user() ? \App\Support\Premium::status($request->user()) : null,
         ]);
     }
 }

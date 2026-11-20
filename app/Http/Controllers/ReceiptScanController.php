@@ -13,6 +13,7 @@ class ReceiptScanController extends Controller
     public function store(Request $request, Trip $trip, GeminiReceiptReader $reader, ReceiptNormalizer $normalizer)
     {
         Gate::authorize('addExpense', $trip);
+        \App\Support\Premium::require($request->user(), $trip);
         $request->validate(['receipt' => 'required|file|mimes:jpg,jpeg,png,webp,heic,heif|max:10240']);
         $file = $request->file('receipt');
         $mime = $file->getMimeType() ?: 'image/jpeg';

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { KeyRound, UserRound } from 'lucide-vue-next';
+import { KeyRound, Sparkles, UserRound } from 'lucide-vue-next';
 import TravelLayout from '@/layouts/TravelLayout.vue';
 
 /** Account settings inside the app's own layout, with tabs for profile and password. */
-defineProps<{ active: 'profile' | 'password' }>();
+defineProps<{ active: 'profile' | 'password' | 'premium' }>();
 const tabs = [
     { key: 'profile', label: 'Profile', href: '/settings/profile', icon: UserRound },
     { key: 'password', label: 'Password', href: '/settings/password', icon: KeyRound },
+    { key: 'premium', label: 'Premium', href: '/settings/premium', icon: Sparkles },
 ] as const;
 </script>
 

@@ -175,6 +175,8 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun cancelTrip(tripId: Long, reason: String?, hide: Boolean) { request("POST", "/trips/$tripId/cancel", ApiJson.cancelBody(reason, hide)) }
     override suspend fun reopenTrip(tripId: Long) { request("POST", "/trips/$tripId/reopen") }
     override suspend fun endTrip(tripId: Long) { request("POST", "/trips/$tripId/end") }
+    override suspend fun premium(): PremiumStatus = ApiJson.premium(data(request("GET", "/premium")))
+    override suspend fun premiumCheckout(): String = data(request("POST", "/premium/checkout")).optString("checkout_url")
     // Maps (and, for the budget, the AI) can take a while the first time.
     override suspend fun presentation(tripId: Long): Presentation = ApiJson.presentation(data(request("GET", "/trips/$tripId/presentation", readTimeout = 90_000)))
     override suspend fun presentationBudget(tripId: Long): TripBudget = ApiJson.budget(data(request("GET", "/trips/$tripId/presentation/budget", readTimeout = 70_000)))

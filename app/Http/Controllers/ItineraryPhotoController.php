@@ -24,14 +24,20 @@ class ItineraryPhotoController extends Controller
     {
         Gate::authorize('view', $trip);
         $request->validate(['date' => 'nullable|date_format:Y-m-d']);
+        $date = $request->input('date') ?: \Carbon\CarbonImmutable::now($trip->timezone)->format('Y-m-d');
+        // AI: only for the trip's organizer with Premium; others get the "not available" answer.
+        if (! \App\Support\Premium::allows($request->user(), $trip)) {
+            return response()->json(['data' => ['date' => $date, 'stops' => 0, 'summary' => null, 'outfit' => [], 'bring' => [], 'tips' => [], 'available' => false, 'premium_required' => true]]);
+        }
         @set_time_limit(50);
-        return response()->json(['data' => $prep->for($trip, $request->input('date') ?: \Carbon\CarbonImmutable::now($trip->timezone)->format('Y-m-d'))]);
+        return response()->json(['data' => $prep->for($trip, $date)]);
     }
 
-    public function tips(Trip $trip, ItineraryItem $item, PlaceTips $tips)
+    public function tips(Request $request, Trip $trip, ItineraryItem $item, PlaceTips $tips)
     {
         Gate::authorize('view', $trip);
         abort_unless($item->trip_id === $trip->id, 404);
+        if (! \App\Support\Premium::allows($request->user(), $trip)) { return response()->json(['data' => [], 'premium_required' => true]); }
         @set_time_limit(45);
         return response()->json(['data' => $tips->for($item, $trip)]);
     }

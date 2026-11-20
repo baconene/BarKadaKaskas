@@ -86,11 +86,13 @@ class PresentationController extends Controller
     }
 
     /** The AI's planned budget per day and category, next to what was actually spent. */
-    public function budget(Trip $trip, BudgetEstimator $estimator)
+    public function budget(Request $request, Trip $trip, BudgetEstimator $estimator)
     {
         Gate::authorize('view', $trip);
         @set_time_limit(60);
-        $estimate = $estimator->for($trip);
+        // The AI estimate needs a Premium organizer; everyone still sees what was spent.
+        $premium = \App\Support\Premium::allows(\App\Models\User::find($trip->organizer_user_id));
+        $estimate = $premium ? $estimator->for($trip) : ['available' => false, 'days' => [], 'notes' => []];
         $spent = $this->spentByDay($trip);
         $start = CarbonImmutable::parse($trip->starts_on->format('Y-m-d'));
         $planned = collect($estimate['days'] ?? [])->keyBy('date');
@@ -109,6 +111,7 @@ class PresentationController extends Controller
         $totalEstimate = (int) collect($days)->sum('estimate_minor'); $totalActual = array_sum($spent);
         return response()->json(['data' => [
             'available' => (bool) ($estimate['available'] ?? false),
+            'premium_required' => ! $premium,
             'failed' => $estimate === null,
             'currency' => $trip->currency_code,
             'travellers' => $travellers,

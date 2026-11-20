@@ -250,3 +250,15 @@ notes:[string]}}`. The planned budget is estimated by the AI from the itinerary 
 
 DELETE `/trips/{trip}/itinerary/{item}` (organizer, plan not locked) → 204. Removes the activity; expenses and photo
 posts linked to it are kept but no longer linked. Everyone else gets an `itinerary` alert.
+
+## Premium (AI features)
+
+AI features (planner, day prep, place tips, receipt scans, AI budget, photo styles, highlight covers) are for the
+trip's organizer with Premium. Otherwise those endpoints answer 402 with a readable `message` (day prep and tips
+answer `available:false` / an empty list with `premium_required:true`; the presentation budget comes without the AI
+estimate and `premium_required:true`). Trip detail has `ai_planner` (AI allowed here), `ai_upsell` (the organizer
+could unlock it by going Premium) and `premium` (status below).
+
+GET `/premium` → `{data:{active,owner,until,price_minor,currency,price_label,days,checkout_available,payments:[…]}}`.
+POST `/premium/checkout` → `{data:{checkout_url}}`: open it in the browser (PayMongo: card, GCash, Maya, GrabPay).
+Each paid checkout adds 30 days. PayMongo calls POST `/api/v1/webhooks/paymongo` (signed with the webhook secret).

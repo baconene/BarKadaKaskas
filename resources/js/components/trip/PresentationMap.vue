@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computeRoute } from '@/lib/routeCache';
 import { guessTransport, loadGoogleMaps, transport, transportIcon } from '@/lib/itinerary';
 
 /**
@@ -99,8 +100,8 @@ async function draw() {
             let path: google.maps.LatLngLiteral[] = [from, to];
             if (mode?.route) {
                 try {
-                    const response = await routes.Route.computeRoutes({ origin: from, destination: to, travelMode: mode.route, fields: ['path'] });
-                    const route = response.routes?.[0];
+                    // Shared with the Map screen and kept for the visit: revisiting a slide or replaying costs nothing.
+                    const route = await computeRoute(routes, from, to, mode.route);
                     if (route?.path?.length) { lines = route.createPolylines(); route.path.forEach(p => bounds.extend(p)); path = route.path.map(p => { const q = p as unknown as { lat: number | (() => number); lng: number | (() => number) }; return { lat: typeof q.lat === 'function' ? q.lat() : q.lat, lng: typeof q.lng === 'function' ? q.lng() : q.lng }; }); }
                 } catch { /* no road route: drawn as a dashed line below */ }
                 // No road over a few km (an island hop): it was a boat.

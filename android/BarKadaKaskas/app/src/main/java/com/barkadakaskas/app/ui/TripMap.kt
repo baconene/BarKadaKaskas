@@ -440,8 +440,27 @@ private fun travelMode(mode: String): String? = when (mode) {
     else -> "DRIVE"
 }
 
-/** The road route between two points from Google's Routes API (with the app's Maps key), or null. */
-private fun roadRoute(context: Context, from: LatLng, to: LatLng, mode: String): List<LatLng>? = runCatching {
+/**
+ * Road routes already fetched while the app is open (key: mode and both ends rounded to about a metre). An empty list
+ * means Google answered with no route (e.g. across water). Without this, every time a day slide was shown, revisited
+ * or replayed in the presentation, each leg was requested again from the Routes API.
+ */
+private val routeCache = android.util.LruCache<String, List<LatLng>>(300)
+
+private fun routeKey(from: LatLng, to: LatLng, mode: String) =
+    "$mode|${"%.5f,%.5f".format(java.util.Locale.US, from.latitude, from.longitude)}|${"%.5f,%.5f".format(java.util.Locale.US, to.latitude, to.longitude)}"
+
+/** The road route between two points from Google's Routes API (with the app's Maps key, cached), or null. */
+private fun roadRoute(context: Context, from: LatLng, to: LatLng, mode: String): List<LatLng>? {
+    val key = routeKey(from, to, mode)
+    routeCache.get(key)?.let { return it.ifEmpty { null } }
+    val fetched = fetchRoadRoute(context, from, to, mode) ?: return null // a failure that may pass: try again next time
+    routeCache.put(key, fetched)
+    return fetched.ifEmpty { null }
+}
+
+/** One Routes API request: the path, an empty list when Google has no route, or null when the request failed. */
+private fun fetchRoadRoute(context: Context, from: LatLng, to: LatLng, mode: String): List<LatLng>? = runCatching {
     val point = { p: LatLng -> org.json.JSONObject().put("location", org.json.JSONObject().put("latLng", org.json.JSONObject().put("latitude", p.latitude).put("longitude", p.longitude))) }
     val body = org.json.JSONObject().put("origin", point(from)).put("destination", point(to)).put("travelMode", mode)
     val connection = java.net.URL("https://routes.googleapis.com/directions/v2:computeRoutes").openConnection() as java.net.HttpURLConnection
@@ -458,7 +477,7 @@ private fun roadRoute(context: Context, from: LatLng, to: LatLng, mode: String):
         if (connection.responseCode !in 200..299) return@runCatching null
         val text = connection.inputStream.bufferedReader().use { it.readText() }
         val encoded = org.json.JSONObject(text).optJSONArray("routes")?.optJSONObject(0)?.optJSONObject("polyline")?.optString("encodedPolyline").orEmpty()
-        decodePolyline(encoded).takeIf { it.size >= 2 }
+        decodePolyline(encoded).takeIf { it.size >= 2 } ?: emptyList()
     } finally { connection.disconnect() }
 }.getOrNull()
 

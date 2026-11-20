@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computeRoute } from '@/lib/routeCache';
 import { dayKey, loadGoogleMaps, orderedStops, samePlace, transport, type ItineraryStop } from '@/lib/itinerary';
 
 /**
@@ -150,9 +151,9 @@ async function draw() {
                 continue;
             }
             try {
-                const response = await routes.Route.computeRoutes({ origin: routeEnd(leg.from), destination: routeEnd(leg.to), travelMode: leg.mode.route, fields: ['path', 'distanceMeters', 'durationMillis', 'warnings'] });
+                // Cached per journey, so redrawing after an edit only pays for journeys that changed.
+                const route = await computeRoute(routes, routeEnd(leg.from), routeEnd(leg.to), leg.mode.route);
                 if (version !== generation) return;
-                const route = response.routes?.[0];
                 if (!route?.path?.length) throw new Error('No route');
                 overlays.set(leg.to.id, { lines: route.createPolylines(), points: route.path });
                 marker(leg.from, route.path[0], leg.number); marker(leg.to, route.path[route.path.length - 1], leg.number + 1);

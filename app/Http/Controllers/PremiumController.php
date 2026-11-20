@@ -24,7 +24,7 @@ class PremiumController extends Controller
         $payments = $request->user()->hasMany(PremiumPayment::class)->where('status', 'paid')->latest('paid_at')->take(12)->get(['id', 'amount_minor', 'currency_code', 'paid_at', 'period_end']);
         return $request->is('api/*')
             ? response()->json(['data' => $status + ['payments' => $payments]])
-            : Inertia::render('settings/Premium', ['premium' => $status, 'payments' => $payments, 'flash' => session('premium')]);
+            : Inertia::render('settings/Premium', ['premium' => $status, 'payments' => $payments, 'flash' => session('premium'), 'flashMessage' => session('premium_message')]);
     }
 
     /** Starts a PayMongo checkout for 30 days of Premium; returns where to send the payer. */

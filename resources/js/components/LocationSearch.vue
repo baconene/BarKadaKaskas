@@ -82,9 +82,11 @@ async function choose(suggestion: Suggestion) {
     location.value = fallback.slice(0, props.maxlength ?? 200);
     try {
         const place = suggestion.prediction.toPlace();
-        await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'addressComponents'] });
+        // Essentials fields only: the name comes from the suggestion, since asking Google for displayName bills the
+        // pick at the pricier "Place Details Pro" rate.
+        await place.fetchFields({ fields: ['formattedAddress', 'location', 'addressComponents'] });
         const address = place.formattedAddress ?? '';
-        const name = place.displayName ?? suggestion.main;
+        const name = suggestion.main;
         const label = address.toLowerCase().startsWith(name.toLowerCase()) ? address : [name, address].filter(Boolean).join(', ');
         location.value = (label || fallback).slice(0, props.maxlength ?? 200);
         pinned.value = place.location ? { latitude: place.location.lat(), longitude: place.location.lng() } : null;

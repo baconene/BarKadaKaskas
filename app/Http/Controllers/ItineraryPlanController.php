@@ -19,9 +19,11 @@ class ItineraryPlanController extends Controller
     {
         Gate::authorize('plan', $trip);
         \App\Support\Premium::require($request->user(), $trip);
+        \App\Support\Usage::require($request->user(), 'ai_plan');
         $data = $request->validate(['prompt' => 'required|string|min:3|max:2000']);
         @set_time_limit(90);
         $plan = $planner->plan($trip, trim($data['prompt']));
+        \App\Support\Usage::record($request->user(), 'ai_plan');
         return response()->json(['data' => $plan['activities'], 'changes' => $plan['changes']]);
     }
 

@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    return Inertia::render('Landing', ['android' => ['downloadUrl' => config('services.android.download_url'), 'iosDownloadUrl' => config('services.android.ios_download_url'), 'releasesUrl' => config('services.android.releases_url')]]);
+    return Inertia::render('Landing', ['plans' => \App\Support\Premium::plans(), 'android' => ['downloadUrl' => config('services.android.download_url'), 'iosDownloadUrl' => config('services.android.ios_download_url'), 'releasesUrl' => config('services.android.releases_url')]]);
 })->name('home');
 
 // Cover photos are served by an unguessable name so the mobile apps can load them without a session.
@@ -13,6 +13,11 @@ Route::get('avatars/{file}', [TravelerProfileController::class, 'avatar'])->midd
 Route::get('trip-photos/{file}', [TripPostController::class, 'photo'])->middleware('throttle:600,1')->name('trip-photos.show');
 Route::get('trip-videos/{file}', [TripPostController::class, 'video'])->middleware('throttle:600,1')->name('trip-videos.show');
 Route::get('trip-covers/{file}', [TripCoverController::class, 'show'])->middleware('throttle:240,1')->name('trip-covers.show');
+
+// Legal pages (linked from the homepage footer, sign-up and the subscription form).
+Route::get('terms', fn () => Inertia::render('legal/Terms', ['plans' => \App\Support\Premium::plans(), 'legal' => config('services.legal')]))->name('legal.terms');
+Route::get('privacy', fn () => Inertia::render('legal/Privacy', ['legal' => config('services.legal')]))->name('legal.privacy');
+Route::get('subscription-terms', fn () => Inertia::render('legal/Subscription', ['plans' => \App\Support\Premium::plans(), 'legal' => config('services.legal')]))->name('legal.subscription');
 
 Route::get('join/{token}', [TripController::class, 'invitation'])->middleware('throttle:60,1')->name('invitations.show');
 

@@ -65,6 +65,9 @@ class TravelerProfileController extends Controller
             'prompt' => 'nullable|string|max:200|required_without:style',
             'subject' => 'nullable|in:portrait,photo',
         ]);
+        if (! \App\Support\Usage::allows($request->user(), 'ai_image')) {
+            return response()->json(['message' => \App\Support\Usage::message($request->user(), 'ai_image'), 'ai' => $this->quota($request)], 429);
+        }
         $key = $this->aiKey($request);
         if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, self::AI_LIMIT)) {
             $wait = \Illuminate\Support\Facades\RateLimiter::availableIn($key);
@@ -81,6 +84,7 @@ class TravelerProfileController extends Controller
         }
         // Only edits that produced an image count toward the limit.
         \Illuminate\Support\Facades\RateLimiter::hit($key, self::AI_WINDOW);
+        \App\Support\Usage::record($request->user(), 'ai_image');
         return response()->json(['data' => ['image' => 'data:'.$image['mime'].';base64,'.$image['data']], 'ai' => $this->quota($request)]);
     }
 

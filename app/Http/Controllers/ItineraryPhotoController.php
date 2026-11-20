@@ -16,7 +16,7 @@ class ItineraryPhotoController extends Controller
         Gate::authorize('view', $trip);
         abort_unless($item->trip_id === $trip->id, 404);
         @set_time_limit(60);
-        return response()->json(['data' => $photos->for($item, $trip)]);
+        return response()->json(['data' => $photos->for($item, $trip, $request->user())]);
     }
 
     /** "Prep for the day": summary, what to wear and what to bring for a day of the itinerary (?date=Y-m-d, default today). */
@@ -30,7 +30,7 @@ class ItineraryPhotoController extends Controller
             return response()->json(['data' => ['date' => $date, 'stops' => 0, 'summary' => null, 'outfit' => [], 'bring' => [], 'tips' => [], 'available' => false, 'premium_required' => true]]);
         }
         @set_time_limit(50);
-        return response()->json(['data' => $prep->for($trip, $date)]);
+        return response()->json(['data' => $prep->for($trip, $date, $request->user())]);
     }
 
     public function tips(Request $request, Trip $trip, ItineraryItem $item, PlaceTips $tips)
@@ -39,6 +39,6 @@ class ItineraryPhotoController extends Controller
         abort_unless($item->trip_id === $trip->id, 404);
         if (! \App\Support\Premium::allows($request->user(), $trip)) { return response()->json(['data' => [], 'premium_required' => true]); }
         @set_time_limit(45);
-        return response()->json(['data' => $tips->for($item, $trip)]);
+        return response()->json(['data' => $tips->for($item, $trip, $request->user())]);
     }
 }

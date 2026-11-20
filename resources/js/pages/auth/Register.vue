@@ -89,6 +89,7 @@ const submit = () => {
                 <LoaderCircle v-if="form.processing" class="h-4 w-4 animate-spin" />
                 Create account
             </button>
+            <p class="auth-switch">By creating an account you agree to the <a href="/terms" target="_blank" rel="noopener" class="auth-link">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener" class="auth-link">Privacy Policy</a>.</p>
 
             <p class="auth-switch">Already have an account? <Link :href="route('login')" class="auth-link">Log in</Link></p>
         </form>

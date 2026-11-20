@@ -42,6 +42,8 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'avatar_path',
+        'paymongo_customer_id',
+        'paymongo_payment_method_id',
     ];
 
     /**
@@ -55,11 +57,20 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'premium_until' => 'datetime',
+            'trial_started_at' => 'datetime',
+            'next_renewal_attempt_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
+            'auto_renew' => 'boolean',
         ];
     }
 
     public function getAvatarUrlAttribute(): ?string
     {
         return \App\Support\PublicImages::url($this->avatar_path);
+    }
+
+    public function premiumPayments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(PremiumPayment::class);
     }
 }

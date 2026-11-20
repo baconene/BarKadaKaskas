@@ -103,6 +103,7 @@ class HighlightController extends Controller
     {
         Gate::authorize('view', $trip);
         \App\Support\Premium::require($request->user(), $trip);
+        \App\Support\Usage::require($request->user(), 'ai_image');
         $date = $this->date($request, $trip);
         [$from, $to] = $this->range($trip, $date);
         $best = $this->dayPhotos($trip, $from, $to)->sortByDesc('score')->first();   // the same photo the highlight's cover uses
@@ -121,6 +122,7 @@ class HighlightController extends Controller
             return response()->json(['message' => $e->getMessage()], in_array($e->getCode(), [422, 502, 503], true) ? $e->getCode() : 502);
         }
         RateLimiter::hit($key, Ai::AI_WINDOW);
+        \App\Support\Usage::record($request->user(), 'ai_image');
         $extension = str_contains($image['mime'], 'jpeg') ? 'jpg' : (str_contains($image['mime'], 'webp') ? 'webp' : 'png');
         $path = 'trip-photos/'.Str::random(40).'.'.$extension;
         Storage::disk('local')->put($path, base64_decode($image['data']));

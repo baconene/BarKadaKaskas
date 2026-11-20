@@ -465,7 +465,29 @@ class NavigationActivity : ComponentActivity() {
         }.start()
     }
 
+    /**
+     * Each route asked of the Navigation SDK is billed, so it first takes one from this month's allowance on the server.
+     * None left (or the server can't be reached): the trip goes to Google Maps instead, which is free.
+     */
     private fun routeTo(index: Int, latitude: Double, longitude: Double) {
+        lifecycleScope.launch {
+            val allowance = LaravelRepository(TokenStore(applicationContext)).startNavigation()
+            if (isFinishing || current != index) return@launch
+            if (allowance.allowed) {
+                if (allowance.remaining != null && allowance.remaining <= 2) Toast.makeText(this@NavigationActivity, if (allowance.remaining == 0) "That was your last in-app navigation this month. Next time we'll open Google Maps." else "${allowance.remaining} in-app navigations left this month.", Toast.LENGTH_LONG).show()
+                startRoute(index, latitude, longitude)
+                return@launch
+            }
+            routing = false
+            val reason = allowance.message ?: "No in-app navigations left this month. Opening Google Maps instead."
+            if (!started) handOff(reason) else {
+                Toast.makeText(this@NavigationActivity, reason, Toast.LENGTH_LONG).show()
+                stops[index].fallbackUrl.takeIf { it.isNotBlank() }?.let { InAppNavigation.openGoogleMaps(this@NavigationActivity, it) }
+            }
+        }
+    }
+
+    private fun startRoute(index: Int, latitude: Double, longitude: Double) {
         val navigator = navigator ?: return
         val stop = stops[index]
         val travelMode = when (InAppNavigation.mode(stop.transport) ?: runCatching { InAppNavigation.Mode.valueOf(intent.getStringExtra(InAppNavigation.EXTRA_MODE) ?: "") }.getOrNull()) {

@@ -21,7 +21,7 @@ class BudgetEstimator
      * @return array{available: bool, days: list<array{date: string, items: list<array{label: string, category: string, amount_minor: int}>}>, notes: list<string>}|null
      *         null when the AI couldn't answer
      */
-    public function for(Trip $trip): ?array
+    public function for(Trip $trip, ?\App\Models\User $payer = null): ?array
     {
         if (! $this->vertex->configured()) { return ['available' => false, 'days' => [], 'notes' => []]; }
         $travellers = max(1, $trip->members()->where('status', 'active')->count());
@@ -38,8 +38,10 @@ class BudgetEstimator
         $plan = collect($days)->map(fn ($stops, $date) => $date.': '.($stops ? implode('; ', $stops) : 'free day'))->implode("\n");
         $key = 'budget-estimate:v1:'.$trip->id.':'.md5($plan.$travellers.$trip->currency_code.$trip->destination);
         if (($cached = Cache::get($key)) !== null) { return $cached; }
+        // A new estimate uses one of the payer's (the Premium organizer's) monthly AI insights; cached ones are free.
+        if ($payer && ! \App\Support\Usage::allows($payer, 'ai_insight')) { return ['available' => false, 'days' => [], 'notes' => [\App\Support\Usage::message($payer, 'ai_insight')]]; }
         $answer = $this->ask($trip, $plan, $travellers, array_keys($days));
-        if ($answer) { Cache::put($key, $answer, now()->addDays(30)); }
+        if ($answer) { Cache::put($key, $answer, now()->addDays(30)); if ($payer) { \App\Support\Usage::record($payer, 'ai_insight'); } }
         return $answer;
     }
 

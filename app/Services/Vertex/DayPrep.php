@@ -15,7 +15,7 @@ class DayPrep
     public function __construct(private readonly VertexClient $vertex) {}
 
     /** @return array{date: string, stops: int, summary: ?string, outfit: list<string>, bring: list<string>, tips: list<string>, available: bool} */
-    public function for(Trip $trip, string $date): array
+    public function for(Trip $trip, string $date, ?\App\Models\User $payer = null): array
     {
         $start = CarbonImmutable::parse($date, $trip->timezone)->startOfDay();
         $items = $trip->itineraryItems()->whereBetween('starts_at', [$start->utc(), $start->endOfDay()->utc()])->orderBy('starts_at')->get();
@@ -25,7 +25,10 @@ class DayPrep
             .($i->location ? " ({$i->location})" : '').($i->transport_mode ? ", getting there by {$i->transport_mode}" : '').($i->description ? '. Notes: '.mb_substr($i->description, 0, 200) : ''))->implode("\n");
         $key = 'day-prep:v1:'.$trip->id.':'.$date.':'.md5($plan);
         if (($cached = Cache::get($key)) !== null) { return $cached + ['stops' => $items->count()]; }
+        // A new answer uses one of the payer's (the Premium organizer's) monthly AI insights; cached ones are free.
+        if ($payer && ! \App\Support\Usage::allows($payer, 'ai_insight')) { return ['available' => false, 'limit_reached' => true, 'message' => \App\Support\Usage::message($payer, 'ai_insight')] + $empty; }
         $answer = $this->ask($trip, $start, $plan);
+        if ($answer && $payer) { \App\Support\Usage::record($payer, 'ai_insight'); }
         $result = $answer ? ['date' => $date, 'stops' => $items->count(), 'available' => true] + $answer : $empty;
         Cache::put($key, $result, $answer ? now()->addDays(30) : now()->addMinutes(10));
         return $result;

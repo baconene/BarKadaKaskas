@@ -67,10 +67,20 @@ return [
         ],
     ],
 
+    // Who runs the service and how to reach them, shown on the Terms, Subscription Terms and Privacy Policy pages.
+    'legal' => [
+        'operator' => env('LEGAL_OPERATOR_NAME', 'BarkadaKasKas'),
+        'contact_email' => env('LEGAL_CONTACT_EMAIL'),
+        'effective' => env('LEGAL_EFFECTIVE_DATE', 'November 21, 2026'),
+    ],
+
     // Premium (AI features) is paid monthly through PayMongo Checkout (cards, GCash, Maya, GrabPay).
     'paymongo' => [
         'secret_key' => env('PAYMONGO_SECRET_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+        // Public key (pk_...): lets the browser turn a card into a PayMongo payment method, so card numbers never
+        // reach our server. Needed for the free trial / automatic monthly billing.
+        'public_key' => env('PAYMONGO_PUBLIC_KEY'),
     ],
     'premium' => [
         // Price of 30 days of Premium, in centavos (PayMongo charges in pesos). Default ≈ US$25.
@@ -78,5 +88,30 @@ return [
         'currency' => 'PHP',
         // Comma-separated emails that always count as Premium (the app owner).
         'owner_emails' => env('PREMIUM_OWNER_EMAILS', ''),
+        // Free trial: this many days of Premium after saving a card; the card is then charged monthly until cancelled.
+        'trial_days' => (int) env('PREMIUM_TRIAL_DAYS', 1),
+        // Card check when starting the trial: a temporary hold of this amount (centavos), released straight away.
+        // PayMongo's minimum card amount is ₱20.
+        'verify_minor' => (int) env('PREMIUM_VERIFY_MINOR', 2000),
+        // Monthly allowances (calendar month, Asia/Manila). Sized so that even a subscriber who uses every one of them
+        // costs less in Google fees than the subscription brings in (see docs/pricing.md). "free" is everyone else.
+        'allowances' => [
+            'premium' => [
+                'ai_plan' => (int) env('ALLOW_PREMIUM_AI_PLAN', 30),        // AI trip planner requests
+                'receipt_scan' => (int) env('ALLOW_PREMIUM_RECEIPTS', 60),  // AI receipt reads
+                'ai_image' => (int) env('ALLOW_PREMIUM_AI_IMAGE', 20),      // AI photo restyles and highlight covers
+                'ai_insight' => (int) env('ALLOW_PREMIUM_AI_INSIGHT', 150), // new tips, day prep and budget estimates
+                'navigation' => (int) env('ALLOW_PREMIUM_NAVIGATION', 100), // in-app turn-by-turn routes
+                'place_photos' => (int) env('ALLOW_PREMIUM_PLACE_PHOTOS', 100), // new stops looked up for Google photos
+            ],
+            'trial' => [
+                'ai_plan' => 5, 'receipt_scan' => 5, 'ai_image' => 3, 'ai_insight' => 10, 'navigation' => 10, 'place_photos' => 10,
+            ],
+            'free' => [
+                'ai_plan' => 0, 'receipt_scan' => 0, 'ai_image' => 0, 'ai_insight' => 0,
+                'navigation' => (int) env('ALLOW_FREE_NAVIGATION', 5),
+                'place_photos' => (int) env('ALLOW_FREE_PLACE_PHOTOS', 10),
+            ],
+        ],
     ],
 ];

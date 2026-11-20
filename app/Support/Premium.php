@@ -39,16 +39,45 @@ class Premium
             : 'AI features need Premium ('.self::priceLabel().' a month). Go Premium in Settings → Premium.');
     }
 
+    /** Premium only through the free trial (no paid month yet). */
+    public static function onTrial(?User $user): bool
+    {
+        if (! $user?->trial_started_at || ! $user->premium_until || ! self::active($user) || self::owner($user)) { return false; }
+        return $user->premium_until->lte($user->trial_started_at->copy()->addDays(self::trialDays())->addMinutes(5));
+    }
+
+    /** Whether this user can still start the free trial: once per person, and not after having paid. */
+    public static function trialAvailable(?User $user): bool
+    {
+        return $user !== null && self::trialDays() > 0 && ! $user->trial_started_at && ! self::active($user)
+            && ! \App\Models\PremiumPayment::where('user_id', $user->id)->where('status', 'paid')->exists();
+    }
+
+    public static function trialDays(): int { return (int) config('services.premium.trial_days', 1); }
+
     public static function priceMinor(): int { return (int) config('services.premium.price_minor', 145000); }
     public static function currency(): string { return (string) config('services.premium.currency', 'PHP'); }
     public static function priceLabel(): string { return \App\Services\Alerts::money(self::priceMinor(), self::currency()); }
+
+    /** The plans as the homepage shows them: price, trial and each plan's monthly allowances. */
+    public static function plans(): array
+    {
+        return ['price_label' => self::priceLabel(), 'price_minor' => self::priceMinor(), 'currency' => self::currency(), 'days' => 30, 'trial_days' => self::trialDays(),
+            'free' => config('services.premium.allowances.free'), 'premium' => config('services.premium.allowances.premium'), 'trial' => config('services.premium.allowances.trial')];
+    }
 
     /** What the apps show about the signed-in user's Premium. */
     public static function status(?User $user): array
     {
         return ['active' => self::active($user), 'owner' => self::owner($user), 'until' => $user?->premium_until?->toIso8601String(),
             'price_minor' => self::priceMinor(), 'currency' => self::currency(), 'price_label' => self::priceLabel(), 'days' => 30,
-            'checkout_available' => (bool) config('services.paymongo.secret_key')];
+            'checkout_available' => (bool) config('services.paymongo.secret_key'),
+            // Subscription: a saved card charged every 30 days until cancelled, starting with a free trial once.
+            'subscription_available' => app(\App\Services\Billing\PayMongoBilling::class)->configured(),
+            'trial' => self::onTrial($user), 'trial_available' => self::trialAvailable($user), 'trial_days' => self::trialDays(),
+            'billing_status' => $user?->billing_status ?? 'none', 'auto_renew' => (bool) $user?->auto_renew,
+            'card' => $user?->card_last4 ? trim(($user->card_brand ? ucfirst($user->card_brand).' ' : '').'•••• '.$user->card_last4) : null,
+            'plan' => \App\Support\Usage::plan($user), 'usage' => \App\Support\Usage::summary($user)];
     }
 
     /** @return list<string> */

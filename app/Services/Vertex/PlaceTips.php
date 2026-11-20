@@ -14,13 +14,16 @@ class PlaceTips
     public function __construct(private readonly VertexClient $vertex) {}
 
     /** @return list<array{title: string, detail: ?string}> empty when the AI isn't set up or can't answer */
-    public function for(ItineraryItem $item, Trip $trip): array
+    public function for(ItineraryItem $item, Trip $trip, ?\App\Models\User $payer = null): array
     {
         if (! $this->vertex->configured() || trim($item->title) === '') { return []; }
         $place = implode(', ', array_values(array_unique(array_filter([trim($item->title), trim((string) $item->location), trim((string) $trip->destination)]))));
         $key = 'place-tips:v1:'.md5(mb_strtolower($place));
         if (($cached = Cache::get($key)) !== null) { return $cached; }
+        // A new answer uses one of the payer's (the Premium organizer's) monthly AI insights; cached ones are free.
+        if ($payer && ! \App\Support\Usage::allows($payer, 'ai_insight')) { return []; }
         $tips = $this->ask($place);
+        if ($tips && $payer) { \App\Support\Usage::record($payer, 'ai_insight'); }
         // Remember answers for a month; a failure only briefly, so it is retried soon.
         Cache::put($key, $tips, $tips ? now()->addDays(30) : now()->addMinutes(10));
         return $tips;

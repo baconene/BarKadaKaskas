@@ -14,6 +14,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
         Route::get('premium', [\App\Http\Controllers\PremiumController::class, 'show']);
+        Route::post('premium/cancel', [\App\Http\Controllers\SubscriptionController::class, 'cancel'])->middleware('throttle:10,1');
+        Route::get('usage', [\App\Http\Controllers\UsageController::class, 'show']);
+        Route::post('navigation/start', [\App\Http\Controllers\UsageController::class, 'navigation'])->middleware('throttle:30,1');
         Route::post('premium/checkout', [\App\Http\Controllers\PremiumController::class, 'checkout'])->middleware('throttle:10,1');
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::get('alerts', [\App\Http\Controllers\AlertController::class, 'index']);

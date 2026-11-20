@@ -91,8 +91,9 @@ class PresentationController extends Controller
         Gate::authorize('view', $trip);
         @set_time_limit(60);
         // The AI estimate needs a Premium organizer; everyone still sees what was spent.
-        $premium = \App\Support\Premium::allows(\App\Models\User::find($trip->organizer_user_id));
-        $estimate = $premium ? $estimator->for($trip) : ['available' => false, 'days' => [], 'notes' => []];
+        $organizer = \App\Models\User::find($trip->organizer_user_id);
+        $premium = \App\Support\Premium::allows($organizer);
+        $estimate = $premium ? $estimator->for($trip, $organizer) : ['available' => false, 'days' => [], 'notes' => []];
         $spent = $this->spentByDay($trip);
         $start = CarbonImmutable::parse($trip->starts_on->format('Y-m-d'));
         $planned = collect($estimate['days'] ?? [])->keyBy('date');

@@ -126,6 +126,15 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
     override suspend fun stopTips(tripId: Long, stopId: Long): List<PlaceTip> =
         ApiJson.placeTips(request("GET", "/trips/$tripId/itinerary/$stopId/tips", readTimeout = 45_000)?.optJSONArray("data"))
     override suspend fun dayPrep(tripId: Long, date: String): DayPrep? = ApiJson.dayPrep(data(request("GET", "/trips/$tripId/itinerary-day?date=$date", readTimeout = 50_000)))
+    /**
+     * Asks the server for one in-app navigation from this month's allowance (Google bills every Navigation SDK
+     * route). Not allowed, or no answer: the caller opens Google Maps instead, which costs nothing.
+     */
+    suspend fun startNavigation(): NavigationAllowance = runCatching {
+        val answer = data(request("POST", "/navigation/start", JSONObject(), readTimeout = 10_000))
+        NavigationAllowance(answer.optBoolean("allowed"), if (answer.isNull("remaining")) null else answer.optInt("remaining"), answer.optString("message").takeIf { it.isNotBlank() && it != "null" })
+    }.getOrElse { NavigationAllowance(false, null, "Couldn't reach BarkadaKasKas to start in-app navigation. Opening Google Maps instead.") }
+
     override suspend fun aiQuota(): AiQuota = ApiJson.aiQuota(data(request("GET", "/photos/ai-quota"))) ?: AiQuota(3, 3, 0)
     override suspend fun comments(tripId: Long, postId: Long): List<PostComment> = ApiJson.comments(request("GET", "/trips/$tripId/posts/$postId/comments"))
     override suspend fun addComment(tripId: Long, postId: Long, body: String): Pair<PostComment, Int> =
@@ -268,3 +277,6 @@ class LaravelRepository(private val store: SessionStore) : TravelRepository {
         else -> message ?: "Something went wrong (HTTP $status)."
     }
 }
+
+/** Whether an in-app navigation may start; [remaining] is null when unlimited; [message] says why not. */
+data class NavigationAllowance(val allowed: Boolean, val remaining: Int?, val message: String?)

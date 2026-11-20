@@ -14,6 +14,7 @@ class ReceiptScanController extends Controller
     {
         Gate::authorize('addExpense', $trip);
         \App\Support\Premium::require($request->user(), $trip);
+        \App\Support\Usage::require($request->user(), 'receipt_scan');
         $request->validate(['receipt' => 'required|file|mimes:jpg,jpeg,png,webp,heic,heif|max:10240']);
         $file = $request->file('receipt');
         $mime = $file->getMimeType() ?: 'image/jpeg';
@@ -33,6 +34,7 @@ class ReceiptScanController extends Controller
             return response()->json(['message' => 'Something went wrong while reading the receipt ('.class_basename($e).'). Check the server log for details.'], 500);
         }
 
+        \App\Support\Usage::record($request->user(), 'receipt_scan');
         $categories = ExpenseCategory::where('is_active', true)->where(fn ($q) => $q->whereNull('trip_id')->orWhere('trip_id', $trip->id))->get();
         $draft = $normalizer->normalize($result['raw'], $trip->currency_code, $categories);
         $scan = ReceiptScan::create([

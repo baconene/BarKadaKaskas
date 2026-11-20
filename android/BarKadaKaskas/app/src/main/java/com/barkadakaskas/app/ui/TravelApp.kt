@@ -481,7 +481,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
 }
 
 @Composable private fun TripScreen(vm: TravelViewModel, detail: TripDetail) {
-    var tab by rememberSaveable(detail.trip.id) { mutableIntStateOf(0) }
+    var tab by rememberSaveable(detail.trip.id) { mutableStateOf(0) }
     // An alert or notification asked for a specific tab.
     LaunchedEffect(vm.requestedTab, detail.trip.id) { vm.requestedTab?.let { tab = it; vm.requestedTab = null } }
     val snackbar = remember { SnackbarHostState() }
@@ -525,7 +525,8 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (detail.trip.cancelled) CancelledBanner(detail, vm)
                     if (detail.trip.ended) EndedBanner(detail, vm) { presenting = true }
-                    when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> PhotosTab(vm, detail); 3 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) }
+                    // Keyed by tab so each tab's remembered state is its own (the tabs share this spot on screen).
+                    key(current) { when (current) { 0 -> ItineraryTab(vm, planning); 1 -> ExpensesTab(vm, detail); 2 -> PhotosTab(vm, detail); 3 -> BalancesTab(vm, detail); else -> GroupTab(vm, planning) } }
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -550,7 +551,7 @@ private fun transportIcon(mode: String?): ImageVector = when (mode) {
     val trip = detail.trip
     val days = remember(detail.stops, trip.timezone) { Itinerary.days(detail.stops, trip.timezone) }
     val today = LocalDate.now(zoneOf(trip.timezone))
-    var selected by rememberSaveable(trip.id) { mutableIntStateOf(days.indexOfFirst { it.key == today }.coerceAtLeast(0)) }
+    var selected by rememberSaveable(trip.id) { mutableStateOf(days.indexOfFirst { it.key == today }.coerceAtLeast(0)) }
     val day = days.getOrNull(selected.coerceIn(0, (days.size - 1).coerceAtLeast(0)))
     var editing by remember { mutableStateOf<Stop?>(null) }; var form by remember { mutableStateOf(false) }
     val canPlanWithAi = detail.isOrganizer && detail.aiPlanner && !trip.cancelled

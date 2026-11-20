@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import LegalPage from '@/components/legal/LegalPage.vue';
 
 type Allowances = Record<'ai_plan' | 'receipt_scan' | 'ai_image' | 'ai_insight' | 'navigation' | 'place_photos', number>;
-const props = defineProps<{ plans: { price_label: string; days: number; trial_days: number; free: Allowances; premium: Allowances; trial: Allowances }; legal: { operator: string; contact_email: string | null; effective: string } }>();
+const props = defineProps<{ plans: { price_label: string; hold_label: string; days: number; trial_days: number; free: Allowances; premium: Allowances; trial: Allowances }; legal: { operator: string; contact_email: string | null; effective: string } }>();
 const trial = computed(() => (props.plans.trial_days === 1 ? '1 day (24 hours)' : `${props.plans.trial_days} days`));
 const rows = computed(() => [
     ['AI trip planner requests', 'ai_plan'], ['AI receipt scans', 'receipt_scan'], ['AI place tips, day prep and budget estimates', 'ai_insight'],
@@ -30,7 +30,7 @@ const rows = computed(() => [
         <h2>2. Free trial</h2>
         <ul>
             <li>The free trial lasts {{ trial }} from when it starts and is available <b>once per person</b>. We may refuse or end a trial if we see it being used more than once (for example with several accounts).</li>
-            <li>To start it you must save a valid credit or debit card. We check the card with a temporary authorization hold of ₱20, which we release immediately; you are not charged for it. Your bank may take a few days to remove the hold from your statement.</li>
+            <li>To start it you must save a valid credit or debit card. We check the card with a temporary authorization hold of {{ plans.hold_label }}, which we release immediately; you are not charged for it. Your bank may take a few days to remove the hold from your statement.</li>
             <li>Trial allowances are smaller than the full Premium allowances (see section 5).</li>
             <li><b>If you do not cancel before the trial ends, your subscription starts automatically and your card is charged {{ plans.price_label }}.</b> We e-mail you when the trial starts, with the exact time it ends.</li>
         </ul>

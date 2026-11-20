@@ -14,7 +14,7 @@ import { appFetch } from '@/lib/uploads';
 type Allowance = { label: string; limit: number | null; used: number; remaining: number | null };
 type Status = {
     active: boolean; owner: boolean; until: string | null; price_label: string; days: number; checkout_available: boolean;
-    subscription_available: boolean; trial: boolean; trial_available: boolean; trial_days: number; billing_status: string; auto_renew: boolean;
+    subscription_available: boolean; trial: boolean; trial_available: boolean; trial_days: number; hold_label: string; billing_status: string; auto_renew: boolean;
     card: string | null; plan: 'free' | 'trial' | 'premium'; usage: Record<string, Allowance>;
 };
 type Payment = { id: number; amount_minor: number; currency_code: string; paid_at: string; period_end: string };
@@ -118,7 +118,7 @@ async function payOnce() {
                         <p class="disclose">
                             <template v-if="premium.trial_available"><b>Free for {{ premium.trial_days === 1 ? '1 day' : `${premium.trial_days} days` }}, then {{ premium.price_label }} every 30 days</b> until you cancel. Cancel before the trial ends and you pay nothing.</template>
                             <template v-else><b>{{ premium.price_label }} now, then every 30 days</b> until you cancel.</template>
-                            We check your card with a temporary ₱20 hold that is released right away.
+                            We check your card with a temporary {{ premium.hold_label }} hold that is released right away; you aren’t charged for it.
                         </p>
                         <label>Name on card<input v-model="card.name" autocomplete="cc-name" required maxlength="80" /></label>
                         <label>Card number<input v-model="card.number" inputmode="numeric" autocomplete="cc-number" required maxlength="23" placeholder="4343 4343 4343 4345" /></label>

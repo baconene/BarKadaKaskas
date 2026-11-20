@@ -30,12 +30,12 @@ class SubscriptionController extends Controller
         abort_if($user->auto_renew && Premium::active($user), 422, 'Your subscription is already on.');
         $user->forceFill(['terms_accepted_at' => now()])->save();
         $trial = Premium::trialAvailable($user);
-        $payment = PremiumPayment::create(['user_id' => $user->id, 'kind' => 'verification', 'amount_minor' => $this->verifyAmount(), 'currency_code' => 'PHP']);
-        $intent = $this->billing->cardSetupIntent($user, $this->verifyAmount(), $trial ? 'BarkadaKasKas Premium free trial – card check (released)' : 'BarkadaKasKas Premium – card check (released)');
+        $payment = PremiumPayment::create(['user_id' => $user->id, 'kind' => 'verification', 'amount_minor' => Premium::holdMinor(), 'currency_code' => 'PHP']);
+        $intent = $this->billing->cardSetupIntent($user, Premium::holdMinor(), $trial ? 'BarkadaKasKas Premium free trial – card check (released)' : 'BarkadaKasKas Premium – card check (released)');
         $payment->update(['payment_intent_id' => $intent['id']]);
         return response()->json(['data' => [
             'payment_id' => $payment->id, 'public_key' => config('services.paymongo.public_key'), 'trial' => $trial,
-            'trial_days' => Premium::trialDays(), 'price_label' => Premium::priceLabel(), 'hold_label' => \App\Services\Alerts::money($this->verifyAmount(), 'PHP'),
+            'trial_days' => Premium::trialDays(), 'price_label' => Premium::priceLabel(), 'hold_label' => Premium::holdLabel(),
         ]]);
     }
 
@@ -118,10 +118,5 @@ class SubscriptionController extends Controller
     private function own(Request $request, PremiumPayment $payment): void
     {
         abort_unless($payment->user_id === $request->user()->id && $payment->kind === 'verification' && $payment->payment_intent_id, 404);
-    }
-
-    private function verifyAmount(): int
-    {
-        return max(2000, (int) config('services.premium.verify_minor', 2000));
     }
 }

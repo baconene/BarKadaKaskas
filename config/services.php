@@ -91,8 +91,9 @@ return [
         // Free trial: this many days of Premium after saving a card; the card is then charged monthly until cancelled.
         'trial_days' => (int) env('PREMIUM_TRIAL_DAYS', 1),
         // Card check when starting the trial: a temporary hold of this amount (centavos), released straight away.
-        // PayMongo's minimum card amount is ₱20.
-        'verify_minor' => (int) env('PREMIUM_VERIFY_MINOR', 2000),
+        // ₱290 ≈ US$5 (PayMongo charges cards in pesos); never below PayMongo's ₱20 minimum.
+        'verify_minor' => (int) env('PREMIUM_VERIFY_MINOR', 29000),
+        'verify_usd_label' => env('PREMIUM_VERIFY_USD_LABEL', 'US$5'),
         // Monthly allowances (calendar month, Asia/Manila). Sized so that even a subscriber who uses every one of them
         // costs less in Google fees than the subscription brings in (see docs/pricing.md). "free" is everyone else.
         'allowances' => [

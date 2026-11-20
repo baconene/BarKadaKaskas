@@ -9,7 +9,7 @@ Why Premium costs what it does, and why the monthly allowances are the size they
 |---|---|---|
 | Free | ₱0 | Everyone on a trip |
 | Premium subscription | ₱1,450 every 30 days, saved card, renews until cancelled | Organizers who want AI |
-| Premium trial | Free for 1 day (`PREMIUM_TRIAL_DAYS`), card required, once per person | New subscribers |
+| Premium trial | Free for 1 day (`PREMIUM_TRIAL_DAYS`), card required (checked with a ₱290 ≈ US$5 hold that is released, `PREMIUM_VERIFY_MINOR`), once per person | New subscribers |
 | Premium one-time | ₱1,450 for 30 days via PayMongo Checkout (GCash, Maya, GrabPay, card), no renewal | People without a card |
 
 ## What we keep per subscriber

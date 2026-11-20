@@ -70,7 +70,7 @@ class SubscriptionTest extends TestCase
         $this->assertSame('trial', Usage::plan($user));
         // The card check is a manual-capture hold that is cancelled, and the card is saved for off-session charges.
         Http::assertSent(fn ($r) => $r->url() === 'https://api.paymongo.com/v1/payment_intents' && $r['data']['attributes']['capture_type'] === 'manual'
-            && $r['data']['attributes']['amount'] === 2000 && $r['data']['attributes']['setup_future_usage']['session_type'] === 'off_session');
+            && $r['data']['attributes']['amount'] === 29000 && $r['data']['attributes']['setup_future_usage']['session_type'] === 'off_session');
         Http::assertSent(fn ($r) => $r->url() === 'https://api.paymongo.com/v1/payment_intents/pi_1/cancel');
         // No second trial, and no card numbers ever reach the server (only a pm_ id).
         $this->assertFalse(\App\Support\Premium::trialAvailable($user));

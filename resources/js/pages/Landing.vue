@@ -5,7 +5,7 @@ import { computed } from 'vue';
 import type { SharedData } from '@/types';
 
 type Allowances = Record<'ai_plan' | 'receipt_scan' | 'ai_image' | 'ai_insight' | 'navigation' | 'place_photos', number>;
-const props = defineProps<{ android: { downloadUrl: string; iosDownloadUrl: string; releasesUrl: string }; plans: { price_label: string; days: number; trial_days: number; free: Allowances; premium: Allowances } }>();
+const props = defineProps<{ android: { downloadUrl: string; iosDownloadUrl: string; releasesUrl: string }; plans: { price_label: string; hold_label: string; days: number; trial_days: number; free: Allowances; premium: Allowances } }>();
 const trialLength = computed(() => (props.plans.trial_days === 1 ? '1 day' : `${props.plans.trial_days} days`));
 const freeIncludes = computed(() => [
     'Unlimited trips, itineraries and travel buddies',
@@ -112,7 +112,7 @@ const features = [
                         <p class="plan-text">For the organizer who wants the AI to do the heavy lifting.</p>
                         <ul><li v-for="item in premiumIncludes" :key="item"><Check :size="16" aria-hidden="true" /> {{ item }}</li></ul>
                         <Link :href="page.props.auth?.user ? '/settings/premium' : '/register'" class="button primary">Start your free trial<ArrowUpRight :size="17" aria-hidden="true" /></Link>
-                        <p class="plan-fine">Card required. Free for {{ trialLength }}, then {{ plans.price_label }} every {{ plans.days }} days until you cancel. Cancel any time in Settings → Premium before the trial ends and you won’t be charged. Prefer GCash or Maya? Pay {{ plans.days }} days at a time instead, no renewal. See the <a href="/subscription-terms">Subscription Terms</a>.</p>
+                        <p class="plan-fine">Card required (a {{ plans.hold_label }} hold checks it and is released right away). Free for {{ trialLength }}, then {{ plans.price_label }} every {{ plans.days }} days until you cancel. Cancel any time in Settings → Premium before the trial ends and you won’t be charged. Prefer GCash or Maya? Pay {{ plans.days }} days at a time instead, no renewal. See the <a href="/subscription-terms">Subscription Terms</a>.</p>
                     </article>
                 </div>
             </section>

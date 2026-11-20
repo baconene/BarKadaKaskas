@@ -53,6 +53,14 @@ class Premium
             && ! \App\Models\PremiumPayment::where('user_id', $user->id)->where('status', 'paid')->exists();
     }
 
+    /** The card-check hold when saving a card (released right away), in centavos: about US$5. */
+    public static function holdMinor(): int { return max(2000, (int) config('services.premium.verify_minor', 29000)); }
+    public static function holdLabel(): string
+    {
+        $usd = (string) config('services.premium.verify_usd_label', 'US$5');
+        return \App\Services\Alerts::money(self::holdMinor(), 'PHP').($usd !== '' ? " (about {$usd})" : '');
+    }
+
     public static function trialDays(): int { return (int) config('services.premium.trial_days', 1); }
 
     public static function priceMinor(): int { return (int) config('services.premium.price_minor', 145000); }
@@ -62,7 +70,7 @@ class Premium
     /** The plans as the homepage shows them: price, trial and each plan's monthly allowances. */
     public static function plans(): array
     {
-        return ['price_label' => self::priceLabel(), 'price_minor' => self::priceMinor(), 'currency' => self::currency(), 'days' => 30, 'trial_days' => self::trialDays(),
+        return ['price_label' => self::priceLabel(), 'price_minor' => self::priceMinor(), 'currency' => self::currency(), 'days' => 30, 'trial_days' => self::trialDays(), 'hold_label' => self::holdLabel(),
             'free' => config('services.premium.allowances.free'), 'premium' => config('services.premium.allowances.premium'), 'trial' => config('services.premium.allowances.trial')];
     }
 
@@ -74,7 +82,7 @@ class Premium
             'checkout_available' => (bool) config('services.paymongo.secret_key'),
             // Subscription: a saved card charged every 30 days until cancelled, starting with a free trial once.
             'subscription_available' => app(\App\Services\Billing\PayMongoBilling::class)->configured(),
-            'trial' => self::onTrial($user), 'trial_available' => self::trialAvailable($user), 'trial_days' => self::trialDays(),
+            'trial' => self::onTrial($user), 'trial_available' => self::trialAvailable($user), 'trial_days' => self::trialDays(), 'hold_label' => self::holdLabel(),
             'billing_status' => $user?->billing_status ?? 'none', 'auto_renew' => (bool) $user?->auto_renew,
             'card' => $user?->card_last4 ? trim(($user->card_brand ? ucfirst($user->card_brand).' ' : '').'•••• '.$user->card_last4) : null,
             'plan' => \App\Support\Usage::plan($user), 'usage' => \App\Support\Usage::summary($user)];

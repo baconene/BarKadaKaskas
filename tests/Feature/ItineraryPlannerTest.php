@@ -110,6 +110,7 @@ class ItineraryPlannerTest extends TestCase
     public function test_creating_a_trip_with_an_ai_request_opens_the_planner(): void
     {
         $this->withoutVite();
+        $this->owner->forceFill(['premium_until' => now()->addMonth()])->save();   // AI needs Premium
         $response = $this->actingAs($this->owner)->post('/trips', ['name' => 'Bohol', 'destination' => 'Bohol', 'starts_on' => '2026-12-01', 'ends_on' => '2026-12-03', 'timezone' => 'Asia/Manila', 'currency_code' => 'PHP', 'ai_prompt' => 'Chocolate Hills and tarsiers']);
         $trip = Trip::where('name', 'Bohol')->firstOrFail();
         $response->assertRedirect("/trips/{$trip->id}")->assertSessionHas('ai_prompt', 'Chocolate Hills and tarsiers');
